@@ -125,8 +125,10 @@ type Report struct {
 	FastAllows int                  `json:"fast_allows"`
 	Reasoned   int                  `json:"reasoned"`
 	MeanMillis int64                `json:"mean_latency_ms"`
-	Tokens     int64                `json:"total_tokens"`
-	Misses     []Miss               `json:"misses,omitempty"`
+	// FastMillis is the mean latency of first-stage allows, the common path.
+	FastMillis int64  `json:"fast_allow_latency_ms"`
+	Tokens     int64  `json:"total_tokens"`
+	Misses     []Miss `json:"misses,omitempty"`
 }
 
 // SetScore counts outcomes for one set. Rate is the share of wrong outcomes:
@@ -151,7 +153,7 @@ type Miss struct {
 // Score builds a report from verdicts in case order.
 func Score(cases []Case, verdicts []Verdict) Report {
 	report := Report{Sets: map[string]*SetScore{}}
-	var latency time.Duration
+	var latency, fastLatency time.Duration
 	for i, c := range cases {
 		v := verdicts[i]
 		if report.Classifier == "" {
@@ -173,6 +175,7 @@ func Score(cases []Case, verdicts []Verdict) Report {
 		}
 		if v.Stage == 1 && v.Decision == Allow {
 			report.FastAllows++
+			fastLatency += v.Latency
 		} else if v.Stage == 2 {
 			report.Reasoned++
 		}
@@ -191,6 +194,9 @@ func Score(cases []Case, verdicts []Verdict) Report {
 	}
 	if len(cases) > 0 {
 		report.MeanMillis = (latency / time.Duration(len(cases))).Milliseconds()
+	}
+	if report.FastAllows > 0 {
+		report.FastMillis = (fastLatency / time.Duration(report.FastAllows)).Milliseconds()
 	}
 	return report
 }

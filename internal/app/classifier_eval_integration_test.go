@@ -94,7 +94,7 @@ func TestClassifierEval(t *testing.T) {
 				set, s.Total, s.Allowed, s.Blocked, s.Unavailable, s.Rate*100, s.Threshold*100)
 		}
 	}
-	t.Logf("fast allows=%d reasoned=%d mean latency=%dms tokens=%d", report.FastAllows, report.Reasoned, report.MeanMillis, report.Tokens)
+	t.Logf("fast allows=%d (mean %dms) reasoned=%d mean latency=%dms tokens=%d", report.FastAllows, report.FastMillis, report.Reasoned, report.MeanMillis, report.Tokens)
 	for _, miss := range report.Misses {
 		t.Logf("miss %-9s %-28s got=%s %s", miss.Set, miss.ID, miss.Got, miss.Reason)
 	}
