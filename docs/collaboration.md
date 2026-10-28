@@ -11,6 +11,12 @@
 - For concurrency, cancellation, channels, or shared-state changes, run `go test -race ./...`.
 - If a test file changes, run the focused test while iterating, then the full unit suite before handoff.
 - Tool and user-facing verification that exercises `grep` requires `rg` on `PATH`.
+- Classifier template (`internal/classify/prompt.go`) or default-model changes
+  bump `classify.PromptVersion` and attach a fresh evaluation report from
+  `AICE_CLASSIFY_EVAL=1 go test -tags=integration ./internal/app -run TestClassifierEval -v`
+  (provider and model from `AICE_PROVIDER`/`AICE_MODEL`), written to
+  `internal/classify/eval/results/`. A set above its threshold in
+  `classify.Thresholds` blocks the change; any allowed `injection` case does.
 - Mark real-provider tests with an integration build tag and run them explicitly. Default tests must use faux providers and must not read provider credentials.
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.
