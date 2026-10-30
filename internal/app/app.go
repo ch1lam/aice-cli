@@ -246,8 +246,7 @@ func (a *application) Print(
 	if diagnostics == nil {
 		return fmt.Errorf("app: diagnostics output is required")
 	}
-	sink, err := newPrintSink(request.OutputFormat, output, diagnostics)
-	if err != nil {
+	if err := validatePrintFormat(request.OutputFormat); err != nil {
 		return err
 	}
 	environment, err := a.newRunEnvironment(
@@ -274,6 +273,8 @@ func (a *application) Print(
 			environment.configuration,
 		)
 	}
+	sink := newPrintSink(request.OutputFormat, output, diagnostics,
+		toolDescriber{guard: environment.guard, workspace: environment.workspace.PhysicalPath()})
 	configured := configuredModel{
 		configuration: environment.configuration,
 		model:         environment.model,

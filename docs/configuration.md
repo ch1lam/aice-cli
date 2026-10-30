@@ -684,7 +684,8 @@ itself succeeded.
 
 `--output-format json` writes one NDJSON event per line to stdout and does not
 duplicate progress on stderr. It is intended for integrations that need tool
-arguments, results, durations, retries, stop reasons, and token usage. The
+arguments, kinds, file locations, results, durations, retries, stop reasons,
+and token usage, with tool vocabulary shared with the ACP frontend. The
 stable event contract is documented in [Print NDJSON events](contracts.md#print-ndjson-events).
 
 ## Agent Skills

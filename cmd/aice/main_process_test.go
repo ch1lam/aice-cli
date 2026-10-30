@@ -211,7 +211,7 @@ data: [DONE]
 			var event struct {
 				Type       string `json:"type"`
 				ToolCallID string `json:"tool_call_id"`
-				IsError    bool   `json:"is_error"`
+				Status     string `json:"status"`
 				Result     string `json:"result"`
 				Error      string `json:"error"`
 			}
@@ -223,10 +223,10 @@ data: [DONE]
 				t.Fatalf("invalid NDJSON: %v\n%s", err, stdout)
 			}
 			if event.Type == "tool_execution_end" && event.ToolCallID == "secret-read" {
-				denied = event.IsError && strings.Contains(event.Result, "not allowed") && strings.Contains(event.Result, "secrets")
+				denied = event.Status == "failed" && strings.Contains(event.Result, "not allowed") && strings.Contains(event.Result, "secrets")
 			}
 			if event.Type == "tool_execution_end" && event.ToolCallID == "public-read" {
-				readPublic = !event.IsError && strings.Contains(event.Result, "fixture-public-value")
+				readPublic = event.Status == "completed" && strings.Contains(event.Result, "fixture-public-value")
 			}
 			if event.Type == "agent_end" {
 				ended = event.Error == ""

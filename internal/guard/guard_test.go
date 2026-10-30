@@ -716,6 +716,10 @@ func TestCheckRecordsNormalizedActionsForEveryDecision(t *testing.T) {
 		{"bash command and files", toolCall("bash", map[string]any{"command": "cat a.txt > b.txt"}),
 			[]Action{{Kind: "command", Command: "cat a.txt > b.txt", ToolName: "bash"}, {Kind: "file", Op: "write", Path: "b.txt", ToolName: "bash"}, {Kind: "file", Op: "read", Path: "a.txt", ToolName: "bash"}}},
 		{"unknown tool", toolCall("mystery", map[string]any{}), nil},
+		{"search defaults to workspace", toolCall("ls", map[string]any{}),
+			[]Action{{Kind: "file", Op: "read", Path: ".", ToolName: "ls"}}},
+		{"fetch", toolCall("web_fetch", map[string]any{"url": "https://example.com/a"}),
+			[]Action{{Kind: "network", ToolName: "web_fetch", Target: "https://example.com"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res, err := g.Check(t.Context(), tc.call)
@@ -724,6 +728,9 @@ func TestCheckRecordsNormalizedActionsForEveryDecision(t *testing.T) {
 			}
 			if fmt.Sprint(res.Actions) != fmt.Sprint(tc.want) {
 				t.Fatalf("actions = %+v, want %+v", res.Actions, tc.want)
+			}
+			if got := g.Actions(tc.call); fmt.Sprint(got) != fmt.Sprint(res.Actions) {
+				t.Fatalf("Actions() = %+v, want the recorded %+v", got, res.Actions)
 			}
 		})
 	}

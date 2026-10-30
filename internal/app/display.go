@@ -359,7 +359,7 @@ func displayToolReview(result *llm.ToolResultMessage) *interaction.ReviewDisplay
 }
 
 func displayToolCall(call llm.ToolCall) interaction.ToolDisplay {
-	display := interaction.ToolDisplay{ID: call.ID, Name: call.Name, Detail: toolCallDetail(call)}
+	display := interaction.ToolDisplay{ID: call.ID, Name: call.Name, Detail: toolCallDetail(call), Arguments: slices.Clone(call.Arguments)}
 	if call.Name == "write" {
 		var args struct {
 			Content *string `json:"content"`

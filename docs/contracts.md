@@ -231,8 +231,10 @@ retain the short content summary; Session keeps the additive metadata.
   decision; the Loop copies it into the tool result's `ToolResultDetails.Review`
   without reading it. Every Guard result also carries `Actions`, the call's
   normalized actions in the gate's extraction order (a bash command, then the
-  file reads and writes extracted from it; a file tool's path; a network
-  target; an MCP service), whatever the decision. The Loop copies them into
+  file reads and writes extracted from it; a file tool's path, `.` when a
+  search tool defaults to the working directory; a network target; an MCP
+  service), whatever the decision. `Guard.Actions` returns the same extraction
+  without deciding, for frontends describing a call before its result. The Loop copies them into
   `ToolResultMessage.Actions` without reading them, so allowed, denied and
   declined calls all record what they would do. The actions keep the call's own
   spelling; physical re-checks only tighten the decision. They are source
@@ -394,11 +396,20 @@ assistant text and thinking are emitted once at `message_end`.
 | --- | --- |
 | `agent_start` | `type` |
 | `message_end` | `role`, `text`, `thinking`, `usage`, `stop_reason`, `model` |
-| `tool_execution_start` | `tool_call_id`, `name`, `arguments` |
-| `tool_execution_end` | `tool_call_id`, `name`, `is_error`, `result`, `duration_ms` |
+| `tool_execution_start` | `tool_call_id`, `name`, `kind`, `status`, optional `locations`, `arguments` |
+| `tool_execution_end` | `tool_call_id`, `name`, `kind`, `status`, optional `locations`, `result`, `duration_ms` |
 | `retry_start` | `attempt`, `max_retries`, `delay_ms` |
 | `retry_end` | `attempt`, `success`, optional `error` |
 | `agent_end` | total `usage`, optional `error` |
+
+Tool events use the vocabulary shared with the ACP frontend
+(`interaction.ToolKindOf`, `interaction.ToolLocations`): `kind` is one of
+`read`, `edit`, `search`, `execute`, `fetch` or `other`; `status` is
+`in_progress` at start and `completed` or `failed` at end; `locations` lists
+absolute file paths. Both derive only from the Guard's normalized actions: at
+start from the extraction `Check` uses, at end from the actions recorded on the
+result. Tool names and tool-reported metadata never decide them, so a call
+without file, command or network actions is `other`.
 
 Only assistant messages produce `message_end`; tool-result message lifecycle
 events are represented by `tool_execution_end` and are not duplicated. Tool

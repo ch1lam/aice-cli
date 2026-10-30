@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -128,6 +131,12 @@ func TestJSONPrinterEmitsStableEvents(t *testing.T) {
 
 	output := new(bytes.Buffer)
 	printer := newJSONPrinter(output)
+	workspace := t.TempDir()
+	gate, err := guard.New(workspace, guard.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	printer.tools = toolDescriber{guard: gate, workspace: workspace}
 	currentTime := time.Unix(20, 0)
 	printer.now = func() time.Time { return currentTime }
 
@@ -154,6 +163,7 @@ func TestJSONPrinterEmitsStableEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewToolResultMessage() error = %v", err)
 	}
+	toolResult.Actions = []llm.ToolAction{{Kind: "file", Op: "read", Path: "README.md"}}
 	wantRunErr := errors.New("provider unavailable")
 
 	events := []agent.AgentEvent{
@@ -225,8 +235,13 @@ func TestJSONPrinterEmitsStableEvents(t *testing.T) {
 		message["model"] != "response-model" {
 		t.Errorf("message_end = %#v", message)
 	}
+	location := []any{map[string]any{"path": filepath.Join(workspace, "README.md")}}
+	toolStart := lines[2]
+	if toolStart["kind"] != "read" || toolStart["status"] != "in_progress" || !reflect.DeepEqual(toolStart["locations"], location) {
+		t.Errorf("tool_execution_start = %#v", toolStart)
+	}
 	toolEnd := lines[3]
-	if toolEnd["is_error"] != true ||
+	if toolEnd["status"] != "failed" || toolEnd["kind"] != "read" || !reflect.DeepEqual(toolEnd["locations"], location) ||
 		toolEnd["result"] != "contents" ||
 		toolEnd["duration_ms"] != float64(42) {
 		t.Errorf("tool_execution_end = %#v", toolEnd)

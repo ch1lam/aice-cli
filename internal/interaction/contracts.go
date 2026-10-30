@@ -214,6 +214,9 @@ type AssistantDisplay struct {
 // ToolDisplay is one tool execution shown by a frontend. Detail is the raw
 // tool input already extracted for display by the application bridge. Content
 // is write input; HasContent distinguishes an empty file from absent input.
+// Arguments are the complete call arguments, set on tool start. Kind and
+// Locations come from the Guard's normalized actions: on start from the
+// call, on end from the actions recorded with the result.
 type ToolDisplay struct {
 	Output     ToolOutputDisplay
 	Diff       DiffDisplay
@@ -229,6 +232,9 @@ type ToolDisplay struct {
 	Failed     bool
 	Content    string
 	HasContent bool
+	Arguments  []byte
+	Kind       ToolKind
+	Locations  []ToolLocation
 }
 
 // ReviewDisplay is an automatic permission decision on a tool call.

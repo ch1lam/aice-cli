@@ -17,19 +17,22 @@ type printSink interface {
 	Finish() error
 }
 
-func newPrintSink(
-	format string,
-	output io.Writer,
-	diagnostics io.Writer,
-) (printSink, error) {
+func validatePrintFormat(format string) error {
 	switch format {
-	case "", "text":
-		return newStreamPrinter(output, diagnostics), nil
-	case "json":
-		return newJSONPrinter(output), nil
+	case "", "text", "json":
+		return nil
 	default:
-		return nil, fmt.Errorf("app: unsupported print output format %q", format)
+		return fmt.Errorf("app: unsupported print output format %q", format)
 	}
+}
+
+func newPrintSink(format string, output, diagnostics io.Writer, tools toolDescriber) printSink {
+	if format == "json" {
+		printer := newJSONPrinter(output)
+		printer.tools = tools
+		return printer
+	}
+	return newStreamPrinter(output, diagnostics)
 }
 
 type streamPrinter struct {

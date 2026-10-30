@@ -209,6 +209,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		if display == nil {
 			return nil
 		}
+		toolDescriber{guard: r.session.guard, workspace: r.session.workspacePath}.annotate(event, display)
 		if label, ok := scope.mcp.catalog.displayName(display.Tool.Name); ok && display.Kind == interaction.EventToolStart {
 			display.Tool.Name = label
 		}

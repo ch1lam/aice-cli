@@ -193,6 +193,20 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 	return res, nil
 }
 
+// Actions returns the normalized actions Check records for call, without
+// deciding it, so a frontend can describe a call before its decision.
+func (g *Guard) Actions(call llm.ToolCall) []Action {
+	if g == nil || !isKnownTool(call.Name) {
+		return nil
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if isNetworkTool(call.Name) {
+		return []Action{g.checkNetwork(call).Action}
+	}
+	return callActions(call, extractActions(call, g.workspace))
+}
+
 // callActions is the recorded view of a call: a bash command, then the file
 // actions extracted from it or from a file tool's arguments.
 func callActions(call llm.ToolCall, analysis bashAnalysis) []Action {

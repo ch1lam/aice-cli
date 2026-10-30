@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -23,6 +24,7 @@ type jsonPrinter struct {
 	now        func() time.Time
 	toolStarts map[string]time.Time
 	totalUsage llm.Usage
+	tools      toolDescriber
 }
 
 func newJSONPrinter(output io.Writer) *jsonPrinter {
@@ -105,10 +107,14 @@ func (p *jsonPrinter) toolStart(event agent.AgentEvent) any {
 		return nil
 	}
 	p.toolStarts[event.ToolCall.ID] = p.now()
+	kind, locations := p.tools.describe(*event.ToolCall, nil)
 	return toolStartJSONEvent{
 		Type:       event.Type,
 		ToolCallID: event.ToolCall.ID,
 		Name:       event.ToolCall.Name,
+		Kind:       kind,
+		Status:     interaction.ToolStatusInProgress,
+		Locations:  locations,
 		Arguments:  event.ToolCall.Arguments,
 	}
 }
@@ -133,11 +139,18 @@ func (p *jsonPrinter) toolEnd(event agent.AgentEvent) any {
 		isError = event.ToolResult.IsError
 		result = printToolResultText(*event.ToolResult)
 	}
+	status := interaction.ToolStatusCompleted
+	if isError {
+		status = interaction.ToolStatusFailed
+	}
+	kind, locations := p.tools.describe(*event.ToolCall, event.ToolResult)
 	return toolEndJSONEvent{
 		Type:       event.Type,
 		ToolCallID: event.ToolCall.ID,
 		Name:       event.ToolCall.Name,
-		IsError:    isError,
+		Kind:       kind,
+		Status:     status,
+		Locations:  locations,
 		Result:     truncateToolResult(result),
 		DurationMS: duration.Milliseconds(),
 	}
@@ -158,19 +171,24 @@ type messageEndJSONEvent struct {
 }
 
 type toolStartJSONEvent struct {
-	Type       agent.EventType `json:"type"`
-	ToolCallID string          `json:"tool_call_id"`
-	Name       string          `json:"name"`
-	Arguments  json.RawMessage `json:"arguments"`
+	Type       agent.EventType            `json:"type"`
+	ToolCallID string                     `json:"tool_call_id"`
+	Name       string                     `json:"name"`
+	Kind       interaction.ToolKind       `json:"kind"`
+	Status     interaction.ToolStatus     `json:"status"`
+	Locations  []interaction.ToolLocation `json:"locations,omitempty"`
+	Arguments  json.RawMessage            `json:"arguments"`
 }
 
 type toolEndJSONEvent struct {
-	Type       agent.EventType `json:"type"`
-	ToolCallID string          `json:"tool_call_id"`
-	Name       string          `json:"name"`
-	IsError    bool            `json:"is_error"`
-	Result     string          `json:"result"`
-	DurationMS int64           `json:"duration_ms"`
+	Type       agent.EventType            `json:"type"`
+	ToolCallID string                     `json:"tool_call_id"`
+	Name       string                     `json:"name"`
+	Kind       interaction.ToolKind       `json:"kind"`
+	Status     interaction.ToolStatus     `json:"status"`
+	Locations  []interaction.ToolLocation `json:"locations,omitempty"`
+	Result     string                     `json:"result"`
+	DurationMS int64                      `json:"duration_ms"`
 }
 
 type retryStartJSONEvent struct {

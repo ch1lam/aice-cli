@@ -64,6 +64,8 @@ var fileTools = map[string]bool{
 	"read": true, "write": true, "edit": true, "grep": true, "find": true, "ls": true,
 }
 
+var searchTools = map[string]bool{"grep": true, "find": true, "ls": true}
+
 func isKnownTool(name string) bool {
 	return fileTools[name] || name == "bash" || name == "skill" || name == "tool_search" || name == "mcp_resource_list" || name == "mcp_server_info" || name == "tool_result_read" || name == "request_user_input" || isNetworkTool(name)
 }
@@ -92,7 +94,11 @@ func extractStringArgument(raw json.RawMessage, key string) string {
 func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
-		if strings.TrimSpace(p) == "" {
+		if p == "" && searchTools[call.Name] {
+			// Search tools default to the working directory.
+			p = "."
+		}
+		if p == "" {
 			return bashAnalysis{}
 		}
 		op := opRead

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestTranslateAgentEventStreamsAssistantDeltas(t *testing.T) {
 			})
 			if display == nil ||
 				display.Kind != interaction.EventAssistantDelta ||
-				display.Delta != tt.want {
+				!reflect.DeepEqual(display.Delta, tt.want) {
 				t.Fatalf("message_update translation = %#v, want %#v", display, tt.want)
 			}
 		})
@@ -126,7 +127,7 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 			Concludes: true,
 		},
 	}
-	if display == nil || *display != *want {
+	if display == nil || !reflect.DeepEqual(*display, *want) {
 		t.Fatalf("message_end translation = %#v, want %#v", display, want)
 	}
 
@@ -180,7 +181,7 @@ func TestTranslateAgentEventAcceptsSteer(t *testing.T) {
 			Text: "change direction",
 		},
 	}
-	if display == nil || *display != *want {
+	if display == nil || !reflect.DeepEqual(*display, *want) {
 		t.Fatalf("steer translation = %#v, want %#v", display, want)
 	}
 }
@@ -205,7 +206,7 @@ func TestTranslateAgentEventAcceptsFollowUp(t *testing.T) {
 			Text: "continue",
 		},
 	}
-	if display == nil || *display != *want {
+	if display == nil || !reflect.DeepEqual(*display, *want) {
 		t.Fatalf("follow-up translation = %#v, want %#v", display, want)
 	}
 }
@@ -225,12 +226,13 @@ func TestTranslateAgentEventExtractsToolInput(t *testing.T) {
 	want := &interaction.Event{
 		Kind: interaction.EventToolStart,
 		Tool: interaction.ToolDisplay{
-			ID:     "bash-call",
-			Name:   "bash",
-			Detail: "go test ./...\nprintf done",
+			ID:        "bash-call",
+			Name:      "bash",
+			Detail:    "go test ./...\nprintf done",
+			Arguments: call.Arguments,
 		},
 	}
-	if display == nil || *display != *want {
+	if display == nil || !reflect.DeepEqual(*display, *want) {
 		t.Fatalf("tool start translation = %#v, want %#v", display, want)
 	}
 
@@ -326,7 +328,7 @@ func TestTranslateAgentEventRetriesAndAgentEnd(t *testing.T) {
 			Delay:      0,
 		},
 	}
-	if display == nil || *display != *want {
+	if display == nil || !reflect.DeepEqual(*display, *want) {
 		t.Fatalf("retry_start translation = %#v, want %#v", display, want)
 	}
 

@@ -54,10 +54,7 @@ func TestEditDiffProjectionAfterReplayAndPrintContract(t *testing.T) {
 			}
 			for _, format := range []string{"text", "json"} {
 				var output, diagnostics bytes.Buffer
-				printer, err := newPrintSink(format, &output, &diagnostics)
-				if err != nil {
-					t.Fatal(err)
-				}
+				printer := newPrintSink(format, &output, &diagnostics, toolDescriber{})
 				if err := printer.Accept(t.Context(), event); err != nil {
 					t.Fatal(err)
 				}
