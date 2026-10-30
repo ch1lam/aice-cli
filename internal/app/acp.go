@@ -45,7 +45,7 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	}
 	serveErr := acp.Serve(ctx, runner.frontend(), acp.Options{
 		Workspace: environment.workspace.PhysicalPath(),
-		Version:   buildinfo.Version,
+		Version:   buildinfo.Build(),
 		Host:      runner,
 	}, request.Input, request.Output)
 	return errors.Join(serveErr, closeInteractiveStore(runner.conversation.store))

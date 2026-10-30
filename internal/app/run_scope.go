@@ -66,7 +66,7 @@ func runConfigRecorder(store *session.Store) agent.RequestRecorder {
 		return nil
 	}
 	return func(ctx context.Context, config llm.RequestConfig) (string, error) {
-		record, err := session.NewRunConfig(buildinfo.Version, config, time.Now().UnixMilli())
+		record, err := session.NewRunConfig(buildinfo.Build(), config, time.Now().UnixMilli())
 		if err != nil {
 			return "", err
 		}

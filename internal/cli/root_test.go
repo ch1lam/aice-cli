@@ -587,6 +587,10 @@ func (*recordingNavigator) SessionReviews(context.Context, cli.SessionTreeReques
 	return nil
 }
 
+func (*recordingNavigator) SessionStats(context.Context, []string, io.Writer) error {
+	return nil
+}
+
 func (*recordingConfigurator) SaveAPIKey(
 	context.Context,
 	cli.APIKeyRequest,

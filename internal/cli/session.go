@@ -42,6 +42,9 @@ type SessionNavigator interface {
 		request SessionTreeRequest,
 		output io.Writer,
 	) error
+	// SessionStats writes process metrics of each Session file, one JSON
+	// object per line, reading the files without opening them for writing.
+	SessionStats(ctx context.Context, paths []string, output io.Writer) error
 }
 
 func newSessionCommand(navigator SessionNavigator) *cobra.Command {
@@ -56,6 +59,7 @@ func newSessionCommand(navigator SessionNavigator) *cobra.Command {
 		newSessionTreeCommand(navigator),
 		newSessionCheckoutCommand(navigator),
 		newSessionReviewsCommand(navigator),
+		newSessionStatsCommand(navigator),
 	)
 	return command
 }
@@ -80,6 +84,26 @@ func newSessionReviewsCommand(navigator SessionNavigator) *cobra.Command {
 		},
 	}
 	addSessionFlags(command, &options.workspace, &options.session)
+	return command
+}
+
+func newSessionStatsCommand(navigator SessionNavigator) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "stats FILE...",
+		Short: "Print process metrics of Session files as JSON lines",
+		Args: func(command *cobra.Command, args []string) error {
+			return newUsageError(cobra.MinimumNArgs(1)(command, args))
+		},
+		RunE: func(command *cobra.Command, args []string) error {
+			if err := navigator.SessionStats(command.Context(), args, command.OutOrStdout()); err != nil {
+				return fmt.Errorf("session stats: %w", err)
+			}
+			return nil
+		},
+	}
+	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return newUsageError(err)
+	})
 	return command
 }
 

@@ -625,7 +625,9 @@ session filename stem.
 
 A `run_config` record holds everything besides source history that shapes a
 model request: model identity, full system prompt, tool definitions in sending
-order, stream options and the tool-result view budget, plus the AICE build. Its
+order, stream options and the tool-result view budget, plus the AICE build
+(the release version, or for a local build `dev+<revision>`, with `-dirty` when
+the checkout had uncommitted changes). Its
 ID is the SHA-256 of that content, so an unchanged configuration is written
 once and a run reuses it across turns, processes and branches. Like titles,
 run configs are not tree nodes and never enter model context. A configuration
@@ -746,7 +748,17 @@ aice session checkout --workspace . \
 # Move back to the tree root
 aice session checkout --workspace . \
   --session .aice/sessions/<id>.jsonl --entry root
+
+# Process metrics of any Session files, one JSON object per file
+aice session stats path/to/a.jsonl path/to/b.jsonl
 ```
+
+`session stats` reads files without locking or repairing them, so it also
+inspects Sessions copied from other hosts such as evaluation trials. It counts
+every recorded branch: usage and cost, model requests and failed attempts, the
+last stop reason, tool calls by name with errors, refusals and unknown
+outcomes, the Guard's actions by kind, compactions, builds, models, and the
+span between the first and last record.
 
 The TUI exposes the same behavior through `/session`, `/tree`, and
 `/checkout`. `/new` detaches from the current Session without creating a

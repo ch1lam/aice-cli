@@ -90,6 +90,30 @@ func TestSessionCommandsRunNavigator(t *testing.T) {
 	}
 }
 
+func TestSessionStatsTakesFiles(t *testing.T) {
+	t.Parallel()
+	navigator := &sessionRecorder{response: "{}\n"}
+	command, err := cli.NewRootCommand(cli.Dependencies{
+		Printer:      &recordingPrinter{},
+		Interactor:   &recordingInteractor{},
+		Compactor:    &recordingCompactor{},
+		Navigator:    navigator,
+		Configurator: &recordingConfigurator{},
+	})
+	if err != nil {
+		t.Fatalf("NewRootCommand() error = %v", err)
+	}
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs([]string{"session", "stats", "a.jsonl", "b.jsonl"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	if got := strings.Join(navigator.statsPaths, ","); got != "a.jsonl,b.jsonl" || output.String() != "{}\n" {
+		t.Fatalf("paths = %q, output = %q", got, output.String())
+	}
+}
+
 func TestSessionCommandsRejectUsageErrors(t *testing.T) {
 	t.Parallel()
 
@@ -102,6 +126,11 @@ func TestSessionCommandsRejectUsageErrors(t *testing.T) {
 			name: "tree missing session",
 			args: []string{"session", "tree"},
 			want: "session must not be blank",
+		},
+		{
+			name: "stats without files",
+			args: []string{"session", "stats"},
+			want: "requires at least 1 arg",
 		},
 		{
 			name: "checkout missing entry",
@@ -173,6 +202,7 @@ func TestSessionCommandReturnsNavigatorError(t *testing.T) {
 }
 
 type sessionRecorder struct {
+	statsPaths      []string
 	treeRequest     cli.SessionTreeRequest
 	reviewsRequest  cli.SessionTreeRequest
 	checkoutRequest cli.SessionCheckoutRequest
@@ -199,6 +229,15 @@ func (s *sessionRecorder) SessionReviews(
 	output io.Writer,
 ) error {
 	s.reviewsRequest = request
+	if s.err != nil {
+		return s.err
+	}
+	_, err := io.WriteString(output, s.response)
+	return err
+}
+
+func (s *sessionRecorder) SessionStats(_ context.Context, paths []string, output io.Writer) error {
+	s.statsPaths = paths
 	if s.err != nil {
 		return s.err
 	}
