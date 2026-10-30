@@ -387,7 +387,7 @@ func (a *application) Interactive(
 		askUI,
 		request.Yolo,
 		configured,
-		true,
+		runFrontend{asks: true, questions: true},
 	)
 	if err != nil {
 		return err
@@ -420,7 +420,7 @@ func (a *application) Interactive(
 		return err
 	}
 
-	runner, err = a.newInteractiveSession(environment, store, history, usage, true)
+	runner, err = a.newInteractiveSession(environment, store, history, usage)
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
@@ -529,6 +529,14 @@ type runEnvironment struct {
 	trust        trust.Resolution
 	guard        *guard.Guard
 	guardAdapter *guardAdapter
+	frontend     runFrontend
+}
+
+// runFrontend states what the frontend of a run can answer: Guard asks from
+// a connected user or client, and request_user_input questions. The question
+// tool is offered only when a frontend can answer it.
+type runFrontend struct {
+	asks, questions bool
 }
 
 type configuredModel struct {
@@ -558,7 +566,7 @@ func (a *application) newRunEnvironment(
 		askUI,
 		yolo,
 		configured,
-		false,
+		runFrontend{},
 	)
 }
 
@@ -569,7 +577,7 @@ func (a *application) prepareRunEnvironment(
 	askUI trust.AskFunc,
 	yolo bool,
 	configured configuredModel,
-	interactive bool,
+	frontend runFrontend,
 ) (*runEnvironment, error) {
 	workspace, err := tool.NewWorkspace(workingDirectory)
 	if err != nil {
@@ -604,7 +612,7 @@ func (a *application) prepareRunEnvironment(
 		workspace.PhysicalPath(),
 		resolution.Decision == trust.DecisionTrusted,
 	)
-	tools, err := newBuiltInTools(ctx, workspace, interactive)
+	tools, err := newBuiltInTools(ctx, workspace, frontend.questions)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +655,7 @@ func (a *application) prepareRunEnvironment(
 		return nil, err
 	}
 	adapter.mcp = mcpRunRouter{}
-	adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !interactive, false)
+	adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !frontend.asks, false)
 	if err := adapter.setPermissionMode(configured.configuration.PermissionMode); err != nil {
 		return nil, err
 	}
@@ -668,18 +676,18 @@ func (a *application) prepareRunEnvironment(
 		trust:         resolution,
 		guard:         g,
 		guardAdapter:  adapter,
+		frontend:      frontend,
 	}, nil
 }
 
 // newInteractiveSession assembles the Session controller shared by every
-// interactive frontend. questions binds the question tool to this Session;
-// without it the tool reports that no frontend can answer.
+// interactive frontend, binding the question tool when the environment
+// offers it.
 func (a *application) newInteractiveSession(
 	environment *runEnvironment,
 	store *session.Store,
 	history []llm.AgentMessage,
 	usage llm.Usage,
-	questions bool,
 ) (*interactiveSession, error) {
 	runner := &interactiveSession{
 		mcp:           environment.mcp,
@@ -708,7 +716,7 @@ func (a *application) newInteractiveSession(
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
 	}
-	if questions {
+	if environment.frontend.questions {
 		runner.questionRequests = make(chan interaction.QuestionPrompt, questionBridgeCapacity)
 	}
 	// The question tool advertises its schema from the environment; only now

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,12 +27,19 @@ type acpScriptModel struct {
 	mu      sync.Mutex
 	outside string
 	turns   int
+	// tools are the tool names offered by the first request.
+	tools []string
 }
 
 func (m *acpScriptModel) Stream(_ context.Context, request llm.Request) (llm.Stream, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.turns++
+	if m.tools == nil {
+		for _, definition := range request.Tools {
+			m.tools = append(m.tools, definition.Name)
+		}
+	}
 	switch m.turns % 3 {
 	case 1:
 		return toolCallEventStream(request.Model, llm.ToolCall{ID: "inside", Name: "read", Arguments: []byte(`{"path":"notes.txt"}`)}), nil
@@ -226,6 +234,12 @@ func TestACPServesSessionsThroughInteractionContracts(t *testing.T) {
 	}
 	if response.StopReason != sdk.StopReasonEndTurn || response.Usage == nil || response.Usage.InputTokens != 15 || response.Usage.OutputTokens != 2 {
 		t.Fatalf("prompt response = %+v usage %+v", response, response.Usage)
+	}
+	model.mu.Lock()
+	offered := model.tools
+	model.mu.Unlock()
+	if !slices.Contains(offered, "read") || slices.Contains(offered, "request_user_input") {
+		t.Fatalf("offered tools = %v; ACP cannot answer request_user_input", offered)
 	}
 	updates, permissions := server.client.snapshot()
 	if len(permissions) != 1 || permissions[0].ToolCall.ToolCallId != "outside" {

@@ -65,6 +65,8 @@ option. The unattended `allow` mode of a client therefore lifts asks only, as
 - A tool call is reported `in_progress` when the Loop dispatches it, before the
   Guard decides; the Loop has no separate execution-start event. A permission
   request during that call marks the wait for approval instead of `pending`.
+- `request_user_input` is not offered: ACP has no question request, so the
+  model states missing information in its reply.
 - Branches, `/btw`, Settings and slash commands have no ACP mapping.
 
 ## Verification

@@ -930,8 +930,8 @@ and thread drafts keep the expanded text.
 
 ### Asking the user (Q&A)
 
-The interactive-only `request_user_input` tool asks 1–3 questions with at most
-3 options each. It is for consequential missing requirements/preferences, not
+The TUI-only `request_user_input` tool asks 1–3 questions with at most
+3 options each; print mode and `aice acp` do not offer it. It is for consequential missing requirements/preferences, not
 permissions, credentials or information available from the repository.
 
 Up/Down moves focus; Left/Right switches questions. Space or a digit selects;

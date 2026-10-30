@@ -25,8 +25,8 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	if err != nil {
 		return err
 	}
-	// The connected client answers Guard asks, so the run is interactive.
-	environment, err := a.prepareRunEnvironment(ctx, request.Workspace, request.ProjectTrustOverride, nil, request.Yolo, configured, true)
+	// The connected client answers Guard asks; ACP has no question request.
+	environment, err := a.prepareRunEnvironment(ctx, request.Workspace, request.ProjectTrustOverride, nil, request.Yolo, configured, runFrontend{asks: true})
 	if err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	if err != nil {
 		return err
 	}
-	runner, err := a.newInteractiveSession(environment, store, history, usage, false)
+	runner, err := a.newInteractiveSession(environment, store, history, usage)
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}

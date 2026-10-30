@@ -11,7 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, interactive bool) ([]agent.Tool, error) {
+func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, questions bool) ([]agent.Tool, error) {
 	if workspace == nil {
 		return nil, fmt.Errorf("app: workspace is required")
 	}
@@ -40,11 +40,11 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, interactive
 	add("find", find, err)
 	ls, err := tool.NewLS(workspace)
 	add("ls", ls, err)
-	// request_user_input is interactive-only: --print and Harbor never see
-	// its schema, so a non-interactive model states missing information in
-	// its output instead of waiting on terminal input. The asker stays
-	// unbound until the interactive Session exists (see bindQuestionTool).
-	if interactive {
+	// request_user_input exists only for a frontend that answers questions:
+	// --print and ACP never see its schema, so the model states missing
+	// information in its output instead. The asker stays unbound until the
+	// interactive Session exists (see bindQuestionTool).
+	if questions {
 		tools = append(tools, tool.NewRequestUserInput(nil))
 	}
 	return tools, nil
