@@ -1,6 +1,6 @@
 # AICE 评测架构与标准接入设计
 
-状态：D1–D8 已获用户批准，未开始实施。设计日期：2026-10-30。起始代码基线：`269eeec`。
+状态：D1–D8 已获用户批准；P0 已完成（结论见 §6），P1 进行中。设计日期：2026-10-30。起始代码基线：`269eeec`。
 
 本文是已批准的实施方案，不覆盖尚未变更的运行契约。按阶段实现，并把实际行为写入对应的维护文档；
 全部阶段交付后删除本文，只保留维护文档中的现行设计。
@@ -198,10 +198,47 @@ Guard 已经为每次工具调用解析出权威的归一化动作（文件读�
 
 ## 6. P0 结论与退路
 
-待 P0 填写。
+P0 于 2026-10-30 在临时分支 `spike/acp-harbor` 完成（未合入）。环境：Harbor 0.22.0，
+`acp-go-sdk` v0.13.5，Python `agent-client-protocol` 0.12.1，模型 opencode-go `deepseek-v4.1-flash`、推理 high。
 
-若 Harbor ACP 不能运行本地构建，保留一个 Harbor agent 子类，只负责上传本地二进制，
-其余复用 Harbor 的 ACP 实现，仍不解析 Session。
+**SDK 审查。** `github.com/coder/acp-go-sdk` 最新 v0.13.5（2026-06-02），仓库 2026-10 仍活跃
+（10-28 修复入站请求与先前通知的顺序），Apache-2.0，`go 1.21`，无传递依赖，与 `go 1.26.8` 兼容。
+Prompt 的 `usage` 与 `usage_update` 在 SDK 中标为 unstable。
+
+**Q1 本地构建。** 不能直接运行。Harbor 的 ACP 分发只有三种：二进制（只接受 HTTPS 归档，在容器内 `curl` 下载）、
+npx、uvx；`source` 只接受带 `pyproject.toml` 与锁文件的 Python 项目；`registry_entry_path` 只是本地条目，
+仍走这三种分发。因此启用 §6 退路：一个约 40 行的 `AcpAgent` 子类，只覆写 `_install_binary_target`
+改为上传本地二进制，其余（依赖安装、启动脚本、ACP 客户端、ATIF 生成）全部复用 Harbor。
+发布版本可直接用二进制分发条目。
+
+**Q2 ATIF。** Harbor 从 `acp-events.jsonl` 生成 ATIF-v1.6，通过 `python -m harbor.utils.trajectory_validator`。
+内容：user 指令步、按工具周期推断的 agent 步（message、reasoning_content、tool_calls、observation）、
+最后一步与 `final_metrics` 的 prompt/completion token。缺失：时间戳、逐步用量、缓存 token 与成本、
+`model_name`（AICE 未声明模型选择时）；`function_name` 取 ACP `kind` 而非工具名，`arguments` 取 `rawInput`。
+排行榜只要求每个得分 trial 有 ATIF 供 LLM 评审查奖励作弊，不要求字段完整，现有输出满足。
+保真度在 AICE 的 ACP 投影内提升，不另建 ATIF 生成方：`rawInput` 发送真实参数，每轮发 `usage_update`，
+通过会话配置选项声明模型。
+
+**Q3 权限。** Harbor 的 `permission_mode`：`allow` 选第一个 `allow_once`/`allow_always` 选项，
+`deny` 返回 `cancelled`。AICE 把 Guard 的 ask 映射为 `session/request_permission`，`allow-once` 排第一，
+cancelled 或出错时回复 Guard 的 deny 选项。实测：工作区外读取在 `allow` 下放行一次、在 `deny` 下被拒；
+`.env` 的硬 deny 在 `allow` 下也从未发出请求，工具结果为失败。与契约一致：deny 不可被客户端放行；
+ACP 下 ask 由客户端回答，“非交互 ask 失败关闭”只适用于没有客户端的 print 模式。
+P2 注意：工具在等待授权时应报 `pending` 而非 `in_progress`；`allow_always` 类选项会写入用户设置，
+无人值守客户端只应得到会话级选项，或由 `allow` 模式只选 `allow_once`（现状如此）。
+
+**Q4 Session 取回。** 启动参数 `--session /logs/agent/aice-session.jsonl`；`/logs/agent` 挂载为 trial 的
+`agent/` 目录，结束后 Session 随日志回到主机，无需 `--artifact`。实测 `fix-git`：奖励 1.0，Session（v3，33 条记录）、
+`acp-events.jsonl`、`trajectory.json` 都在 trial 目录，ATIF 的 `session_id` 等于 AICE Session ID，ATIF 通过校验。
+凭证经 `--ae 'AICE_OPENCODE_API_KEY=${AICE_OPENCODE_API_KEY}'` 传入，Harbor 只保存模板，job 目录中没有明文。
+
+**环境代价。** Harbor 的 ACP 路径在每个任务容器里安装 Python、pip 与 `agent-client-protocol`（ACP 客户端运行在容器内）。
+`log-summary-date-ranges` 在这一步（`apt-get` 与 `pip install`，早于上传 AICE）超过默认 360 秒，
+记为 `AgentSetupTimeoutError`，与 AICE 无关。开发集运行需加 `--agent-setup-timeout-multiplier`，或在 P2 预构建带客户端的基础层。
+
+**D2 结论。** 确认 D2，附一项调整：本地构建通过上述薄子类接入，子类只负责上传二进制，不解析 Session，
+P2 放在 `evals/` 下替代 `integrations/harbor`；
+ATIF 由 Harbor 生成，不启用 AICE 侧 ATIF 投影。`integrations/harbor` 的 Python Session 转换器照计划删除。
 
 若 Harbor 生成的 ATIF 不满足排行榜要求，由 AICE 的 Go 代码从 Session 投影 ATIF，替代 Harbor 的生成结果，
 保持只有一个生成方，并用官方校验器做一致性测试。
