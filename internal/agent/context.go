@@ -45,65 +45,46 @@ func (e *runExecution) checkedRequest(history []llm.AgentMessage) (llm.Request, 
 	return request, err
 }
 
+// requestConfig is the effective non-message input of the next call.
+func (e *runExecution) requestConfig() llm.RequestConfig {
+	config := llm.RequestConfig{
+		Model:            e.input.Model,
+		SystemPrompt:     e.input.SystemPrompt,
+		Tools:            e.definitions,
+		Options:          e.input.Options,
+		ResultViewTokens: e.input.ResultViewTokens,
+	}
+	if e.toolNotice != "" {
+		config.SystemPrompt += "\n\n" + e.toolNotice
+	}
+	if e.degradeReasoning {
+		config.Options.FilterReasoningHistory = true
+	}
+	return config
+}
+
 func (e *runExecution) requestForHistory(
 	history []llm.AgentMessage,
 ) (llm.Request, error) {
-	definitions := make([]llm.ToolDefinition, len(e.definitions))
-	for index, definition := range e.definitions {
-		definition.InputSchema = slices.Clone(definition.InputSchema)
-		definition.PromptGuidelines = slices.Clone(definition.PromptGuidelines)
-		definitions[index] = definition
-	}
-	messages, err := llm.AgentMessagesToMessages(history)
+	request, changed, err := llm.BuildRequest(e.requestConfig(), history)
 	if err != nil {
-		return llm.Request{}, fmt.Errorf("agent: project history: %w", err)
+		return llm.Request{}, fmt.Errorf("agent: %w", err)
 	}
-	boundedResults := llm.BoundToolResultViews(messages, e.input.ResultViewTokens)
-	if !slices.Contains(e.input.Model.InputModalities, llm.InputModalityImage) {
-		boundedResults = omitToolResultImages(messages) || boundedResults
-	}
-	request := llm.Request{
-		Model:             e.input.Model,
-		SystemPrompt:      e.input.SystemPrompt,
-		Messages:          messages,
-		Tools:             definitions,
-		Options:           e.input.Options,
-		ReestimateContext: e.input.Catalog != nil || boundedResults,
-	}
-	if e.toolNotice != "" {
-		request.SystemPrompt += "\n\n" + e.toolNotice
-	}
-	if e.degradeReasoning {
-		request.Options.FilterReasoningHistory = true
-	}
+	request.ReestimateContext = e.input.Catalog != nil || changed
 	return protectRequestContext(request)
 }
 
 func protectRequestContext(request llm.Request) (llm.Request, error) {
-	contextWindow := request.Model.ContextWindow
-	if contextWindow <= 0 {
-		return request, nil
-	}
-
-	_, safetyTokens := llm.ContextBudgets(contextWindow)
-	estimate := llm.EstimateContextTokens(request)
-	requestedMaxTokens := request.Options.MaxTokens
-	if requestedMaxTokens == 0 {
-		requestedMaxTokens = request.Model.MaxTokens
-	}
-	availableMaxTokens := contextWindow - estimate.Tokens - safetyTokens
-	if availableMaxTokens <= 0 {
+	fitted, estimate, ok := llm.FitOutputTokens(request)
+	if !ok {
 		return llm.Request{}, fmt.Errorf(
 			"%w: estimated context is %d tokens in a %d-token window",
 			ErrContextLimit,
-			estimate.Tokens,
-			contextWindow,
+			estimate,
+			request.Model.ContextWindow,
 		)
 	}
-	if requestedMaxTokens > availableMaxTokens {
-		request.Options.MaxTokens = availableMaxTokens
-	}
-	return request, nil
+	return fitted, nil
 }
 
 func checkCompactionThreshold(request llm.Request) error {
@@ -125,32 +106,4 @@ func checkCompactionThreshold(request llm.Request) error {
 		compactionThreshold,
 		contextWindow,
 	)
-}
-
-// omitToolResultImages keeps a text-only model's request valid when a tool,
-// such as an MCP service, returned images. Only the projected request changes;
-// the recorded source result keeps its images for display and readback.
-func omitToolResultImages(messages []llm.Message) bool {
-	omitted := false
-	for i, message := range messages {
-		result, ok := message.(llm.ToolResultMessage)
-		if !ok || !slices.ContainsFunc(result.Content, func(part llm.ContentPart) bool { return part.Type == llm.ContentTypeImage }) {
-			continue
-		}
-		content := make([]llm.ContentPart, len(result.Content))
-		for j, part := range result.Content {
-			content[j] = part
-			if part.Type == llm.ContentTypeImage {
-				mime := "image"
-				if part.Image != nil && part.Image.MIMEType != "" {
-					mime = part.Image.MIMEType
-				}
-				content[j] = llm.NewTextContent("[" + mime + " omitted: the current model does not accept image input. The recorded result keeps it; use an image-capable model to inspect it.]").Part()
-			}
-		}
-		result.Content = content
-		messages[i] = result
-		omitted = true
-	}
-	return omitted
 }
