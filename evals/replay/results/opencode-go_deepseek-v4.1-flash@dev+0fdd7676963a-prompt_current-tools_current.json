@@ -1,0 +1,32 @@
+{
+  "model": "opencode-go/deepseek-v4.1-flash",
+  "build": "dev+0fdd7676963a",
+  "prompt": "current",
+  "tools": "current",
+  "runs": 3,
+  "passed": 2,
+  "total": 3,
+  "usage": {
+    "input_tokens": 6548,
+    "output_tokens": 1593,
+    "reasoning_tokens": 733,
+    "cache_read_tokens": 12544,
+    "total_tokens": 20685,
+    "cost": {
+      "input": 0.0009822,
+      "output": 0.0009557999999999999,
+      "cache_read": 0.000037631999999999995,
+      "cache_write": 0,
+      "total": 0.0019756319999999997
+    }
+  },
+  "cases": [
+    {
+      "id": "nginx-exact-page-content",
+      "passed": 2,
+      "failures": [
+        "call tool=\"\" pattern=\"index\\\\.html\""
+      ]
+    }
+  ]
+}
