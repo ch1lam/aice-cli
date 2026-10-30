@@ -1,6 +1,6 @@
 # AICE 评测架构与标准接入设计
 
-状态：D1–D8 已获用户批准；P0 已完成（结论见 §6），P1 已完成（D5、D4、D3）；P2 已实现，开发集验收运行待完成。设计日期：2026-10-30。起始代码基线：`269eeec`。
+状态：D1–D8 已获用户批准；P0 已完成（结论见 §6），P1 已完成（D5、D4、D3）；P2 已完成（运行结果见 P2 节）。设计日期：2026-10-30。起始代码基线：`269eeec`。
 
 本文是已批准的实施方案，不覆盖尚未变更的运行契约。按阶段实现，并把实际行为写入对应的维护文档；
 全部阶段交付后删除本文，只保留维护文档中的现行设计。
@@ -187,6 +187,15 @@ Guard 已经为每次工具调用解析出权威的归一化动作（文件读�
 - 删除 `integrations/harbor`，运行说明迁入新的评测文档并加入 AGENTS 任务表。
 - print 模式的 JSON 输出改用与 ACP 相同的工具语义词汇（`kind`、`status`、`locations`）。
 - `docs/architecture.md` 加入新包、新依赖与前端边界。
+
+**结果（2026-10-30，`a5aa40e`，opencode-go `deepseek-v4.1-flash`、推理 high，`-n 4`）：** 25 个 trial，
+22 个产生 ATIF，全部通过官方校验器；每个运行过 AICE 的 trial 都带回原生 Session（各含一条 `run_config`）。
+排除 6 个非 AICE 结果：主机休眠约 7 小时使 4 个在途 trial 超时（`build-pmars` 环境启动、`fix-git` verifier、
+`headless-terminal` 与 `modernize-scientific-stack` 的模型请求在唤醒时失败），`make-mips-interpreter`
+拉取镜像时本机代理拒绝连接，`qemu-alpine-ssh` 的镜像只有 Python 3.9 而 Harbor 的 ACP 客户端需要 3.10
+（已从开发集换为 `extract-moves-from-video`）。其余 19 个通过 14 个；`gcode-to-text` 在 900 秒处真实超时，
+`adaptive-rejection-sampler` 超时但已完成并通过。超时 trial 的 ATIF 没有最终用量，原生 Session 仍有。
+这是单次运行，不是基线；噪声底线由 P3 的 A/A 运行给出。
 
 ### P3：实验底座
 

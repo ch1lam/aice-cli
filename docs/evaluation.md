@@ -60,9 +60,15 @@ python -m harbor.utils.trajectory_validator jobs/<job>/<trial>/agent/trajectory.
 [`evals/harbor/tb21-dev.yaml`](../evals/harbor/tb21-dev.yaml) pins
 Terminal-Bench 2.1 by digest and lists the development set: the 25 tasks whose
 `sha256(name)` sorts first among tasks with an agent timeout of at most 1800 s,
-at most 2 CPUs and 4 GiB memory. The rule is reproducible and independent of
-AICE results. The full dataset is the acceptance set and runs only at
-milestones.
+at most 2 CPUs and 4 GiB memory, excluding tasks whose image cannot host
+Harbor's ACP client (`qemu-alpine-ssh`: Debian 11 with Python 3.9; the client
+needs 3.10). The rule is reproducible and independent of AICE results. The
+full dataset is the acceptance set and runs only at milestones.
+
+Harbor's agent, verifier and environment timeouts count wall-clock time, so a
+host that sleeps during a job turns in-flight trials into timeouts and failed
+model requests. Keep the host awake, and exclude trials that overlap a sleep
+rather than scoring them.
 
 ## Trajectory fidelity
 

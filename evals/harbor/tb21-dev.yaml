@@ -22,10 +22,10 @@ datasets:
       - terminal-bench/gcode-to-text
       - terminal-bench/write-compressor
       - terminal-bench/fix-git
-      - terminal-bench/qemu-alpine-ssh
       - terminal-bench/chess-best-move
       - terminal-bench/pytorch-model-cli
       - terminal-bench/modernize-scientific-stack
       - terminal-bench/constraints-scheduling
       - terminal-bench/nginx-request-logging
       - terminal-bench/dna-insert
+      - terminal-bench/extract-moves-from-video

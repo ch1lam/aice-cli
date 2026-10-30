@@ -4,3 +4,4 @@
 !/internal/classify/eval/*.jsonl
 /evals/harbor/bin/
 /jobs/
+__pycache__/

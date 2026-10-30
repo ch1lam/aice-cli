@@ -60,6 +60,7 @@ class AiceAcpAgent(AcpAgent):
         missing, without recommended packages. Harbor's default installs
         python3-pip with its recommended compiler toolchain on every trial,
         which can exceed the agent setup timeout on a slow package mirror.
+        The ACP client needs Python 3.10 or later.
         """
         venv = shlex.quote(self._RUNNER_VENV_PATH)
         return f"""
@@ -70,7 +71,10 @@ has_certs() {{
   done
   return 1
 }}
-if ! python3 -c 'import ensurepip, venv' >/dev/null 2>&1 || ! has_certs; then
+has_python() {{
+  python3 -c 'import sys, ensurepip, venv; sys.exit(sys.version_info < (3, 10))' >/dev/null 2>&1
+}}
+if ! has_python || ! has_certs; then
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
@@ -85,6 +89,10 @@ if ! python3 -c 'import ensurepip, venv' >/dev/null 2>&1 || ! has_certs; then
     echo "no package manager to install python3 and ca-certificates" >&2
     exit 1
   fi
+fi
+if ! has_python; then
+  echo "Harbor's ACP client needs Python 3.10 or later with venv; this image provides $(python3 --version 2>&1)" >&2
+  exit 1
 fi
 if ! {venv}/bin/python -c 'import acp' >/dev/null 2>&1; then
   rm -rf {venv}
