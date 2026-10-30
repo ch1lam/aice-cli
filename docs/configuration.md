@@ -636,6 +636,8 @@ The list below covers root-command flags. Use `aice --help` for the help
 provided by your installed binary and `aice <command> --help` for a subcommand.
 Defaults, settings keys and environment variables for limits appear only in
 the [run limits table](#run-limits) in this guide.
+`aice acp` serves editors and harnesses over the Agent Client Protocol with
+the workspace, Session and trust flags shown below; see [ACP](acp.md).
 
 ```text
 aice [--print <prompt>] [flags]

@@ -35,7 +35,7 @@ boundary and implementation disagree.
 
 ```text
 cmd/aice → internal/app (composition and lifecycle)
-  UI:       cli / tui → interaction contracts → app operations
+  UI:       cli / tui / acp → interaction contracts → app operations
   Run:      agent → llm contracts → provider / api adapters
   Tools:    agent → injected Guard → built-in tools / run-local MCP catalog
   History:  synchronous recorder → app conversation → session JSONL
@@ -86,6 +86,7 @@ Optional capabilities retain their own owners:
 | `internal/app` | Composition root, lifecycle, prompt assembly, Sessions, Agent-event translation, interactive commands |
 | `internal/cli` | Cobra commands, flags, validation, exit behavior |
 | `internal/tui` | Bubble Tea presentation and interaction-event rendering |
+| `internal/acp` | Agent Client Protocol frontend over stdio: maps `interaction` events, Guard asks and Session switches to ACP; SDK types stay here; [ACP](acp.md) |
 | `internal/interaction` | Frontend-neutral capability set (`Frontend`), active-run, event, command and panel, settings and structured details, question, and input-mailbox contracts |
 | `internal/agent` | Agent Loop, retries, tool lifecycle, Agent events |
 | `internal/media` | Shared image decoding, conversion, validation, resizing, original retention and coordinate descriptions |
@@ -214,5 +215,5 @@ would need Guard enforcement; subagents would need explicit child cancellation,
 permission and usage ownership; memory would need retention and retrieval rules.
 No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC layer,
 second transcript store or sandbox manager is implied by the current design.
-An approved ACP frontend over the `interaction` contracts is planned in the
-[evaluation design](plans/AICE_Evaluation_Design.md); it is not implemented.
+The ACP frontend is the standard headless interface: another `interaction`
+consumer like the TUI, with no execution or history of its own. See [ACP](acp.md).

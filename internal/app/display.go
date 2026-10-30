@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -50,9 +51,11 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 		return &interaction.Event{
 			Kind: interaction.EventAssistantEnd,
 			Assistant: interaction.AssistantDisplay{
-				Text:      text,
-				Thinking:  thinking,
-				Concludes: assistantConcludes(assistant),
+				Text:       text,
+				Thinking:   thinking,
+				Concludes:  assistantConcludes(assistant),
+				StopReason: assistant.StopReason,
+				Usage:      assistant.Usage,
 			},
 		}
 	case agent.EventTypeToolExecutionStart:
@@ -98,9 +101,19 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 			}
 		}
 	case agent.EventTypeAgentEnd:
-		return &interaction.Event{Kind: interaction.EventAgentEnd, Err: event.Err}
+		return &interaction.Event{Kind: interaction.EventAgentEnd, Err: event.Err, LimitReached: runLimitReached(event.Err)}
 	}
 	return nil
+}
+
+// runLimitReached reports a run stopped by a Loop limit rather than a failure.
+func runLimitReached(err error) bool {
+	for _, limit := range []error{agent.ErrMaxTurns, agent.ErrTokenBudget, agent.ErrTimeBudget, agent.ErrNoProgress, agent.ErrGuardDenials} {
+		if errors.Is(err, limit) {
+			return true
+		}
+	}
+	return false
 }
 
 func userContent(message llm.UserMessage) string {

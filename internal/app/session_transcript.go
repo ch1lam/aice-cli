@@ -68,6 +68,8 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 			tool.Evidence = displayToolEvidence(&message)
 			tool.Review = displayToolReview(&message)
 			tool.Failed = message.IsError
+			tool.Kind = interaction.ToolKindOf(call.Name, message.Actions)
+			tool.Locations = interaction.ToolLocations(message.Actions, snapshot.Header.WorkingDirectory)
 			if message.Details != nil && message.Details.Binding != nil {
 				tool.Name = mcpDisplayName(*message.Details.Binding)
 			}

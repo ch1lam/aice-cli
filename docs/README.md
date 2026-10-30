@@ -15,6 +15,7 @@ and quickstart. Use this index for task-specific guides.
 | Automate a browser through agent-browser | [Browser automation](browser.md) |
 | Set up desktop automation through Cua Driver | [Computer Use](desktop.md) |
 | Connect external tools and resources | [MCP](mcp.md) |
+| Drive AICE from an editor or harness over ACP | [Agent Client Protocol](acp.md) |
 
 ## Contributing and evaluating
 

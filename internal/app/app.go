@@ -148,6 +148,7 @@ func newCommand(dependencies dependencies) (*cobra.Command, error) {
 		Updater:       application,
 		Authenticator: application,
 		MCPManager:    application,
+		ACPServer:     application,
 	})
 	if err != nil {
 		return nil, err
@@ -419,52 +420,9 @@ func (a *application) Interactive(
 		return err
 	}
 
-	runner = &interactiveSession{
-		mcp:           environment.mcp,
-		browserBin:    a.browserHelper(),
-		application:   a,
-		guard:         environment.guard,
-		guardAdapter:  environment.guardAdapter,
-		guardRequests: make(chan interaction.GuardRequest, 4),
-		questionRequests: make(
-			chan interaction.QuestionPrompt,
-			questionBridgeCapacity,
-		),
-		conversation:  conversationState{store: store, history: history},
-		model:         environment.model,
-		options:       environment.options,
-		configuration: environment.configuration,
-		modelErr:      environment.modelErr,
-		tools:         environment.tools,
-		baseTools:     environment.baseTools,
-		web:           environment.web,
-		desktop:       a.newDesktopPreset(environment.configuration),
-		systemPrompt:  environment.systemPrompt,
-		skills:        environment.skills,
-		skillDiags:    environment.skillDiags,
-		trustStore:    trust.NewStore(environment.configuration.Paths.GlobalTrust),
-		workspace:     environment.workspace,
-		workspacePath: environment.workspace.PhysicalPath(),
-		trustDecision: environment.trust.Decision,
-		trustSource:   environment.trust.Source,
-		providers:     a.dependencies.providers,
-		totalUsage:    usage,
-	}
-	// The question tool advertises its schema from the environment; only now
-	// can it be answered, so bind this Session as its asker before the loop
-	// is created.
-	runner.bindQuestionTool()
-	if err := bindImageReader(runner.workspace, tool.ReadOptions{
-		LookupImage: runner.lookupImage, CanReadImages: runner.canReadImages,
-	}, runner.baseTools, runner.tools); err != nil {
+	runner, err = a.newInteractiveSession(environment, store, history, usage, true)
+	if err != nil {
 		return errors.Join(err, store.Close())
-	}
-	if environment.modelErr == nil && providerConfigured(a.dependencies.providers, environment.configuration) {
-		loop, err := runner.sessionLoop(environment.configuration, runner.tools)
-		if err != nil {
-			return errors.Join(err, store.Close())
-		}
-		runner.loop = loop
 	}
 	frontend := runner.frontend()
 	if a.dependencies.checkUpdate != nil {
@@ -711,6 +669,65 @@ func (a *application) prepareRunEnvironment(
 		guard:         g,
 		guardAdapter:  adapter,
 	}, nil
+}
+
+// newInteractiveSession assembles the Session controller shared by every
+// interactive frontend. questions binds the question tool to this Session;
+// without it the tool reports that no frontend can answer.
+func (a *application) newInteractiveSession(
+	environment *runEnvironment,
+	store *session.Store,
+	history []llm.AgentMessage,
+	usage llm.Usage,
+	questions bool,
+) (*interactiveSession, error) {
+	runner := &interactiveSession{
+		mcp:           environment.mcp,
+		browserBin:    a.browserHelper(),
+		application:   a,
+		guard:         environment.guard,
+		guardAdapter:  environment.guardAdapter,
+		guardRequests: make(chan interaction.GuardRequest, 4),
+		conversation:  conversationState{store: store, history: history},
+		model:         environment.model,
+		options:       environment.options,
+		configuration: environment.configuration,
+		modelErr:      environment.modelErr,
+		tools:         environment.tools,
+		baseTools:     environment.baseTools,
+		web:           environment.web,
+		desktop:       a.newDesktopPreset(environment.configuration),
+		systemPrompt:  environment.systemPrompt,
+		skills:        environment.skills,
+		skillDiags:    environment.skillDiags,
+		trustStore:    trust.NewStore(environment.configuration.Paths.GlobalTrust),
+		workspace:     environment.workspace,
+		workspacePath: environment.workspace.PhysicalPath(),
+		trustDecision: environment.trust.Decision,
+		trustSource:   environment.trust.Source,
+		providers:     a.dependencies.providers,
+		totalUsage:    usage,
+	}
+	if questions {
+		runner.questionRequests = make(chan interaction.QuestionPrompt, questionBridgeCapacity)
+	}
+	// The question tool advertises its schema from the environment; only now
+	// can it be answered, so bind this Session as its asker before the loop
+	// is created.
+	runner.bindQuestionTool()
+	if err := bindImageReader(runner.workspace, tool.ReadOptions{
+		LookupImage: runner.lookupImage, CanReadImages: runner.canReadImages,
+	}, runner.baseTools, runner.tools); err != nil {
+		return nil, err
+	}
+	if environment.modelErr == nil && providerConfigured(a.dependencies.providers, environment.configuration) {
+		loop, err := runner.sessionLoop(environment.configuration, runner.tools)
+		if err != nil {
+			return nil, err
+		}
+		runner.loop = loop
+	}
+	return runner, nil
 }
 
 // loadConfiguredModel retains display-only settings on an unavailable model.

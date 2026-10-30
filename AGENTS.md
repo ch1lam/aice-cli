@@ -43,6 +43,7 @@ and routes; README files may summarize product behavior and link to details.
 | Computer Use preset (Cua Driver as an ordinary MCP service), installation and setup | [Computer Use](docs/desktop.md) |
 | Web search services, priority, `web_fetch`, network permissions, evidence | [Web search and fetch](docs/web.md) |
 | Generic MCP connection, discovery, OAuth, result limits and implementation status | [MCP](docs/mcp.md) |
+| ACP frontend (`aice acp`), protocol mapping, schema validation | [Agent Client Protocol](docs/acp.md) |
 | Installation, helper binaries, source builds, updates | [Installation](docs/installation.md) |
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |

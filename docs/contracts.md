@@ -451,6 +451,11 @@ The runtime boundary preserves these ownership rules:
 - App offers a frontend one explicit `interaction.Frontend` capability set; a
   nil capability hides its feature. Frontends do not discover capabilities by
   type assertion.
+- Tool events carry the call's complete arguments on start and the shared tool
+  vocabulary (`Kind`, `Locations`) on start and end; assistant ends carry the
+  stop reason and usage; `EventAgentEnd.LimitReached` marks a Loop run limit.
+  Machine-readable frontends ([ACP](acp.md), print JSON) derive protocol state
+  from these fields instead of importing Agent or Session types.
 - Only Bubble Tea Update mutates UI state. App translates Agent events into
   interaction types; TUI does not import LLM/tool/Session implementation types.
   Context occupancy arrives as immutable application snapshots, separately

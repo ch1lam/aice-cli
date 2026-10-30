@@ -10,10 +10,12 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/anthropics/anthropic-sdk-go v1.74.0
 	github.com/charmbracelet/x/ansi v0.11.8
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go/v3 v3.63.1
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/image v0.46.0
@@ -69,7 +71,6 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect

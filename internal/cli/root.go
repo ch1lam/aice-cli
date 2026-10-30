@@ -63,6 +63,7 @@ type Dependencies struct {
 	Updater       Updater
 	Authenticator Authenticator
 	MCPManager    MCPManager
+	ACPServer     ACPServer
 }
 
 // NewRootCommand builds a fresh AICE command tree.
@@ -236,6 +237,9 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 	}
 	if dependencies.Updater != nil {
 		command.AddCommand(newUpdateCommand(dependencies.Updater))
+	}
+	if dependencies.ACPServer != nil {
+		command.AddCommand(newACPCommand(dependencies.ACPServer))
 	}
 
 	return command, nil

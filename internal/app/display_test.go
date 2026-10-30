@@ -122,9 +122,10 @@ func TestTranslateAgentEventCompletesAssistant(t *testing.T) {
 	want := &interaction.Event{
 		Kind: interaction.EventAssistantEnd,
 		Assistant: interaction.AssistantDisplay{
-			Text:      "**Answer.**",
-			Thinking:  "reasoning",
-			Concludes: true,
+			Text:       "**Answer.**",
+			Thinking:   "reasoning",
+			Concludes:  true,
+			StopReason: llm.StopReasonStop,
 		},
 	}
 	if display == nil || !reflect.DeepEqual(*display, *want) {

@@ -691,7 +691,7 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 	}
 	state := interaction.RuntimeState{
 		SessionID:        sessionID,
-		Model:            interaction.DisplayModel{ID: s.model.ID},
+		Model:            interaction.DisplayModel{ID: s.model.ID, Provider: string(s.model.Provider)},
 		Thinking:         thinking,
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		PermissionMode:   s.permissionMode(),

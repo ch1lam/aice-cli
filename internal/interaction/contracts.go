@@ -105,7 +105,8 @@ type SideThreadManager interface {
 
 // DisplayModel identifies the model shown by an interactive frontend.
 type DisplayModel struct {
-	ID string
+	ID       string
+	Provider string
 }
 
 // DisplayThinking is the reasoning level shown by an interactive frontend.
@@ -205,10 +206,13 @@ type Delta struct {
 }
 
 // AssistantDisplay is the complete assistant output of one model turn.
+// StopReason and Usage are set on EventAssistantEnd.
 type AssistantDisplay struct {
-	Text      string
-	Thinking  string
-	Concludes bool
+	Text       string
+	Thinking   string
+	Concludes  bool
+	StopReason llm.StopReason
+	Usage      llm.Usage
 }
 
 // ToolDisplay is one tool execution shown by a frontend. Detail is the raw
@@ -317,6 +321,9 @@ type Event struct {
 	Input     InputDisplay
 	Retry     RetryDisplay
 	Err       error
+	// LimitReached is set on EventAgentEnd when the run stopped at a run
+	// limit (turns, token or time budget, no progress, Guard denials).
+	LimitReached bool
 }
 
 // EventSink receives translated lifecycle events in order. Returning an error
