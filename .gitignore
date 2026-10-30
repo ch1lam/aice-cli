@@ -2,6 +2,7 @@
 /aice
 *.jsonl
 !/internal/classify/eval/*.jsonl
-/evals/harbor/bin/
+/evals/harbor/bin*/
 /jobs/
 __pycache__/
+!/evals/replay/cases.jsonl

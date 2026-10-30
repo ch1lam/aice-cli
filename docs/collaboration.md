@@ -20,6 +20,16 @@
   flaky cases. A set whose mean error rate exceeds its threshold in
   `classify.Thresholds` blocks the change; an allowed `injection` case in any
   run does.
+- Changes meant to improve agent behavior (system prompt, tool definitions or
+  results, Agent Loop control, context or compaction) attach an experiment
+  report from [Evaluation](evaluation.md#comparing-builds): the hypothesis
+  stated before running, both build revisions, model and reasoning level, task
+  set and its digest, attempts per task, and the comparison output with
+  excluded trials. A difference counts only when its 95% interval excludes zero
+  and exceeds the [noise floor](evaluation.md#noise-floor); otherwise report it
+  as no measured effect. Do not tune against the acceptance set. A replay
+  report (`evals/replay/results/`) supports a claim about one decision, not
+  overall performance.
 - Mark real-provider tests with an integration build tag and run them explicitly. Default tests must use faux providers and must not read provider credentials.
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.
