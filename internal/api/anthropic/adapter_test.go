@@ -416,6 +416,53 @@ func TestAdapterEmptyToolCallArgumentsBecomeEmptyObject(t *testing.T) {
 	}
 }
 
+// Anthropic reports input exclusive of cache tokens; a message_delta that
+// repeats cumulative counts replaces the message_start values.
+func TestAdapterDeltaUsageReplacesStartUsage(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewRawSSEServer(t, []string{
+		`event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"usage":{"input_tokens":4,"output_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1}}}\n\n`,
+		`event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n`,
+		`event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}\n\n`,
+		`event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n`,
+		`event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":5,"output_tokens":6,"cache_read_input_tokens":20,"cache_creation_input_tokens":3,"output_tokens_details":{"thinking_tokens":2}}}\n\n`,
+		`event: message_stop\ndata: {"type":"message_stop"}\n\n`,
+	})
+	defer server.Close()
+
+	adapter, err := anthropicapi.New(anthropicapi.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(anthropicapi.API))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+
+	events := apitest.CollectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeDone || last.Message == nil {
+		t.Fatalf("last event = %#v, want done", last)
+	}
+	want := llm.Usage{
+		InputTokens:      5,
+		OutputTokens:     6,
+		ReasoningTokens:  2,
+		CacheReadTokens:  20,
+		CacheWriteTokens: 3,
+		TotalTokens:      34,
+	}
+	if got := last.Message.Usage; !reflect.DeepEqual(got, want) {
+		t.Errorf("usage = %#v, want %#v", got, want)
+	}
+}
+
 func TestAdapterGroupsConsecutiveToolResultsInOneUserMessage(t *testing.T) {
 	t.Parallel()
 

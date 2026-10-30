@@ -39,6 +39,12 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
 - History and Session messages retain complete assistant metadata: API, provider,
   requested and response models, response ID, usage, stop reason, errors,
   content, and timestamp.
+- `Usage` counts input, cache reads, cache writes, and output as mutually
+  exclusive terms; reasoning is a subset of output. Each protocol adapter
+  subtracts cache tokens from an inclusive provider input count, and one
+  fixed-sample test per adapter pins its provider's raw convention. Cost prices
+  the four terms at execution time and persists with the Session. Projections to
+  inclusive conventions such as ACP or ATIF convert at their boundary.
 - Conversion from `[]AgentMessage` to `[]Message` happens only at the LLM
   boundary. Protocol adapters then translate into SDK or wire types.
 - Protocol adapters validate common request invariants with `Request.Validate`

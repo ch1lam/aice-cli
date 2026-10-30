@@ -423,14 +423,24 @@ type Cost struct {
 }
 
 // Usage contains normalized token accounting for a model request.
+// InputTokens, CacheReadTokens, CacheWriteTokens and OutputTokens are mutually
+// exclusive: the prompt size is the sum of the first three, and Cost prices each
+// of the four separately. Adapters for providers whose reported input includes
+// cache tokens subtract them. Projections to inclusive conventions (ACP, ATIF)
+// convert at their boundary.
 type Usage struct {
-	InputTokens      int64 `json:"input_tokens"`
-	OutputTokens     int64 `json:"output_tokens"`
+	// InputTokens excludes cache reads and cache writes.
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
+	// ReasoningTokens is the subset of OutputTokens spent on reasoning.
 	ReasoningTokens  int64 `json:"reasoning_tokens,omitempty"`
 	CacheReadTokens  int64 `json:"cache_read_tokens,omitempty"`
 	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
-	TotalTokens      int64 `json:"total_tokens"`
-	Cost             *Cost `json:"cost,omitempty"`
+	// TotalTokens is the provider-reported total when one is reported,
+	// otherwise the sum of the four exclusive counts.
+	TotalTokens int64 `json:"total_tokens"`
+	// Cost is priced at execution time and stored with the Session.
+	Cost *Cost `json:"cost,omitempty"`
 }
 
 // StopReason explains why model generation ended.
