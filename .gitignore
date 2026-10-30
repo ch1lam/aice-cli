@@ -2,3 +2,5 @@
 /aice
 *.jsonl
 !/internal/classify/eval/*.jsonl
+/evals/harbor/bin/
+/jobs/

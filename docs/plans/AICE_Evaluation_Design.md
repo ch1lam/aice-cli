@@ -1,6 +1,6 @@
 # AICE 评测架构与标准接入设计
 
-状态：D1–D8 已获用户批准；P0 已完成（结论见 §6），P1 已完成（D5、D4、D3）。设计日期：2026-10-30。起始代码基线：`269eeec`。
+状态：D1–D8 已获用户批准；P0 已完成（结论见 §6），P1 已完成（D5、D4、D3）；P2 已实现，开发集验收运行待完成。设计日期：2026-10-30。起始代码基线：`269eeec`。
 
 本文是已批准的实施方案，不覆盖尚未变更的运行契约。按阶段实现，并把实际行为写入对应的维护文档；
 全部阶段交付后删除本文，只保留维护文档中的现行设计。
@@ -66,6 +66,11 @@ ACP 前端与 TUI、print 一样，是 `interaction.Frontend` 的一个使用方
 
 AICE 的分支、`/btw`、设置面板不进入 ACP v1 映射，没有对应能力时不发明扩展。
 ACP 的 `_meta` 只承载可丢弃的附加信息。
+
+**实现调整（P2）。** 现行映射以 [ACP](../acp.md) 为准，与上表的差异：客户端提供的 `mcpServers`
+被拒绝，MCP 服务只来自 AICE 配置；`messageId` 在 ACP 中不稳定且要求 UUID，暂不发送；
+编辑结果保留的是统一 diff 而非完整新旧文本，以文本内容发送；模型通过 `model` 配置选项声明，
+只接受当前生效值，选择模型仍属于 AICE 设置；权限模式为 `default` 与 `auto`。
 
 ### 4.2 运行配置记录（D3）
 
@@ -228,7 +233,7 @@ npx、uvx；`source` 只接受带 `pyproject.toml` 与锁文件的 Python 项目
 cancelled 或出错时回复 Guard 的 deny 选项。实测：工作区外读取在 `allow` 下放行一次、在 `deny` 下被拒；
 `.env` 的硬 deny 在 `allow` 下也从未发出请求，工具结果为失败。与契约一致：deny 不可被客户端放行；
 ACP 下 ask 由客户端回答，“非交互 ask 失败关闭”只适用于没有客户端的 print 模式。
-P2 注意：工具在等待授权时应报 `pending` 而非 `in_progress`；`allow_always` 类选项会写入用户设置，
+P2 处理：Loop 在 Guard 判定前发出工具开始且没有单独的执行开始事件，工具开始仍报 `in_progress`，等待授权由权限请求表达（见 [ACP](../acp.md)）；`allow_always` 类选项会写入用户设置，
 无人值守客户端只应得到会话级选项，或由 `allow` 模式只选 `allow_once`（现状如此）。
 
 **Q4 Session 取回。** 启动参数 `--session /logs/agent/aice-session.jsonl`；`/logs/agent` 挂载为 trial 的
@@ -239,7 +244,9 @@ P2 注意：工具在等待授权时应报 `pending` 而非 `in_progress`；`all
 **环境代价。** Harbor 的 ACP 路径在每个任务容器里安装 Python、pip 与 `agent-client-protocol`（ACP 客户端运行在容器内）。
 `log-summary-date-ranges` 在这一步（`apt-get` 与 `pip install`，早于上传 AICE）超过默认 360 秒，
 记为 `AgentSetupTimeoutError`，与 AICE 无关；以 `--agent-setup-timeout-multiplier 4`（1440 秒）重跑仍在同一步超时，
-原因未定位（疑为容器内软件源访问受阻）。开发集不能依赖运行时安装，P2 需预构建带客户端的基础层。
+P2 定位根因：Harbor 用 `apt-get install python3-pip` 安装客户端，连带推荐的编译工具链（百余个包），
+在约 250 kB/s 的 Debian 镜像上超过 24 分钟。子类改为仅在缺少时安装 venv 与 CA 证书且不装推荐包，
+该任务镜像自带 Python，准备时间降至 35 秒；不需要预构建基础层。
 
 **D2 结论。** 确认 D2，附一项调整：本地构建通过上述薄子类接入，子类只负责上传二进制，不解析 Session，
 P2 放在 `evals/` 下替代 `integrations/harbor`；

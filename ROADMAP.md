@@ -16,7 +16,7 @@ shipped versions.
 - Saved sessions, branches, context compaction and tool permission checks.
 - Web, browser and desktop integrations with documented platform limits.
 - Initial [Go](evals/go-service/README.md) and [Python](evals/python-cli/README.md)
-  maintenance evaluation tasks, plus a [Harbor adapter](integrations/harbor/README.md).
+  maintenance evaluation tasks, and [Harbor runs](docs/evaluation.md) through the ACP frontend.
   These are evaluation assets, not evidence of superior generated-code quality.
 
 ## Near-term priorities

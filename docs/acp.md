@@ -1,7 +1,8 @@
 # Agent Client Protocol
 
 `aice acp` serves the [Agent Client Protocol](https://agentclientprotocol.com)
-over stdio, so editors and evaluation harnesses drive AICE without the TUI.
+over stdio, so editors and evaluation harnesses drive AICE without the TUI;
+[Evaluation](evaluation.md) runs it in Harbor.
 It is another consumer of the `interaction` contracts: the Agent Loop, Guard,
 Sessions and settings behave exactly as in interactive use.
 
@@ -61,6 +62,9 @@ option. The unattended `allow` mode of a client therefore lifts asks only, as
   send them.
 - ACP `diff` content requires complete old and new file text, which AICE results
   do not retain; edits report the tool's unified diff as text.
+- A tool call is reported `in_progress` when the Loop dispatches it, before the
+  Guard decides; the Loop has no separate execution-start event. A permission
+  request during that call marks the wait for approval instead of `pending`.
 - Branches, `/btw`, Settings and slash commands have no ACP mapping.
 
 ## Verification

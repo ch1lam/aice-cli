@@ -103,6 +103,7 @@ AICE 提供模型调用、工具执行、上下文与会话管理，通过 TUI �
 | 浏览器自动化 | `/browser` — 将 agent-browser 设置为普通 MCP 服务 `user:browser`，支持 macOS/Linux；[指南](./docs/browser.md) |
 | Computer Use | `/desktop` — 将 Cua Driver 设置为普通 MCP 服务 `user:cua`；[Computer Use](./docs/desktop.md) |
 | MCP 服务 | `/mcp` 或 `aice mcp` — 接入外部工具与资源；[指南](./docs/mcp.md) |
+| 编辑器与评测框架 | `aice acp` — 通过 Agent Client Protocol 提供 AICE；[指南](./docs/acp.md) |
 | Agent Skills | `/skills` — 查看启动时加载的 `SKILL.md` 列表；变更 Skills 后需重启；[指南](./docs/configuration.md#agent-skills) |
 
 工具使用当前用户的本机权限执行，工作目录不是操作系统沙箱。

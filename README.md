@@ -107,6 +107,7 @@ non-interactive CLI.
 | Browser automation | `/browser` — set up agent-browser as the ordinary MCP service `user:browser` on macOS/Linux; [guide](./docs/browser.md) |
 | Computer Use | `/desktop` — set up Cua Driver as the ordinary MCP service `user:cua`; [Computer Use](./docs/desktop.md) |
 | MCP servers | `/mcp` or `aice mcp` — connect external tools and resources; [guide](./docs/mcp.md) |
+| Editors and evaluation harnesses | `aice acp` — serve AICE over the Agent Client Protocol; [guide](./docs/acp.md) |
 | Agent Skills | `/skills` — list the startup `SKILL.md` catalog; restart after changing Skills; [guide](./docs/configuration.md#agent-skills) |
 
 AICE runs tools with your local user permissions; the workspace is not an OS
