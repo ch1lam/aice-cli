@@ -24,6 +24,8 @@ and quickstart. Use this index for task-specific guides.
 - [Maintenance](maintenance.md): code entry points and known discrepancies.
 - [Go maintenance tasks](../evals/go-service/README.md), [Python maintenance tasks](../evals/python-cli/README.md)
   and [Harbor integration](../integrations/harbor/README.md): evaluation setup and limits.
+- [Evaluation design](plans/AICE_Evaluation_Design.md): approved plan for the
+  evaluation architecture and ACP frontend.
 
 ## Project and support
 

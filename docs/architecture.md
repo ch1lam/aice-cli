@@ -212,5 +212,7 @@ A concrete requirement must justify extensions to Loop semantics, message/Sessio
 types, permissions or state ownership. Use existing boundaries first. Plan mode
 would need Guard enforcement; subagents would need explicit child cancellation,
 permission and usage ownership; memory would need retention and retrieval rules.
-No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC/ACP layer,
+No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC layer,
 second transcript store or sandbox manager is implied by the current design.
+An approved ACP frontend over the `interaction` contracts is planned in the
+[evaluation design](plans/AICE_Evaluation_Design.md); it is not implemented.

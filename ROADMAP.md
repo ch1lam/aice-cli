@@ -25,6 +25,7 @@ shipped versions.
 | --- | --- | --- |
 | Authentication and connection management | Replace duplicated provider/MCP login flows and cumbersome account menus with shared operations and a simpler entry point, following the [SDK priority](docs/architecture.md#sdk-and-authentication-integration). | Supported official SDK flows take precedence; OAuth SDKs handle remaining protocol work; replaced paths and menus are removed. |
 | Reliable everyday use | Close known gaps in sessions, cancellation, permissions and platform integrations. | Reproducible failures have regression coverage; platform claims have native verification. |
+| Harness evaluation and ACP | Run AICE through the Agent Client Protocol so Harbor and editors use one standard interface; compare any two builds with paired, repeated runs and replay single decisions from recorded Sessions. See the [evaluation design](docs/plans/AICE_Evaluation_Design.md). | Any commit can be evaluated; results report noise, per-task flips and cost; every model input can be rebuilt from its Session. |
 | Code quality evaluation | Evaluate feature work, bug fixes and behavior-preserving refactoring across successive changes. | Comparable runs retain model/settings, tests, diffs and human review; improvements survive the next requirement. |
 | Maintenance workflows | Improve support for incremental refactoring, large codebase changes, and documentation restructuring and migration. | Representative tasks preserve behavior, keep changes reviewable and leave code and docs aligned. |
 
@@ -35,8 +36,7 @@ reproduction and verification details in their owning guides.
 
 | Direction | Intended outcome | Starting point |
 | --- | --- | --- |
-| Harness debugging and evaluation | Inspect why a run failed, reproduce it, and compare a proposed harness change. | Build on Session history and existing evaluation tasks. |
-| Shared runtime across interfaces | Keep model calls, tools, permissions and history independent of presentation. | Build on the existing application and interaction boundaries; validate another interface against the same runtime contracts. |
+| Shared runtime across interfaces | Keep model calls, tools, permissions and history independent of presentation. | The planned ACP frontend is the first additional interface built on the existing application and interaction boundaries. |
 | MCP specification alignment | Register OAuth clients through Client ID Metadata Documents, and load server-provided Skills over MCP through the existing Skill trust path. | CIMD needs a hosted HTTPS client document and fixed loopback redirects; Skills over MCP waits for Go SDK support of `skills/list`/`skills/get`. See [MCP](docs/mcp.md). |
 
 ## Longer term
