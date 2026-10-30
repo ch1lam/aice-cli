@@ -90,10 +90,12 @@ type resultReadPrintModel struct {
 	text     string
 	durable  bool
 	readJSON json.RawMessage
+	requests []llm.Request
 }
 
 func (m *resultReadPrintModel) Stream(ctx context.Context, r llm.Request) (llm.Stream, error) {
 	m.step++
+	m.requests = append(m.requests, r)
 	if m.step <= 2 {
 		stream, err := m.base.Stream(ctx, r)
 		if m.base.round == 2 {
@@ -165,6 +167,7 @@ func TestMCPPrintResultReadbackRetainsSourceWithoutReplay(t *testing.T) {
 				t.Fatal("readback repeated RPC or skipped model rounds", model.step, calls.Load())
 			}
 			if durable {
+				assertRequestsRebuildFromSession(t, path, model.requests)
 				store, err := session.Open(t.Context(), path)
 				if err != nil {
 					t.Fatal(err)

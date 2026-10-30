@@ -25,6 +25,8 @@ const (
 	RecordTypeCompaction RecordType = "compaction"
 	// RecordTypeTitle identifies a session-wide display title change.
 	RecordTypeTitle RecordType = "title"
+	// RecordTypeRunConfig identifies a content-addressed request configuration.
+	RecordTypeRunConfig RecordType = "run_config"
 	// RecordTypeLeaf identifies an append-only move of the active tree leaf.
 	RecordTypeLeaf RecordType = "leaf"
 )
@@ -114,6 +116,7 @@ type Snapshot struct {
 	Compactions []Compaction
 	LeafMoves   []Leaf
 	Titles      []TitleRecord
+	RunConfigs  []RunConfig
 	Order       []string
 	LeafID      string
 }

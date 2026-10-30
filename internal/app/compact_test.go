@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -99,8 +100,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 
 	workspace := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "conversation.jsonl")
-	runPrintTurn(t, workspace, sessionPath, "first prompt", "first answer")
-	runPrintTurn(t, workspace, sessionPath, "second prompt", "second answer")
+	first := runPrintTurn(t, workspace, sessionPath, "first prompt", "first answer")
+	second := runPrintTurn(t, workspace, sessionPath, "second prompt", "second answer")
 
 	summaryModel := &recordingModel{
 		response:   "checkpoint summary",
@@ -180,8 +181,8 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 6 {
-		t.Errorf("physical JSONL records = %d, want header + 4 messages + compaction", got)
+	if got := len(strings.Split(strings.TrimSpace(string(data)), "\n")); got != 7 {
+		t.Errorf("physical JSONL records = %d, want header + shared run config + 4 messages + compaction", got)
 	}
 
 	continuationModel := runPrintTurn(
@@ -210,6 +211,7 @@ func TestApplicationCompactAppendsCheckpointAndRestoresDerivedContext(
 	assertTextMessage(t, messages[1], llm.RoleUser, "second prompt")
 	assertTextMessage(t, messages[2], llm.RoleAssistant, "second answer")
 	assertTextMessage(t, messages[3], llm.RoleUser, "third prompt")
+	assertRequestsRebuildFromSession(t, sessionPath, slices.Concat(first.requests, second.requests, continuationModel.requests))
 
 	updatedSummaryModel := &recordingModel{
 		response:   "updated checkpoint",

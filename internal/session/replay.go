@@ -114,6 +114,18 @@ func replayRecords(ctx context.Context, source io.Reader) (storeState, int64, bo
 				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, fmt.Errorf("duplicate record id %q", title.ID))
 			}
 			state.retainTitle(title)
+		case RecordTypeRunConfig:
+			var record RunConfig
+			if err := decodeRecord(line, &record); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if err := record.Validate(); err != nil {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, err)
+			}
+			if _, exists := state.index.recordIDs[record.ID]; exists {
+				return storeState{}, 0, false, corrupt(lineNumber, recordOffset, fmt.Errorf("duplicate record id %q", record.ID))
+			}
+			state.retainRunConfig(record)
 		case RecordTypeMessage:
 			var message MessageEntry
 			if err := decodeRecord(line, &message); err != nil {

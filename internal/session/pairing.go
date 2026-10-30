@@ -93,6 +93,13 @@ func sequenceAt(index recordIndex, leafID string) (messageSequence, error) {
 }
 
 func validateMessageAppend(index recordIndex, entry MessageEntry) (messageSequence, error) {
+	// A configuration is persisted before the call it governs, so a message can
+	// only name one that is already recorded.
+	if assistant, ok := entry.Message.(llm.AssistantMessage); ok && assistant.RequestConfig != "" {
+		if _, exists := index.runConfigs[assistant.RequestConfig]; !exists {
+			return messageSequence{}, fmt.Errorf("session: message %q names unrecorded run config %q", entry.ID, assistant.RequestConfig)
+		}
+	}
 	sequence, err := sequenceAt(index, entry.ParentID)
 	if err != nil {
 		return messageSequence{}, err

@@ -268,6 +268,18 @@ retain the short content summary; Session keeps the additive metadata.
   history is never recorded again. The application injects this callback for
   message-level Session persistence; event delivery and interaction settlement
   do not append a second copy.
+- `RunInput.RequestRecorder` is an optional synchronous boundary for request
+  configurations. After budget checks and before each model call, the Loop
+  passes a deep copy of the effective `llm.RequestConfig` and stamps the
+  returned ID on the resulting assistant message, including a recorded failed
+  attempt; a recording error stops the run before the call. Requests are
+  derived only by `llm.BuildRequest` followed by `llm.FitOutputTokens`, so the
+  input of every recorded assistant message equals that derivation over its
+  configuration and Session context. Failed attempts are projected out exactly
+  when a later assistant message retries them, so a rebuild projects the parent
+  context with the message appended and then drops it. Integration tests
+  compare every captured request with `session.RebuildRequest` across tool
+  rounds, retries, compaction, in-run tool loading and resume.
 - Poll steering input only after a complete assistant response and all tool
   calls declared by that response have matching results. Inject at most one
   user steer before the next model request, then offer the next steer at the

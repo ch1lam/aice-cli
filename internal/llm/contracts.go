@@ -478,6 +478,9 @@ type AssistantMessage struct {
 	StopReason      StopReason    `json:"stop_reason"`
 	ErrorMessage    string        `json:"error_message,omitempty"`
 	Timestamp       int64         `json:"timestamp"`
+	// RequestConfig identifies the recorded effective configuration this
+	// message was requested with; empty when none was recorded.
+	RequestConfig string `json:"request_config,omitempty"`
 }
 
 // ToolResultMessage is the history message produced by one tool execution.

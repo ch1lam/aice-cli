@@ -66,6 +66,7 @@ func TestPrintCompactsToolRoundsWithAndWithoutSession(t *testing.T) {
 				if snapshot.Messages[1].Message.(llm.AssistantMessage).StopReason != llm.StopReasonError {
 					t.Fatal("source failed attempt lost")
 				}
+				assertRequestsRebuildFromSession(t, path, service.requests)
 			} else {
 				if _, err := os.Stat(filepath.Join(workspace, ".aice", "sessions")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("stateless run created session directory: %v", err)
@@ -82,6 +83,7 @@ type roundCompactionModel struct {
 	mainCalls int
 	summaries int
 	final     llm.Request
+	requests  []llm.Request
 }
 
 func (m *roundCompactionModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
@@ -91,6 +93,7 @@ func (m *roundCompactionModel) Stream(ctx context.Context, request llm.Request) 
 		return model.Stream(ctx, request)
 	}
 	m.mainCalls++
+	m.requests = append(m.requests, request)
 	message := llm.NewAssistantMessage(request.Model)
 	message.StopReason = llm.StopReasonToolUse
 	call := llm.ToolCall{ID: "read-1", Name: "read", Arguments: []byte(`{"path":"large.txt"}`)}

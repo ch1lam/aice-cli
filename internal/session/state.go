@@ -4,6 +4,7 @@ type recordIndex struct {
 	nodes       map[string]Node
 	messages    map[string]MessageEntry
 	compactions map[string]Compaction
+	runConfigs  map[string]RunConfig
 	nodeTypes   map[string]RecordType
 	parents     map[string]string
 	recordIDs   map[string]struct{}
@@ -19,6 +20,7 @@ func indexRecords(
 		nodes:       make(map[string]Node),
 		messages:    make(map[string]MessageEntry),
 		compactions: make(map[string]Compaction),
+		runConfigs:  make(map[string]RunConfig),
 		nodeTypes:   make(map[string]RecordType),
 		parents:     make(map[string]string),
 		recordIDs:   make(map[string]struct{}),
@@ -60,6 +62,7 @@ type storeState struct {
 	compactions []Compaction
 	leafMoves   []Leaf
 	titles      []TitleRecord
+	runConfigs  []RunConfig
 	order       []string
 	index       recordIndex
 	leafID      string
@@ -72,12 +75,17 @@ func newStoreState(snapshot Snapshot) storeState {
 		compactions: snapshot.Compactions,
 		leafMoves:   snapshot.LeafMoves,
 		titles:      snapshot.Titles,
+		runConfigs:  snapshot.RunConfigs,
 		order:       snapshot.Order,
 		index:       indexRecords(snapshot.Messages, snapshot.Compactions, snapshot.LeafMoves),
 		leafID:      snapshot.LeafID,
 	}
 	for _, title := range state.titles {
 		state.index.recordIDs[title.ID] = struct{}{}
+	}
+	for _, record := range state.runConfigs {
+		state.index.runConfigs[record.ID] = record
+		state.index.recordIDs[record.ID] = struct{}{}
 	}
 	return state
 }

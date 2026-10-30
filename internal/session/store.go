@@ -212,6 +212,7 @@ func (s *Store) Snapshot() (Snapshot, error) {
 		Compactions: cloneCompactions(s.compactions),
 		LeafMoves:   cloneLeaves(s.leafMoves),
 		Titles:      append([]TitleRecord(nil), s.titles...),
+		RunConfigs:  cloneRunConfigs(s.runConfigs),
 		Order:       append([]string(nil), s.order...),
 		LeafID:      s.leafID,
 	}, nil

@@ -185,6 +185,8 @@ type runExecution struct {
 	pendingSelection []ToolReference
 	proposal         []ToolReference
 	toolNotice       string
+	// requestConfigID records the current attempt's configuration.
+	requestConfigID  string
 	loop             *Loop
 	input            RunInput
 	sink             AgentEventSink

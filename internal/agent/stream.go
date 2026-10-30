@@ -21,6 +21,7 @@ func (e *runExecution) streamAssistant(
 	turnNumber int,
 	allowCompaction bool,
 ) (assistantOutcome, error) {
+	e.requestConfigID = ""
 	if err := e.checkBudget(ctx); err != nil {
 		return assistantOutcome{}, err
 	}
@@ -38,6 +39,13 @@ func (e *runExecution) streamAssistant(
 
 	if err := e.checkBudget(ctx); err != nil {
 		return assistantOutcome{}, err
+	}
+	if e.input.RequestRecorder != nil {
+		id, err := e.input.RequestRecorder(ctx, e.requestConfig().Clone())
+		if err != nil {
+			return assistantOutcome{}, fmt.Errorf("agent: record turn %d request configuration: %w", turnNumber, err)
+		}
+		e.requestConfigID = id
 	}
 	e.turnsUsed++
 	if e.input.ObserveTools != nil {
@@ -58,6 +66,9 @@ func (e *runExecution) streamAssistant(
 	}
 
 	outcome, consumeErr := e.consumeAssistant(ctx, turnNumber, request.Model, stream)
+	if outcome.complete {
+		outcome.message.RequestConfig = e.requestConfigID
+	}
 	if closeErr := stream.Close(); closeErr != nil {
 		consumeErr = errors.Join(consumeErr, fmt.Errorf("agent: close model stream: %w", closeErr))
 	}

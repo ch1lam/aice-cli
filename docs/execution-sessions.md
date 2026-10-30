@@ -611,6 +611,7 @@ Each file contains a versioned header followed by append-only records:
 | `compaction` | A derived summary checkpoint for the active branch |
 | `leaf` | A move of the active branch pointer; no history is deleted |
 | `title` | A session-wide display title; empty text restores the automatic title |
+| `run_config` | The effective configuration of model calls, written once per distinct content |
 
 Title changes append to the original JSONL file; there is no separate metadata
 log and no rewrite of the header or source messages. The last `title` record
@@ -621,6 +622,19 @@ New and existing v3 files use the same display rule: prefer the latest title;
 if it is absent or empty, use the first user request. No migration or separate
 legacy-reader path is needed. If neither contains displayable text, use the
 session filename stem.
+
+A `run_config` record holds everything besides source history that shapes a
+model request: model identity, full system prompt, tool definitions in sending
+order, stream options and the tool-result view budget, plus the AICE build. Its
+ID is the SHA-256 of that content, so an unchanged configuration is written
+once and a run reuses it across turns, processes and branches. Like titles,
+run configs are not tree nodes and never enter model context. A configuration
+is durable before the model call it governs, and every assistant message
+written by the Loop names it in `request_config`; appending a message that
+names an unrecorded configuration is rejected. `session.RebuildRequest`
+derives the exact request of any such message from the Session alone (see
+[Runtime contracts](contracts.md#agent-loop)). Older messages without the field
+remain readable but cannot be rebuilt.
 
 Tool result metadata (evidence, truncation, diffs, structured outcomes and image
 originals) stays in the same additive v3 source records. Old records gain no

@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/buildinfo"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
@@ -14,6 +16,7 @@ import (
 // result readback. memory supplies results when no Store exists.
 type runScope struct {
 	mcp   mcpRunBinding
+	store *session.Store
 	close func() error
 }
 
@@ -33,7 +36,7 @@ func bindRunScope(
 	if err != nil {
 		return nil, runScope{}, err
 	}
-	return withResultReader(ctx, store, memory), runScope{mcp: run, close: func() error {
+	return withResultReader(ctx, store, memory), runScope{mcp: run, store: store, close: func() error {
 		run.Close()
 		return nil
 	}}, nil
@@ -52,5 +55,21 @@ func (r runScope) input(model llm.Model, systemPrompt string, options llm.Stream
 		History:          history,
 		Prompt:           prompt,
 		Options:          options,
+		RequestRecorder:  runConfigRecorder(r.store),
+	}
+}
+
+// runConfigRecorder persists each distinct request configuration before the
+// call it governs, so every assistant message can be rebuilt from the Session.
+func runConfigRecorder(store *session.Store) agent.RequestRecorder {
+	if store == nil {
+		return nil
+	}
+	return func(ctx context.Context, config llm.RequestConfig) (string, error) {
+		record, err := session.NewRunConfig(buildinfo.Version, config, time.Now().UnixMilli())
+		if err != nil {
+			return "", err
+		}
+		return record.ID, store.AppendRunConfig(ctx, record)
 	}
 }

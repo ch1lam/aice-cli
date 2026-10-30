@@ -17,6 +17,7 @@ func (e *runExecution) recordIncompleteAttempt(
 	message := llm.NewAssistantMessage(e.input.Model)
 	message.StopReason = llm.StopReasonError
 	message.ErrorMessage = "model request failed before completion"
+	message.RequestConfig = e.requestConfigID
 	turn := ModelRound{
 		Number:      turnNumber,
 		Inputs:      e.takePendingInputs(),

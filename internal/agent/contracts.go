@@ -180,6 +180,12 @@ type CompactionResult struct {
 	Usage   llm.Usage
 }
 
+// RequestRecorder durably records the effective configuration of the next
+// model call before the call starts and returns its record ID, which the Loop
+// stamps on the resulting assistant message. The configuration is a defensive
+// copy. An error aborts the call before it is sent. A nil recorder is allowed.
+type RequestRecorder func(context.Context, llm.RequestConfig) (string, error)
+
 // MessageRecorder synchronously accepts one completed source message before the
 // loop proceeds to later effects or display events. Messages are defensive copies.
 // The first error stops execution and disables further recording, including
@@ -208,6 +214,7 @@ type RunInput struct {
 	Prompt          llm.UserMessage
 	Options         llm.StreamOptions
 	MessageRecorder MessageRecorder
+	RequestRecorder RequestRecorder
 	// ResultViewTokens limits source-detailed results in model requests only.
 	// Zero preserves complete views. The caller must provide readback of the
 	// retained source; recording and Result.Messages always keep full results.

@@ -17,6 +17,25 @@ type RequestConfig struct {
 	ResultViewTokens int64 `json:"result_view_tokens,omitempty"`
 }
 
+// Clone deep-copies every mutable field so a recorded configuration cannot
+// alias the live run.
+func (c RequestConfig) Clone() RequestConfig {
+	cloned := c
+	cloned.Model.ThinkingLevelMap = c.Model.ThinkingLevelMap.Clone()
+	cloned.Model.InputModalities = slices.Clone(c.Model.InputModalities)
+	if c.Options.Temperature != nil {
+		temperature := *c.Options.Temperature
+		cloned.Options.Temperature = &temperature
+	}
+	cloned.Tools = make([]ToolDefinition, len(c.Tools))
+	for index, definition := range c.Tools {
+		definition.InputSchema = slices.Clone(definition.InputSchema)
+		definition.PromptGuidelines = slices.Clone(definition.PromptGuidelines)
+		cloned.Tools[index] = definition
+	}
+	return cloned
+}
+
 // BuildRequest projects source history into one request. changed reports that
 // a result view or image omission altered the projection, so provider usage
 // from earlier calls may describe different content.
@@ -29,12 +48,7 @@ func BuildRequest(config RequestConfig, history []AgentMessage) (request Request
 	if !slices.Contains(config.Model.InputModalities, InputModalityImage) {
 		changed = omitToolResultImages(messages) || changed
 	}
-	tools := make([]ToolDefinition, len(config.Tools))
-	for index, definition := range config.Tools {
-		definition.InputSchema = slices.Clone(definition.InputSchema)
-		definition.PromptGuidelines = slices.Clone(definition.PromptGuidelines)
-		tools[index] = definition
-	}
+	tools := config.Clone().Tools
 	return Request{
 		Model:        config.Model,
 		SystemPrompt: config.SystemPrompt,
