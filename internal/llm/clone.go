@@ -56,6 +56,7 @@ func CloneAgentMessage(message AgentMessage) (AgentMessage, error) {
 		copied.Content = cloneContentParts(value.Content)
 		copied.Evidence = value.Evidence.Clone()
 		copied.Details = value.Details.Clone()
+		copied.Actions = slices.Clone(value.Actions)
 		return copied, nil
 	case CompactionSummaryMessage:
 		return value, nil

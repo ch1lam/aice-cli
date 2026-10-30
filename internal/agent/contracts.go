@@ -41,6 +41,9 @@ type GuardResult struct {
 	// Review records an automatic decision. The Loop copies it to the tool
 	// result without reading it.
 	Review *llm.ToolReview
+	// Actions are the call's normalized actions, whatever the Decision. The
+	// Loop records them with the tool result without reading them.
+	Actions []llm.ToolAction
 }
 
 // GuardApproval is one independent permission scope for this tool invocation.
@@ -80,6 +83,7 @@ func (r GuardResult) Valid() bool {
 // GuardAction is the normalized action that triggered the guard decision.
 type GuardAction struct {
 	Kind     string
+	Op       string
 	Path     string
 	Command  string
 	ToolName string

@@ -262,7 +262,8 @@ func (g *Guard) CheckMCP(ctx context.Context, modelName string, binding llm.Tool
 		return Result{}, nil, err
 	}
 	action := Action{Kind: "mcp", ToolName: modelName, Target: binding.Source + ":" + binding.ServiceID}
-	deny := Result{Decision: DecisionDeny, Reason: "MCP tool binding is unavailable or no longer permitted", RuleID: "mcp.unavailable", Action: action}
+	actions := []Action{action}
+	deny := Result{Decision: DecisionDeny, Reason: "MCP tool binding is unavailable or no longer permitted", RuleID: "mcp.unavailable", Action: action, Actions: actions}
 	if g == nil {
 		return deny, nil, nil
 	}
@@ -284,7 +285,7 @@ func (g *Guard) CheckMCP(ctx context.Context, modelName string, binding llm.Tool
 		}
 	}
 	if tool.UserDecision == DecisionAllow || state.granted[mcpOperationKey(binding.Operation, binding.ToolName)] == tool.epoch {
-		return Result{Decision: DecisionAllow, Action: action}, permit, nil
+		return Result{Decision: DecisionAllow, Action: action, Actions: actions}, permit, nil
 	}
 	reason := fmt.Sprintf("MCP tool %q from %q (source %q) requires confirmation", binding.ToolName, binding.ServiceID, binding.Source)
 	if binding.Operation == llm.OperationResourceRead {
@@ -293,7 +294,7 @@ func (g *Guard) CheckMCP(ctx context.Context, modelName string, binding llm.Tool
 	return Result{Decision: DecisionAsk, Approvals: []Approval{{
 		Reason: reason,
 		RuleID: "mcp.tool", Action: action,
-	}}}, permit, nil
+	}}, Actions: actions}, permit, nil
 }
 
 func matchesMCPBinding(state *mcpServiceState, binding llm.ToolBinding, scope string) bool {

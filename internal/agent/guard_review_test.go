@@ -103,3 +103,39 @@ func TestGuardDenialLimitStopsRun(t *testing.T) {
 		t.Fatal("negative guard denial limit accepted")
 	}
 }
+
+func TestGuardActionsAreRecordedOnEveryDecision(t *testing.T) {
+	t.Parallel()
+	read := []llm.ToolAction{{Kind: "file", Op: "read", Path: "a.txt"}}
+	write := []llm.ToolAction{{Kind: "file", Op: "write", Path: "/etc/x"}}
+	info := testModel()
+	model := repeatedToolModel(info, []string{`{"a":1}`, `{"a":2}`, `{"a":3}`})
+	tool := newFakeTool("read", nil)
+	guard := &sequenceGuard{results: []agent.GuardResult{
+		{Decision: agent.GuardAllow, Actions: read},
+		{Decision: agent.GuardDeny, Reason: "denied", RuleID: "deny", Actions: write},
+		{Decision: agent.GuardAsk, Actions: write, Approvals: []agent.GuardApproval{{RuleID: "ask", Reason: "confirm"}}},
+	}}
+	loop, err := agent.NewLoop(model, []agent.Tool{tool}, agent.WithGuard(guard))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(t.Context(), testInput(info, mustPrompt(t, "inspect")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range [][]llm.ToolAction{read, write, write} {
+		got := result.ModelRounds[i].ToolResults[0]
+		if fmt.Sprint(got.Actions) != fmt.Sprint(want) {
+			t.Fatalf("round %d actions = %+v, want %+v", i, got.Actions, want)
+		}
+		// Actions are source metadata, not execution details the model sees.
+		if i == 0 && got.Details != nil {
+			t.Fatalf("allowed result details = %+v, want none", got.Details)
+		}
+	}
+	data, err := json.Marshal(result.ModelRounds[0].ToolResults[0])
+	if err != nil || !strings.Contains(string(data), `"actions":[{"kind":"file","op":"read","path":"a.txt"}]`) {
+		t.Fatalf("serialized = %s, %v", data, err)
+	}
+}

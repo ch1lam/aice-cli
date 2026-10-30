@@ -492,6 +492,10 @@ type ToolResultMessage struct {
 	Content    []ContentPart      `json:"content"`
 	IsError    bool               `json:"is_error,omitempty"`
 	Timestamp  int64              `json:"timestamp"`
+	// Actions are the execution gate's normalized actions for the call, in
+	// extraction order, whatever the decision. They are source metadata only:
+	// no model projection reads them.
+	Actions []ToolAction `json:"actions,omitempty"`
 }
 
 // CompactionSummaryMessage is a derived checkpoint stored in transcript
@@ -619,6 +623,9 @@ func (m ToolResultMessage) MessageRole() Role { return m.Role }
 func (m ToolResultMessage) Validate() error {
 	if m.Role != RoleToolResult {
 		return fmt.Errorf("llm: tool result message has role %q", m.Role)
+	}
+	if err := ValidateToolActions(m.Actions); err != nil {
+		return fmt.Errorf("llm: %w", err)
 	}
 	return ToolResult{
 		CallID:   m.ToolCallID,

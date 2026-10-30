@@ -51,6 +51,20 @@ type ToolResultDetails struct {
 	Review *ToolReview `json:"review,omitempty"`
 }
 
+// MaxToolActions bounds the actions recorded for one tool call.
+const MaxToolActions = 256
+
+// ToolAction is one normalized action the execution gate derived from a tool
+// call. It is the authority for what the call does; tool or MCP
+// self-descriptions are display hints only.
+type ToolAction struct {
+	Kind    string `json:"kind"`              // file, command, network or mcp
+	Op      string `json:"op,omitempty"`      // read or write for file actions
+	Path    string `json:"path,omitempty"`    // as the call spelled it
+	Command string `json:"command,omitempty"` // the complete shell command
+	Target  string `json:"target,omitempty"`  // network origin, search service or MCP service
+}
+
 // ToolReview is the provenance of an automatic permission decision.
 type ToolReview struct {
 	Mode       string `json:"mode"`                 // permission mode, such as "auto"
@@ -241,4 +255,25 @@ func ToolResultModelContent(content []ContentPart, details *ToolResultDetails, i
 		projected = append(projected, NewTextContent("Result data was not saved and cannot be recovered: "+details.Loss).Part())
 	}
 	return projected
+}
+
+// ValidateToolActions rejects unknown kinds, unbounded lists and invalid text.
+func ValidateToolActions(actions []ToolAction) error {
+	if len(actions) > MaxToolActions {
+		return fmt.Errorf("tool result records more than %d actions", MaxToolActions)
+	}
+	for _, action := range actions {
+		switch action.Kind {
+		case "file", "command", "network", "mcp":
+		default:
+			return fmt.Errorf("tool result action kind %q is invalid", action.Kind)
+		}
+		if action.Op != "" && action.Op != "read" && action.Op != "write" {
+			return fmt.Errorf("tool result action op %q is invalid", action.Op)
+		}
+		if !utf8.ValidString(action.Path + action.Command + action.Target) {
+			return fmt.Errorf("tool result action text must be UTF-8")
+		}
+	}
+	return nil
 }

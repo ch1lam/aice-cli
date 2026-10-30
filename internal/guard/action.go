@@ -40,6 +40,9 @@ type Result struct {
 	RuleID    string
 	Action    Action
 	Approvals []Approval
+	// Actions lists every normalized action of the call in extraction order,
+	// whatever the Decision. It is empty for unrecognized tools.
+	Actions []Action
 	// ReadOnly reports a bash command made only of read-only commands with
 	// no writes or findings. RuleCovered reports a bash command whose every
 	// command is read-only or matched by an explicit, non-broad allow rule,

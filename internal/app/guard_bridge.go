@@ -92,7 +92,9 @@ func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.Guar
 	if err != nil || !g.autoActive() {
 		return result, err
 	}
-	return g.auto.decide(ctx, call, result, hints)
+	decided, err := g.auto.decide(ctx, call, result, hints)
+	decided.Actions = result.Actions
+	return decided, err
 }
 
 // checkInput checks a user attachment. The user chose the file, so auto mode
@@ -132,6 +134,9 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 	if err != nil {
 		return agent.GuardResult{}, routeHints{}, err
 	}
+	// Record the call as the model spelled it; physical re-checks below only
+	// tighten the decision.
+	requested := res.Actions
 	// Read's tolerant path spelling and symlink resolution must not bypass the
 	// gate. Check both the requested name and the physical target before asking.
 	if call.Name == "read" && res.Decision != guard.DecisionDeny {
@@ -233,6 +238,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 		}
 	}
 	mapped := mapGuardResult(res)
+	mapped.Actions = recordedActions(requested)
 	mapped.Revalidate = revalidate
 	if g.yolo && mapped.Decision == agent.GuardAsk {
 		// Changing AICE's own configuration could lift a user deny, so it
@@ -264,7 +270,8 @@ func mapGuardResult(res guard.Result) agent.GuardResult {
 	mapped := agent.GuardResult{
 		Decision: agent.GuardDecision(res.Decision),
 		Reason:   res.Reason, RuleID: res.RuleID,
-		Action: mapGuardAction(res.Action),
+		Action:  mapGuardAction(res.Action),
+		Actions: recordedActions(res.Actions),
 	}
 	for _, approval := range res.Approvals {
 		mapped.Approvals = append(mapped.Approvals, mapGuardApproval(approval))
@@ -294,7 +301,19 @@ func mapGuardApproval(approval guard.Approval) agent.GuardApproval {
 }
 
 func mapGuardAction(action guard.Action) agent.GuardAction {
-	return agent.GuardAction{Kind: action.Kind, Path: action.Path, Command: action.Command, ToolName: action.ToolName, Target: action.Target}
+	return agent.GuardAction{Kind: action.Kind, Op: action.Op, Path: action.Path, Command: action.Command, ToolName: action.ToolName, Target: action.Target}
+}
+
+// recordedActions is the Session record of a call's normalized actions.
+func recordedActions(actions []guard.Action) []llm.ToolAction {
+	if len(actions) == 0 {
+		return nil
+	}
+	recorded := make([]llm.ToolAction, 0, min(len(actions), llm.MaxToolActions))
+	for _, action := range actions[:min(len(actions), llm.MaxToolActions)] {
+		recorded = append(recorded, llm.ToolAction{Kind: action.Kind, Op: action.Op, Path: action.Path, Command: action.Command, Target: action.Target})
+	}
+	return recorded
 }
 
 // GuardRequests exposes pending guard confirmations for the TUI.

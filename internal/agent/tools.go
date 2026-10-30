@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -106,10 +107,12 @@ func (e *runExecution) executeTool(
 	call llm.ToolCall,
 ) (message llm.ToolResultMessage, executionErr error) {
 	started := false
+	var actions []llm.ToolAction
 	defer func() {
 		if !started && message.IsError && message.Details == nil {
 			message.Details = e.notDispatchedDetails(call.Name)
 		}
+		message.Actions = slices.Clone(actions)
 	}()
 	if err := e.checkToolVersion(ctx, call.Name); err != nil {
 		return newErrorToolResult(call, err)
@@ -127,7 +130,7 @@ func (e *runExecution) executeTool(
 		if !res.Valid() {
 			return newErrorToolResult(call, errors.New("guard returned an invalid result"))
 		}
-		revalidate, review = res.Revalidate, res.Review
+		revalidate, review, actions = res.Revalidate, res.Review, res.Actions
 		switch res.Decision {
 		case GuardDeny:
 			e.noteGuardDecision(true)

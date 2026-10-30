@@ -183,15 +183,39 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		}}}, nil
 	}
 	if isNetworkTool(call.Name) {
-		return g.checkNetwork(call), nil
+		res := g.checkNetwork(call)
+		res.Actions = []Action{res.Action}
+		return res, nil
 	}
 	analysis := extractActions(call, g.workspace)
+	res := g.checkActions(ctx, call, analysis)
+	res.Actions = callActions(call, analysis)
+	return res, nil
+}
+
+// callActions is the recorded view of a call: a bash command, then the file
+// actions extracted from it or from a file tool's arguments.
+func callActions(call llm.ToolCall, analysis bashAnalysis) []Action {
+	var actions []Action
+	if call.Name == "bash" {
+		if cmd := extractCommand(call.Arguments); strings.TrimSpace(cmd) != "" {
+			actions = append(actions, Action{Kind: "command", Command: cmd, ToolName: "bash"})
+		}
+	}
+	for _, action := range analysis.actions {
+		action.Command = ""
+		actions = append(actions, action)
+	}
+	return actions
+}
+
+func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis bashAnalysis) Result {
 	var approvals []Approval
 	if call.Name == "bash" {
 		cmd := extractCommand(call.Arguments)
 		for _, words := range analysis.commands {
 			if r, ok := firstCommandRule(g.rules.deny, words); ok {
-				return Result{Decision: DecisionDeny, Reason: "Command " + strings.Join(words, " ") + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: Action{Kind: "command", Command: cmd, ToolName: "bash"}}, nil
+				return Result{Decision: DecisionDeny, Reason: "Command " + strings.Join(words, " ") + " is denied by permission rule " + r.text + ".", RuleID: RuleUserDeny, Action: Action{Kind: "command", Command: cmd, ToolName: "bash"}}
 			}
 		}
 		if approval, ok := g.commandApproval(cmd, analysis); ok {
@@ -203,7 +227,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		phys := physicalPath(abs)
 		if denied, ok := g.denyPath(ctx, call.Name, act, abs, phys); ok {
-			return denied, nil
+			return denied
 		}
 		key := act.Op + "\x00" + phys
 		if seen[key] {
@@ -215,13 +239,13 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		}
 	}
 	if len(approvals) > 0 {
-		return Result{Decision: DecisionAsk, Approvals: approvals}, nil
+		return Result{Decision: DecisionAsk, Approvals: approvals}
 	}
 	result := Result{Decision: DecisionAllow}
 	if call.Name == "bash" {
 		result.ReadOnly, result.RuleCovered = g.bashHints(extractCommand(call.Arguments), analysis)
 	}
-	return result, nil
+	return result
 }
 
 // bashHints classifies an allowed bash command for auto mode routing.

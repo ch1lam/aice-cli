@@ -229,7 +229,18 @@ retain the short content summary; Session keeps the additive metadata.
   replay work. It catches permission changes while waiting after initial approval.
   A Guard result may also carry `Review`, the provenance of an automatic
   decision; the Loop copies it into the tool result's `ToolResultDetails.Review`
-  without reading it. `RunLimits.GuardDenials` stops a run after the configured
+  without reading it. Every Guard result also carries `Actions`, the call's
+  normalized actions in the gate's extraction order (a bash command, then the
+  file reads and writes extracted from it; a file tool's path; a network
+  target; an MCP service), whatever the decision. The Loop copies them into
+  `ToolResultMessage.Actions` without reading them, so allowed, denied and
+  declined calls all record what they would do. The actions keep the call's own
+  spelling; physical re-checks only tighten the decision. They are source
+  metadata outside `details`, so no model projection, result view or
+  compaction transcript reads them, and Session records without them read
+  unchanged. They are the single source for ACP tool kinds and locations and
+  for evaluation process metrics; tool or MCP self-descriptions never replace
+  them. `RunLimits.GuardDenials` stops a run after the configured
   number of consecutive or total calls the Guard denied or a person declined;
   any dispatched call resets the consecutive count.
   Product behavior of the gate, including Session-scoped grants,

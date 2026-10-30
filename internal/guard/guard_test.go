@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -695,5 +696,35 @@ func TestFilesystemRootDirIdentity(t *testing.T) {
 	}
 	if GrantTooBroad(".") {
 		t.Fatal(`GrantTooBroad(".") = true, want false ("." has Dir identity but is not a root)`)
+	}
+}
+
+func TestCheckRecordsNormalizedActionsForEveryDecision(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	writeFiles(t, workspace, ".env")
+	g := newTestGuard(t, workspace)
+	for _, tc := range []struct {
+		name string
+		call llm.ToolCall
+		want []Action
+	}{
+		{"allowed read", toolCall("read", map[string]any{"path": "a.txt"}),
+			[]Action{{Kind: "file", Op: "read", Path: "a.txt", ToolName: "read"}}},
+		{"denied secret", toolCall("read", map[string]any{"path": ".env"}),
+			[]Action{{Kind: "file", Op: "read", Path: ".env", ToolName: "read"}}},
+		{"bash command and files", toolCall("bash", map[string]any{"command": "cat a.txt > b.txt"}),
+			[]Action{{Kind: "command", Command: "cat a.txt > b.txt", ToolName: "bash"}, {Kind: "file", Op: "write", Path: "b.txt", ToolName: "bash"}, {Kind: "file", Op: "read", Path: "a.txt", ToolName: "bash"}}},
+		{"unknown tool", toolCall("mystery", map[string]any{}), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := g.Check(t.Context(), tc.call)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(res.Actions) != fmt.Sprint(tc.want) {
+				t.Fatalf("actions = %+v, want %+v", res.Actions, tc.want)
+			}
+		})
 	}
 }
