@@ -40,6 +40,28 @@ class CompareTest(unittest.TestCase):
         self.assertIsNone(trials["d__1"].score)  # setup failed before the agent ran
         self.assertEqual(trials["e__1"].reason, "excluded by request")
 
+    def test_multi_step_trials(self):
+        job = self.root / "job"
+        step = {"agent_execution": {"started_at": "2026-11-06T00:00:00Z"}}
+        for name, rewards, steps in (
+            ("a__1", {"reward": 0.5, "checks": 1.0}, [step, step]),
+            ("b__1", None, [{**step, "exception_info": {"exception_type": "AgentTimeoutError"}}]),
+        ):
+            trial = job / name
+            for index in range(len(steps)):
+                session = trial / "steps" / f"s{index}" / "agent" / "aice-session.jsonl"
+                session.parent.mkdir(parents=True)
+                session.touch()
+            trial.joinpath("result.json").write_text(json.dumps({
+                "trial_name": name, "task_name": "t/" + name[0], "agent_execution": None,
+                "verifier_result": rewards and {"rewards": rewards}, "step_results": steps,
+            }))
+        trials = {t.name: t for t in compare.load_trials([job], set())}
+        self.assertEqual(trials["a__1"].score, 0.5)
+        self.assertEqual(trials["a__1"].metrics, {"checks": 1.0})
+        self.assertEqual(len(trials["a__1"].sessions), 2)
+        self.assertEqual(trials["b__1"].score, 0.0)  # a step's agent ran out of time
+
     def test_paired_difference_and_flips(self):
         base, cand = self.root / "base", self.root / "cand"
         for i in range(3):

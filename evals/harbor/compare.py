@@ -9,7 +9,8 @@ Each trial is scored from its verifier reward. A trial without a reward is
 scored 0 when the agent ran and then failed or timed out; otherwise it is an
 infrastructure failure and excluded. --exclude drops named trials, for example
 those that overlapped a host sleep. Process metrics come from each trial's
-native Session through `aice session stats` (--aice names the command).
+native Sessions, one per step of a multi-step task, through `aice session stats`
+(--aice names the command); other reward keys are compared like metrics.
 
 The pass-rate difference is the mean over tasks scored on both sides of
 candidate minus baseline pass rate, with a 95% interval from a two-level
@@ -39,7 +40,7 @@ class Trial:
     task: str
     score: float | None  # None when excluded
     reason: str = ""
-    session: Path | None = None
+    sessions: list[Path] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
     builds: list[str] = field(default_factory=list)
 
@@ -51,15 +52,20 @@ def load_trials(job_dirs: list[Path], exclude: set[str]) -> list[Trial]:
             result = json.loads(result_path.read_text())
             name = result["trial_name"]
             task = result["task_name"]
-            session = result_path.parent / "agent" / "aice-session.jsonl"
-            trial = Trial(name, task, None, session=session if session.is_file() else None)
-            reward = ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward")
-            exception = (result.get("exception_info") or {}).get("exception_type")
-            agent_ran = bool((result.get("agent_execution") or {}).get("started_at"))
+            trial_dir = result_path.parent
+            sessions = [trial_dir / "agent" / "aice-session.jsonl", *sorted(trial_dir.glob("steps/*/agent/aice-session.jsonl"))]
+            trial = Trial(name, task, None, sessions=[s for s in sessions if s.is_file()])
+            rewards = (result.get("verifier_result") or {}).get("rewards") or {}
+            reward = rewards.get("reward")
+            # A multi-step trial records its agent runs and failures per step.
+            phases = [result, *(result.get("step_results") or [])]
+            exception = next((p["exception_info"].get("exception_type") for p in phases if p.get("exception_info")), None)
+            agent_ran = any((p.get("agent_execution") or {}).get("started_at") for p in phases)
             if name in exclude:
                 trial.reason = "excluded by request"
             elif reward is not None:
                 trial.score = float(reward)
+                trial.metrics = {key: float(value) for key, value in rewards.items() if key != "reward"}
             elif agent_ran and exception in AGENT_FAILURES:
                 trial.score = 0.0
             else:
@@ -69,25 +75,26 @@ def load_trials(job_dirs: list[Path], exclude: set[str]) -> list[Trial]:
 
 
 def attach_stats(trials: list[Trial], aice: list[str]) -> None:
-    sessions = [t for t in trials if t.session is not None]
-    if not sessions:
+    owners = [(t, s) for t in trials for s in t.sessions]
+    if not owners:
         return
     output = subprocess.run(
-        [*aice, "session", "stats", *(str(t.session) for t in sessions)],
+        [*aice, "session", "stats", *(str(s) for _, s in owners)],
         check=True, capture_output=True, text=True,
     ).stdout
-    for trial, line in zip(sessions, output.splitlines(), strict=True):
+    for (trial, _), line in zip(owners, output.splitlines(), strict=True):
         stats = json.loads(line)
-        cost = (stats["usage"].get("cost") or {}).get("total", 0.0)
-        trial.builds = stats["builds"]
-        trial.metrics = {
-            "cost_usd": cost,
-            "model_requests": stats["model_requests"],
-            "failed_requests": stats["failed_requests"],
-            "tool_calls": stats["tool_calls"],
-            "tool_errors": stats["tool_errors"],
-            "duration_s": stats["duration_ms"] / 1000,
-        }
+        trial.builds = sorted(set(trial.builds) | set(stats["builds"]))
+        # A trial's metrics sum over its Sessions.
+        for name, value in (
+            ("cost_usd", (stats["usage"].get("cost") or {}).get("total", 0.0)),
+            ("model_requests", stats["model_requests"]),
+            ("failed_requests", stats["failed_requests"]),
+            ("tool_calls", stats["tool_calls"]),
+            ("tool_errors", stats["tool_errors"]),
+            ("duration_s", stats["duration_ms"] / 1000),
+        ):
+            trial.metrics[name] = trial.metrics.get(name, 0) + value
 
 
 def by_task(trials: list[Trial]) -> dict[str, list[Trial]]:
@@ -144,7 +151,8 @@ def compare(baseline: list[Trial], candidate: list[Trial], samples: int = 10000,
         if rates[t][0] != rates[t][1]
     ]
     metrics = {}
-    for name in METRICS:
+    names = {name for side in (base_tasks, cand_tasks) for t in shared for x in side[t] for name in x.metrics}
+    for name in [*METRICS, *sorted(names - set(METRICS))]:
         diffs = []
         for t in shared:
             base_values = [x.metrics[name] for x in base_tasks[t] if name in x.metrics]
