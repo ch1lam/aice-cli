@@ -15,8 +15,9 @@ shipped versions.
 - Multiple model providers, file and shell tools, MCP and Agent Skills.
 - Saved sessions, branches, context compaction and tool permission checks.
 - Web, browser and desktop integrations with documented platform limits.
-- Initial [Go](evals/go-service/README.md) and [Python](evals/python-cli/README.md)
-  maintenance evaluation tasks, and [Harbor runs](docs/evaluation.md) through the ACP frontend.
+- [Harbor runs](docs/evaluation.md) through the ACP frontend, including Go and
+  Python [maintenance tasks](docs/evaluation.md#maintenance-tasks) whose steps
+  build on the agent's previous result.
   These are evaluation assets, not evidence of superior generated-code quality.
 
 ## Near-term priorities
@@ -26,7 +27,7 @@ shipped versions.
 | Authentication and connection management | Replace duplicated provider/MCP login flows and cumbersome account menus with shared operations and a simpler entry point, following the [SDK priority](docs/architecture.md#sdk-and-authentication-integration). | Supported official SDK flows take precedence; OAuth SDKs handle remaining protocol work; replaced paths and menus are removed. |
 | Reliable everyday use | Close known gaps in sessions, cancellation, permissions and platform integrations. | Reproducible failures have regression coverage; platform claims have native verification. |
 | Harness evaluation and ACP | Run AICE through the Agent Client Protocol so Harbor and editors use one standard interface; compare any two builds with paired, repeated runs and replay single decisions from recorded Sessions. See the [evaluation design](docs/plans/AICE_Evaluation_Design.md). | Any commit can be evaluated; results report noise, per-task flips and cost; every model input can be rebuilt from its Session. |
-| Code quality evaluation | Evaluate feature work, bug fixes and behavior-preserving refactoring across successive changes. | Comparable runs retain model/settings, tests, diffs and human review; improvements survive the next requirement. |
+| Code quality evaluation | Evaluate feature work, bug fixes and behavior-preserving refactoring across successive changes with the Harbor [maintenance tasks](docs/evaluation.md#maintenance-tasks); first results are in the [evaluation design](docs/plans/AICE_Evaluation_Design.md#p4北极星任务). | Comparable runs retain model/settings, tests, diffs and human review; improvements survive the next requirement. |
 | Maintenance workflows | Improve support for incremental refactoring, large codebase changes, and documentation restructuring and migration. | Representative tasks preserve behavior, keep changes reviewable and leave code and docs aligned. |
 
 Known implementation gaps live in [Maintenance](docs/maintenance.md), with

@@ -1022,7 +1022,7 @@ workspace's direct children, with directories first; a directory followed by `/`
 lists its direct children. Nonempty queries use case-insensitive fuzzy matching
 (ordered subsequences), including partial directory names such as `itnl/cfg`.
 Relative queries match the whole workspace path across directory levels:
-`cmd/m` finds both `cmd/aice/main.go` and `evals/go-service/reference/cmd/server/main.go`,
+`cmd/m` finds both `cmd/aice/main.go` and `evals/tasks/go-notes/solution/reference/cmd/server/main.go`,
 even though `cmd/` is an existing directory. A trailing `/` on an existing
 directory browses only its direct children. Explicit `./`, `../`, `~/`, and
 absolute parent paths anchor the search there; a nonempty suffix also searches

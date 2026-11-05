@@ -23,8 +23,8 @@ and quickstart. Use this index for task-specific guides.
 - [Architecture](architecture.md) and [Runtime contracts](contracts.md): ownership and runtime behavior.
 - [Go quality](go-quality.md) and [Collaboration](collaboration.md): engineering and verification rules.
 - [Maintenance](maintenance.md): code entry points and known discrepancies.
-- [Evaluation](evaluation.md): running AICE in Harbor through ACP, task sets, and the
-  [Go](../evals/go-service/README.md) and [Python](../evals/python-cli/README.md) maintenance tasks.
+- [Evaluation](evaluation.md): running AICE in Harbor through ACP, task sets,
+  experiments and the multi-step maintenance tasks.
 - [Evaluation design](plans/AICE_Evaluation_Design.md): approved plan for the
   evaluation architecture and ACP frontend.
 

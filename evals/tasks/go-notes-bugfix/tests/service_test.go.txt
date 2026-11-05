@@ -1,0 +1,211 @@
+package acceptance_test
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"example.test/notes/notes"
+)
+
+// Tests use only the public HTTP contract. No store types or implementation helpers.
+type wireNote struct {
+	ID   int    `json:"id"`
+	Text string `json:"text"`
+	Tag  string `json:"tag"`
+}
+
+func request(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func status(t *testing.T, w *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if w.Code != want {
+		t.Fatalf("status=%d want=%d body=%s", w.Code, want, w.Body.String())
+	}
+}
+
+func create(t *testing.T, h http.Handler, text, tag string) wireNote {
+	t.Helper()
+	input := map[string]string{"text": text}
+	if tag != "" {
+		input["tag"] = tag
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := request(h, "POST", "/notes", string(body))
+	status(t, w, 201)
+	var n wireNote
+	if err := json.Unmarshal(w.Body.Bytes(), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.ID <= 0 || n.Text != strings.TrimSpace(text) || n.Tag != tag {
+		t.Fatalf("unexpected created note: %+v", n)
+	}
+	return n
+}
+
+func list(t *testing.T, h http.Handler, query string) []wireNote {
+	t.Helper()
+	w := request(h, "GET", "/notes"+query, "")
+	status(t, w, 200)
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("list must be JSON")
+	}
+	var items []wireNote
+	if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	if items == nil {
+		t.Fatal("list must be an array, never null")
+	}
+	return items
+}
+
+func TestBaseLifecycle(t *testing.T) {
+	h := notes.NewHandler()
+	if len(list(t, h, "")) != 0 {
+		t.Fatal("new service is not empty")
+	}
+	a := create(t, h, " first ", "")
+	b := create(t, h, "second", "")
+	items := list(t, h, "")
+	if len(items) != 2 || items[0] != a || items[1] != b || a.ID >= b.ID {
+		t.Fatalf("creation order/content lost: %+v", items)
+	}
+	path := fmt.Sprintf("/notes/%d", a.ID)
+	status(t, request(h, "DELETE", path, ""), 204)
+	status(t, request(h, "DELETE", path, ""), 404)
+	c := create(t, h, "third", "")
+	if c.ID <= b.ID {
+		t.Fatal("ID reused or regressed")
+	}
+	if got := list(t, h, ""); len(got) != 2 || got[0] != b || got[1] != c {
+		t.Fatalf("delete: %+v", got)
+	}
+	if len(list(t, notes.NewHandler(), "")) != 0 {
+		t.Fatal("handlers share state")
+	}
+	status(t, request(h, "PUT", "/notes", "{}"), 405)
+	status(t, request(h, "GET", "/unknown", ""), 404)
+	status(t, request(h, "DELETE", "/notes/nope", ""), 404)
+}
+
+func TestBaseRejectedInputHasNoEffect(t *testing.T) {
+	h := notes.NewHandler()
+	for _, body := range []string{"{", "null", "{}", `{"text":2}`, `{"text":" "}`, `{"text":"x","extra":1}`, `{"text":"x"} {}`, `{"text":"` + strings.Repeat("a", 201) + `"}`, `{"text":"` + strings.Repeat("a", 5000) + `"}`} {
+		status(t, request(h, "POST", "/notes", body), 400)
+	}
+	if len(list(t, h, "")) != 0 {
+		t.Fatal("rejected requests changed state")
+	}
+	create(t, h, strings.Repeat("a", 200), "")
+}
+
+func TestBaseConcurrentRequests(t *testing.T) {
+	h := notes.NewHandler()
+	var wg sync.WaitGroup
+	for i := range 40 {
+		wg.Go(func() {
+			w := request(h, "POST", "/notes", fmt.Sprintf(`{"text":"item-%d"}`, i))
+			if w.Code != 201 {
+				t.Errorf("concurrent POST: %d", w.Code)
+			}
+			if w := request(h, "GET", "/notes", ""); w.Code != 200 {
+				t.Errorf("concurrent GET: %d", w.Code)
+			}
+		})
+	}
+	wg.Wait()
+	items := list(t, h, "")
+	if len(items) != 40 {
+		t.Fatalf("lost writes: %d", len(items))
+	}
+	for i, n := range items {
+		if i > 0 && n.ID <= items[i-1].ID {
+			t.Fatal("nonunique/unsorted IDs")
+		}
+		wg.Go(func() {
+			w := request(h, "DELETE", fmt.Sprintf("/notes/%d", n.ID), "")
+			if w.Code != 204 {
+				t.Errorf("concurrent DELETE: %d", w.Code)
+			}
+		})
+	}
+	wg.Wait()
+	if len(list(t, h, "")) != 0 {
+		t.Fatal("lost deletions")
+	}
+}
+
+func TestTags(t *testing.T) {
+	h := notes.NewHandler()
+	create(t, h, "untagged", "")
+	a := create(t, h, "work a", "work")
+	create(t, h, "home", "home")
+	b := create(t, h, "work b", "work")
+	got := list(t, h, "?tag=work")
+	if len(got) != 2 || got[0] != a || got[1] != b {
+		t.Fatalf("filter/order: %+v", got)
+	}
+	if len(list(t, h, "?tag=missing")) != 0 {
+		t.Fatal("absent tag matched")
+	}
+	if len(list(t, h, "?tag=")) != 4 {
+		t.Fatal("empty filter must list all")
+	}
+	for _, tag := range []string{"Work", "a-b", strings.Repeat("a", 21), "学习"} {
+		body, _ := json.Marshal(map[string]string{"text": "bad", "tag": tag})
+		status(t, request(h, "POST", "/notes", string(body)), 400)
+	}
+	status(t, request(h, "GET", "/notes?tag=Work", ""), 400)
+	if len(list(t, h, "")) != 4 {
+		t.Fatal("invalid tags created notes")
+	}
+	create(t, h, "boundary", strings.Repeat("a", 20))
+}
+
+func TestUnicodeBoundary(t *testing.T) {
+	h := notes.NewHandler()
+	create(t, h, strings.Repeat("界", 200), "")
+	create(t, h, strings.Repeat("😀", 200), "")
+	body, _ := json.Marshal(map[string]string{"text": strings.Repeat("界", 201)})
+	status(t, request(h, "POST", "/notes", string(body)), 400)
+	if len(list(t, h, "")) != 2 {
+		t.Fatal("Unicode boundary changed state incorrectly")
+	}
+}
+
+func TestLimit(t *testing.T) {
+	h := notes.NewHandler()
+	create(t, h, "skip", "home")
+	a := create(t, h, "first match", "work")
+	create(t, h, "second match", "work")
+	got := list(t, h, "?tag=work&limit=1")
+	if len(got) != 1 || got[0] != a {
+		t.Fatalf("limit must apply after filter and sort: %+v", got)
+	}
+	if len(list(t, h, "?limit=100")) != 3 {
+		t.Fatal("valid maximum rejected or unbounded list changed")
+	}
+	if len(list(t, h, "?tag=absent&limit=1")) != 0 {
+		t.Fatal("limit synthesized results")
+	}
+	for _, query := range []string{"0", "-1", "101", "abc", "1.5", "", "9999999999999999999999", "1&limit=2"} {
+		status(t, request(h, "GET", "/notes?limit="+query, ""), 400)
+	}
+	if len(list(t, h, "")) != 3 {
+		t.Fatal("limit mutated stored notes")
+	}
+}

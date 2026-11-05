@@ -100,13 +100,12 @@ Run the long-task subset with:
 go test ./internal/app -run '200ModelRounds|CompactionFailureBoundaries' -v
 ```
 
-The [Go service](../evals/go-service/README.md) and [Python CLI](../evals/python-cli/README.md)
-evaluation families have separate specifications and self-checks outside the root
-Go suite. Scripted models prove harness behavior; reference fixtures prove task
-and fault detection; actual model runs measure generated-code quality. Keep
-these claims separate. For model comparisons retain settings, interventions,
-initial/final source and refactor-only diffs; agree on models and cost before
-paid evaluation.
+The [maintenance tasks](evaluation.md#maintenance-tasks) have their own
+offline self-checks outside the root Go suite. Scripted models prove harness
+behavior; references and seeds prove task and fault detection; actual model
+runs measure generated-code quality. Keep these claims separate. For model
+comparisons retain settings, interventions, each step's source and the
+refactor-only diff; agree on models and cost before paid evaluation.
 
 ## Web checks
 

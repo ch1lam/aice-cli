@@ -125,7 +125,7 @@ func TestFileCompletionMatchesAcrossDirectoryLevels(t *testing.T) {
 	}
 	paths := []string{
 		"cmd/aice/main.go", "cmd/aice/main_test.go",
-		"evals/go-service/reference/cmd/server/main.go",
+		"evals/tasks/go-notes/solution/reference/cmd/server/main.go",
 		"internal/config/settings.go", "中文/目录/配置.go",
 		"cmd/aice/.env", "node_modules/cmd/main.go",
 	}

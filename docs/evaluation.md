@@ -63,7 +63,9 @@ Terminal-Bench 2.1 by digest and lists the development set: the 25 tasks whose
 at most 2 CPUs and 4 GiB memory, excluding tasks whose image cannot host
 Harbor's ACP client (`qemu-alpine-ssh`: Debian 11 with Python 3.9; the client
 needs 3.10). The rule is reproducible and independent of AICE results. The
-full dataset is the acceptance set and runs only at milestones.
+full dataset is the acceptance set and runs only at milestones. The
+[maintenance tasks](#maintenance-tasks) measure successive changes to one
+program.
 
 Harbor's agent, verifier and environment timeouts count wall-clock time, so a
 host that sleeps during a job turns in-flight trials into timeouts and failed
@@ -178,6 +180,65 @@ the complete record.
 
 ## Maintenance tasks
 
-The [Go service](../evals/go-service/README.md) and
-[Python CLI](../evals/python-cli/README.md) fixtures evaluate successive
-maintenance changes with their own drivers.
+[`evals/tasks`](../evals/tasks) holds Harbor tasks for successive maintenance
+changes to one small program, a Go HTTP notes service and a Python CSV ledger
+CLI:
+
+| Task | Steps |
+| --- | --- |
+| `go-notes` | `create` the service, add `tags`, `refactor` without behavior change, add a `limit` |
+| `python-ledger` | `create` the CLI, add refunds and a `minimum`, `refactor`, add a customer `prefix` |
+| `go-notes-bugfix`, `python-ledger-bugfix` | one step: reproduce and fix a defect injected into a complete implementation |
+
+A multi-step task keeps its environment across steps, so each step works on the
+agent's own result from the previous one. Each step starts a new agent session,
+with its own Session under `steps/<step>/agent/`, and its own verifier. A
+defect cannot be injected into code the agent wrote, so the bug-fix tasks start
+from a seed. Each step's instruction is the only specification the agent gets.
+Acceptance tests, references and seeds stay out of the agent's workspace.
+
+The verifier, `tests/verify.py` in each task, writes these rewards:
+
+| Key | Meaning |
+| --- | --- |
+| `reward` | 1 when every acceptance test up to this step passes |
+| `acceptance` | fraction of those tests passing |
+| `earlier` | fraction of earlier steps' tests passing, whether improvements survive the next requirement; 1 on a first step |
+| `own_tests` | 1 when the workspace has its own tests and they pass |
+| `checks` | Go: 1 when `gofmt` and `go vet` are clean; Python: 1 when every file compiles |
+| `changed_lines` | lines added plus removed during the step |
+
+A trial's rewards are each key's mean over its steps. Acceptance tests use only
+the public contract (the Go `NewHandler` HTTP handler, the Python
+`python -m ledger` command), so any internal structure can pass. Readability is
+not scored automatically; no model review runs in the verifier. Each step
+saves the workspace it leaves under `steps/<step>/artifacts/app`. Review the
+diff between `tags` (or `minimum`) and `refactor` for state ownership, change
+locality and proportionate abstraction, and record the scores with examples
+from the diff.
+
+Run the tasks like the dev set, giving the directory instead of the
+configuration:
+
+```sh
+PYTHONPATH=. harbor run -p evals/tasks -a evals.harbor.aice_acp:AiceAcpAgent \
+  -m opencode-go/deepseek-v4.1-flash --ae 'AICE_OPENCODE_API_KEY=${AICE_OPENCODE_API_KEY}' \
+  --ae AICE_THINKING=high -k 3
+```
+
+`compare.py` reads these trials too. It sums process metrics over a trial's
+step Sessions and compares the non-`reward` keys as metrics. The task assets
+check themselves without a model:
+
+```sh
+python3 -m unittest evals.tasks.test_tasks     # reference passes, seeds fail only their defect
+harbor run -p evals/tasks -a oracle             # the same inside the task images
+```
+
+The oracle installs the reference at every step and scores `reward` 1. Its
+`own_tests` is 0 because the reference has no tests of its own.
+
+A step that fails leaves the next steps to build on incomplete code, and their
+`earlier` drops. Before comparing, check each step's Session for a run that
+ended in `error`, as for the [noise floor](#noise-floor). A `refactor` step that
+changes nothing keeps `reward` at 1, so judge that step by its diff.

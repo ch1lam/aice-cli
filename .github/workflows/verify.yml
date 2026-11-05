@@ -60,7 +60,7 @@ jobs:
 
       - name: Test evaluation tools offline
         if: runner.os == 'Linux'
-        run: python3 -m unittest evals.harbor.test_compare
+        run: python3 -m unittest evals.harbor.test_compare evals.tasks.test_tasks
 
       - name: Test Windows installer offline (Windows PowerShell 5.1)
         if: runner.os == 'Windows'

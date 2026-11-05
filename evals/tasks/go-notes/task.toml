@@ -1,0 +1,34 @@
+schema_version = "1.4"
+# Each step keeps the workspace it leaves, for review of its diff.
+artifacts = ["/app"]
+multi_step_reward_strategy = "mean"
+
+[task]
+name = "aice/go-notes"
+description = "Build an in-memory Go HTTP notes service, extend it, refactor it, then add a requirement; every step works on the previous step's result."
+keywords = ["go", "http", "maintenance", "multi-step"]
+
+[agent]
+timeout_sec = 1200.0
+
+[verifier]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 900.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+allow_internet = true
+
+[[steps]]
+name = "create"
+
+[[steps]]
+name = "tags"
+
+[[steps]]
+name = "refactor"
+
+[[steps]]
+name = "limit"
