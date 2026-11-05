@@ -112,8 +112,27 @@ timeout appears as the agent failure that scored it.
 
 An A/A comparison runs the same build as both baseline and candidate. Its
 interval and changed tasks show how much two identical builds differ, and a
-candidate's difference is only evidence when it clearly exceeds that. No A/A
-run is recorded yet; the result belongs here once one runs.
+candidate's difference is only evidence when it clearly exceeds that.
+
+The recorded A/A run used build `dev+0fdd7676963a` on the dev set with
+opencode-go `deepseek-v4.1-flash`, reasoning high, `-k 3 -n 6`, the two jobs
+five days apart:
+
+| | Baseline | Candidate |
+| --- | --- | --- |
+| Pass rate (25 tasks) | 0.773 | 0.733 |
+| Cost per solved task | $0.030 | $0.028 |
+
+The difference was −0.040, 95% interval −0.180 to +0.087. Eight of 25 tasks
+changed pass rate. The largest changes were `make-mips-interpreter` (3/3 to
+0/3) and `adaptive-rejection-sampler` (2/3 to 0/3). On this set a difference
+of about ±0.15 or less, or one task moving by up to three trials, is not
+evidence. The candidate excludes four trials whose run ended after the
+provider failed every retry of one request; with them scored as failures the
+difference was −0.067. Before comparing, list trials whose Session ends with
+`last_stop_reason` `error` and check their failed requests. The Session does
+not record the provider error itself (see
+[Maintenance](maintenance.md#provider-errors-in-sessions)).
 
 ## Replaying a decision
 
