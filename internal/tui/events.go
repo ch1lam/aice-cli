@@ -335,17 +335,15 @@ func (m *model) applyAssistantDelta(event interaction.Event) bool {
 	}
 	switch event.Delta.Kind {
 	case interaction.DeltaText:
+		// Streaming text may still precede a tool call, so the process stays
+		// open until the completed message proves it concludes the run.
 		entry.text = entry.presentation.appendText(entry.text, event.Delta.Delta)
-		if strings.TrimSpace(entry.text) != "" {
-			m.markConclusion()
-		}
 		m.status = "Responding..."
 	case interaction.DeltaThinking:
 		entry.thinking = entry.presentation.appendThinking(entry.thinking, event.Delta.Delta)
 		m.status = "Thinking..."
 	case interaction.DeltaToolCall:
-		changed := m.revokeConclusion()
-		return m.applyWriteDelta(event.Delta) || changed
+		return m.applyWriteDelta(event.Delta)
 	default:
 		return false
 	}
@@ -368,8 +366,6 @@ func (m *model) completeAssistant(display interaction.AssistantDisplay) tea.Cmd 
 	entry.presentation = &assistantPresentation{}
 	if display.Concludes {
 		m.markConclusion()
-	} else {
-		m.revokeConclusion()
 	}
 	return nil
 }

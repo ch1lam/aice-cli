@@ -80,6 +80,21 @@ func (v *transcriptViewport) setItems(items []transcriptItem) {
 			}
 		}
 	}
+	if hasAnchor && !anchorFound {
+		// The anchored block left the list, usually folded into a heading.
+		// Keep the nearest surviving earlier block in place instead of
+		// landing on whatever now occupies the old index.
+		positions := make(map[int]int, len(items))
+		for i, item := range items {
+			positions[item.key] = i
+		}
+		for i := v.index - 1; i >= 0; i-- {
+			if position, ok := positions[v.items[i].key]; ok {
+				nextIndex = position
+				break
+			}
+		}
+	}
 	v.items, v.itemsWidth, v.index, v.resizing = items, v.width, nextIndex, false
 	if !anchorFound {
 		v.part, v.line = 0, 0

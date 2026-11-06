@@ -102,6 +102,35 @@ func TestTranscriptViewportPreservesAnchorAndInvalidatesChangedContent(t *testin
 	}
 }
 
+func TestTranscriptViewportFoldKeepsNearestSurvivingAnchor(t *testing.T) {
+	v := newTranscriptViewport()
+	v.SetWidth(20)
+	v.SetHeight(2)
+	v.setItems([]transcriptItem{
+		staticTranscriptItem(1, "user"),
+		staticTranscriptItem(2, "process"),
+		staticTranscriptItem(3, "thinking"),
+		staticTranscriptItem(4, "tool output"),
+		staticTranscriptItem(5, "answer"),
+		staticTranscriptItem(6, "tail"),
+	})
+	v.scroll(3)
+	if !strings.HasPrefix(v.View(), "tool output") {
+		t.Fatalf("setup view = %q", v.View())
+	}
+	// Folding the process removes the block being read; its heading takes
+	// over the reading position instead of the answer at the old index.
+	v.setItems([]transcriptItem{
+		staticTranscriptItem(1, "user"),
+		staticTranscriptItem(2, "process"),
+		staticTranscriptItem(5, "answer"),
+		staticTranscriptItem(6, "tail"),
+	})
+	if !strings.HasPrefix(v.View(), "process") {
+		t.Fatalf("fold moved the reading position to %q", v.View())
+	}
+}
+
 func TestLongTranscriptLeavesUnseenThinkingUnrendered(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width, m.height, m.running = 80, 24, true

@@ -96,7 +96,7 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	}
 }
 
-func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
+func TestModelCollapsesProcessOnceConclusionCompletes(t *testing.T) {
 	t.Parallel()
 
 	current := testModel(t, 80, 24)
@@ -116,8 +116,8 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		Kind:  interaction.EventAssistantDelta,
 		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "MIDDLEOUTPUT"},
 	})
-	if group := current.processGroup(processID); group == nil || !group.collapsed {
-		t.Fatal("text delta did not provisionally collapse the process")
+	if group := current.processGroup(processID); group == nil || group.collapsed {
+		t.Fatal("preamble text collapsed the process before its tool call arrived")
 	}
 
 	current.applyAgentEvent(interaction.Event{
@@ -125,7 +125,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		Delta: interaction.Delta{Kind: interaction.DeltaToolCall},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
-		t.Fatal("tool call did not reopen a provisionally collapsed process")
+		t.Fatal("tool call collapsed the process")
 	}
 	current.applyAgentEvent(interaction.Event{
 		Kind: interaction.EventAssistantEnd,
@@ -167,14 +167,18 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 
 	current.applyAgentEvent(interaction.Event{
 		Kind:  interaction.EventAssistantDelta,
-		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: " \n"},
+		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "FINAL_ANSWER"},
 	})
 	if group := current.processGroup(processID); group == nil || group.collapsed {
-		t.Fatal("leading whitespace collapsed the process before final output")
+		t.Fatal("streaming text collapsed the process before the message completed")
 	}
 	current.applyAgentEvent(interaction.Event{
-		Kind:  interaction.EventAssistantDelta,
-		Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: "FINAL_ANSWER"},
+		Kind: interaction.EventAssistantEnd,
+		Assistant: interaction.AssistantDisplay{
+			Text:      "FINAL_ANSWER",
+			Thinking:  "FINAL_REASONING",
+			Concludes: true,
+		},
 	})
 
 	collapsed := ansi.Strip(current.transcriptView())

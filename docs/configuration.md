@@ -844,10 +844,13 @@ for confirmation and waits for its answer to stop before deleting it.
 ## Interactive input delivery
 
 Process, tool-batch, thinking and tool-detail folds are independent. Process and
-batch summaries begin open, thinking/tool bodies closed. Final answers stay
-outside process folds; manual fold choices survive streaming. Click a heading
-to toggle it; `Ctrl+O` toggles all main process details. Streaming thinking shows
-a 4 KiB tail until completion. Folding changes only presentation.
+batch summaries begin open, thinking/tool bodies closed. The process stays open
+while text streams, since text can still precede a tool call; it folds once, when
+the completed message concludes the run, leaving the final answer outside. Manual
+fold choices survive streaming. Click a heading to toggle it; `Ctrl+O` toggles
+all main process details. When a fold removes the block being read, its nearest
+surviving heading keeps the reading position. Streaming thinking shows a 4 KiB
+tail until completion. Folding changes only presentation.
 
 Drag transcript text to copy on release. Click the header directory to copy its
 absolute path; Command-click (macOS) or Ctrl-click (Windows/Linux) opens it in
