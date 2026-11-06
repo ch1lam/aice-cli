@@ -358,8 +358,15 @@ func TestMissingKeyAndOptions(t *testing.T) {
 	if _, err := New(Config{BaseURL: "http://gateway.example"}); web.CodeOf(err) != web.CodeInvalidConfig {
 		t.Fatalf("plain http accepted: %v", err)
 	}
-	if _, err := New(Config{BaseURL: "http://127.0.0.1:9999/v1/"}); err != nil {
-		t.Fatalf("loopback http rejected: %v", err)
+	for _, base := range []string{"http://127.0.0.1:9999/v1/", "http://127.1.2.3", "http://[::1]:9999", "http://localhost:9999"} {
+		if _, err := New(Config{BaseURL: base}); err != nil {
+			t.Fatalf("loopback http %s rejected: %v", base, err)
+		}
+	}
+	for _, base := range []string{"http://127.example.com", "http://127.0.0.1.example.com", "http://10.0.0.1"} {
+		if _, err := New(Config{BaseURL: base}); web.CodeOf(err) != web.CodeInvalidConfig {
+			t.Fatalf("non-loopback http %s accepted: %v", base, err)
+		}
 	}
 	if _, err := New(Config{BaseURL: "https://u:p@api.exa.ai"}); web.CodeOf(err) != web.CodeInvalidConfig {
 		t.Fatal("userinfo accepted")

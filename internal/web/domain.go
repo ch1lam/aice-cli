@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -110,4 +111,16 @@ func normalizeDomains(domains []string) ([]string, error) {
 	}
 	slices.Sort(normalized)
 	return slices.Compact(normalized), nil
+}
+
+// IsLoopbackHost reports whether a URL hostname names the local machine:
+// "localhost" or a loopback IP literal. Hostnames that merely look like an
+// address, such as 127.example.com, resolve elsewhere and are not loopback.
+func IsLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	if host == "localhost" {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
 }

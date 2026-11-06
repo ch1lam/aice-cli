@@ -132,6 +132,7 @@ func TestWebConfigurationErrorsNameTheKey(t *testing.T) {
 		{"userinfo base url", map[string]any{"services": map[string]any{"a": map[string]any{"provider": "exa", "base_url": "https://u:p@api.exa.ai", "credential": map[string]any{"env": "K"}}}}, "base_url"},
 		{"query base url", map[string]any{"services": map[string]any{"a": map[string]any{"provider": "exa", "base_url": "https://api.exa.ai/?key=x", "credential": map[string]any{"env": "K"}}}}, "base_url"},
 		{"plain http base url", map[string]any{"services": map[string]any{"a": map[string]any{"provider": "exa", "base_url": "http://gateway.example", "credential": map[string]any{"env": "K"}}}}, "loopback"},
+		{"loopback-like http hostname", map[string]any{"services": map[string]any{"a": map[string]any{"provider": "exa", "base_url": "http://127.example.com", "credential": map[string]any{"env": "K"}}}}, "loopback"},
 		{"non object options", map[string]any{"services": map[string]any{"a": map[string]any{"provider": "exa", "credential": map[string]any{"env": "K"}, "options": []int{1}}}}, "options must be a JSON object"},
 		{"bad timeout", map[string]any{"search": map[string]any{"timeout": "-5s"}}, "web.search.timeout"},
 		{"bad max results", map[string]any{"search": map[string]any{"default_max_results": 50}}, "default_max_results"},

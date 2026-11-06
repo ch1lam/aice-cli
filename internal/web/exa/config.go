@@ -95,8 +95,7 @@ func ResolveBaseURL(raw string) (*url.URL, error) {
 	switch strings.ToLower(parsed.Scheme) {
 	case "https":
 	case "http":
-		host := strings.ToLower(strings.Trim(parsed.Hostname(), "[]"))
-		if host != "localhost" && host != "::1" && !strings.HasPrefix(host, "127.") {
+		if !web.IsLoopbackHost(parsed.Hostname()) {
 			return nil, web.NewError(web.CodeInvalidConfig, "base_url may use http only for loopback development gateways")
 		}
 	default:

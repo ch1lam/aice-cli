@@ -219,24 +219,9 @@ verify wrapping, scrolling, trailing spaces, CJK, combining sequences, emoji and
 real-caret/IME alignment. `SetValue` clears file-reference spans and is not a
 cursor-only operation. No dependency fork or replacement editor is maintained.
 
-### Exa HTTP loopback validation
+### `web_fetch` hostname resolution
 
-**Confirmed code discrepancy:** HTTP is intended only for loopback development
-endpoints, but both [config validation](../internal/config/web.go) and
-[adapter validation](../internal/web/exa/config.go) classify any hostname starting
-with `127.` as loopback. An offline call to `WebSettings.Validate` and
-`exa.ResolveBaseURL` accepts `http://127.example.com`, while rejecting
-`http://gateway.example`. No credentials or network are needed to reproduce it.
-
-If a user configures and selects such an endpoint, [Search](../internal/web/exa/client.go)
-sends its `x-api-key` over HTTP to that hostname; the prefix does not establish a
-loopback destination. This is a validation defect, not supported remote-HTTP
-behavior. The documentation cleanup leaves code unchanged. A fix should parse
-IP literals and test actual loopback membership in both validators, retaining
-the deliberate `localhost` exception; add rejection cases for `127.*` hostnames
-alongside existing real IPv4/IPv6 loopback and HTTPS/path-prefix cases.
-
-The separate `web_fetch` use of standard proxy/DNS transport is intentional:
+The `web_fetch` use of standard proxy/DNS transport is intentional:
 commit `c748cc41` replaced pinned direct dialing, and `6390df7` removed extra Web
 approval. Its literal-address policy does not block hostnames resolving to
 private addresses. See [fetch limits](web.md#web_fetch-limits); do not restore the

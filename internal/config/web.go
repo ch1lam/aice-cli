@@ -355,18 +355,13 @@ func validateWebBaseURL(raw string) error {
 	switch strings.ToLower(parsed.Scheme) {
 	case "https":
 	case "http":
-		if !isLoopbackHost(parsed.Hostname()) {
+		if !web.IsLoopbackHost(parsed.Hostname()) {
 			return errors.New("http is only allowed for loopback development gateways; use https")
 		}
 	default:
 		return errors.New("must use https (or http for loopback)")
 	}
 	return nil
-}
-
-func isLoopbackHost(host string) bool {
-	host = strings.ToLower(strings.Trim(host, "[]"))
-	return host == "localhost" || host == "::1" || strings.HasPrefix(host, "127.")
 }
 
 func parseWebTimeout(value string) (time.Duration, error) {

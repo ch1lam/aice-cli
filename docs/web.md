@@ -72,8 +72,8 @@ are validated strictly; unknown fields are errors.
 - `api` and `base_url` may be omitted; the Exa descriptor supplies
   `exa-rest` and `https://api.exa.ai`. `base_url` accepts an HTTPS URL with an
   optional path prefix; requests append `/search`. Userinfo, query and fragment
-  are rejected. HTTP is intended only for loopback development gateways; the
-  current hostname check has a [known gap](maintenance.md#exa-http-loopback-validation).
+  are rejected. HTTP is accepted only for loopback development gateways:
+  `localhost` or a loopback IP literal such as `127.0.0.1` or `[::1]`.
 - `credential` is exactly one of `{"env": "NAME"}` or
   `{"auth_ref": "web_services.<id>"}`. Keys are never stored in
   `settings.json`. `auth_ref` reads the `web_services` object in
