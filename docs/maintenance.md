@@ -190,17 +190,6 @@ dependency, or a separately reviewed updater change does so. Preserve checksum
 rejection and executable replacement tests; do not disable validation or
 suppress the finding to make the scan pass.
 
-### Settings shortcut hint without a binding
-
-The Settings command description in [interactive_commands.go](../internal/app/interactive_commands.go)
-advertises `Ctrl+,`, but [keymap.go](../internal/tui/keymap.go),
-[input_actions.go](../internal/tui/input_actions.go) and
-[input_route.go](../internal/tui/input_route.go) provide no Settings binding.
-[submit.go](../internal/tui/submit.go) opens Settings through slash navigation.
-The user guide therefore documents `/settings` only. The code hint remains
-incorrect: either remove it or implement the shortcut with a routing-conflict
-check and a focused input test.
-
 ### Composer click positioning and textarea capabilities
 
 Composer clicks do not position the editing caret. The real terminal caret from

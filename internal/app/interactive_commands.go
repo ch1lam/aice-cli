@@ -58,7 +58,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 		},
 		{
 			Name:        "settings",
-			Description: "Open Settings (Ctrl+,)",
+			Description: "Open Settings",
 			Panel:       &interaction.Panel{View: interaction.PanelSettings},
 		},
 		{
