@@ -16,7 +16,7 @@ func (e *runExecution) recordIncompleteAttempt(
 ) error {
 	message := llm.NewAssistantMessage(e.input.Model)
 	message.StopReason = llm.StopReasonError
-	message.ErrorMessage = "model request failed before completion"
+	message.ErrorMessage = withProviderSummary("model request failed before completion", runErr)
 	message.RequestConfig = e.requestConfigID
 	turn := ModelRound{
 		Number:      turnNumber,
@@ -91,8 +91,8 @@ func (e *runExecution) emitRetryEnd(
 
 // retryTurn settles a failed model turn. runErr is the error that failed the
 // turn. record, when non-nil, marks a turn still open after an incomplete
-// stream: it records the failed attempt before a retry, and on exhaustion the
-// turn is closed with turn_end. force retries irrespective of the retry policy
+// stream: it records the failed attempt before a retry or after the last
+// retry; a first attempt that is not retried is closed with turn_end. force retries irrespective of the retry policy
 // with no backoff; the loop uses it exactly once after arming reasoning
 // degradation, when the retried request differs from the rejected one.
 // stepContinue means attempt and turn advanced to the retry.
@@ -116,7 +116,14 @@ func (e *runExecution) retryTurn(
 				return stepAbort, errors.Join(runErr, err)
 			}
 		}
-		if record != nil {
+		// After retries the run ends at an earlier attempt's record, so
+		// finalization adds no terminal message; record this attempt too.
+		// Without retries, finalization records the terminal failure.
+		if record != nil && *attempt > 0 {
+			if err := record(); err != nil {
+				return stepAbort, errors.Join(runErr, err)
+			}
+		} else if record != nil {
 			if err := e.emit(ctx, AgentEvent{
 				Type:       EventTypeTurnEnd,
 				TurnNumber: *turn,
@@ -149,4 +156,14 @@ func (e *runExecution) retryTurn(
 	*attempt = nextAttempt
 	(*turn)++
 	return stepContinue, nil
+}
+
+// withProviderSummary appends the provider failure metadata to text so a
+// Session distinguishes an upstream outage from a request AICE built wrongly.
+func withProviderSummary(text string, runErr error) string {
+	var providerErr *llm.ProviderError
+	if !errors.As(runErr, &providerErr) {
+		return text
+	}
+	return text + ": " + providerErr.Summary()
 }

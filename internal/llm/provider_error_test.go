@@ -105,3 +105,22 @@ func TestProviderErrorClassification(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderErrorSummaryOmitsErrorText(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		err  *llm.ProviderError
+		want string
+	}{
+		{&llm.ProviderError{StatusCode: 429, Code: "Rate-Limit Error", Err: errors.New("key sk-secret")}, "provider HTTP 429 rate_limit_error"},
+		{&llm.ProviderError{Transport: true, Err: errors.New("dial tcp 10.0.0.1:443")}, "provider transport error"},
+		{&llm.ProviderError{Code: "overloaded_error"}, "provider error overloaded_error"},
+		{&llm.ProviderError{StatusCode: 400, Code: "see https://example.com/?k=v"}, "provider HTTP 400"},
+		{nil, "provider error"},
+	} {
+		if got := test.err.Summary(); got != test.want {
+			t.Errorf("Summary() = %q, want %q", got, test.want)
+		}
+	}
+}

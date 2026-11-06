@@ -161,6 +161,6 @@ func terminalFailure(runErr error) (string, llm.StopReason) {
 	case errors.Is(runErr, ErrContextLimit):
 		return "agent run stopped after reaching the context limit", llm.StopReasonError
 	default:
-		return "agent run failed before completion", llm.StopReasonError
+		return withProviderSummary("agent run failed before completion", runErr), llm.StopReasonError
 	}
 }

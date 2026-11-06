@@ -672,6 +672,17 @@ arguments. Metadata-only queries do not copy the transcript. Implementation
 owners are [Store](../internal/session/store.go) and
 [conversation](../internal/app/conversation.go).
 
+Every failed model request is recorded as an assistant message with stop
+reason `error`, including each retry attempt and the last one after retries
+are exhausted. An error raised while a response streams keeps the adapter's
+error text. A request that fails before streaming records "model request
+failed before completion" or, as the run's terminal message, "agent run failed
+before completion", followed by the
+[`ProviderError.Summary`](../internal/llm/provider_error.go): transport or HTTP
+status and the provider error code, such as `provider HTTP 429
+rate_limit_error`. The summary omits the error text, which may echo request
+details. Owner: [retry_flow.go](../internal/agent/retry_flow.go).
+
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that
 copy plus its own bounded in-memory history. Side threads run without tools

@@ -132,9 +132,11 @@ of about ±0.15 or less, or one task moving by up to three trials, is not
 evidence. The candidate excludes four trials whose run ended after the
 provider failed every retry of one request; with them scored as failures the
 difference was −0.067. Before comparing, list trials whose Session ends with
-`last_stop_reason` `error` and check their failed requests. The Session does
-not record the provider error itself (see
-[Maintenance](maintenance.md#provider-errors-in-sessions)).
+`last_stop_reason` `error` and check their failed requests. A failed request's
+`error_message` names the provider status and error code, such as
+`provider HTTP 429 rate_limit_error`, which separates provider outages from
+requests AICE built wrongly (see
+[Sessions](execution-sessions.md#sessions)).
 
 ## Replaying a decision
 

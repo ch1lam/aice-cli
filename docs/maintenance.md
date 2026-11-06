@@ -223,16 +223,6 @@ Live Exa, public-page fetch and native `/web` terminal acceptance remain
 unrecorded; the [opt-in Exa test](collaboration.md#web-checks) is the live-service
 entry. Do not infer live-service or cross-platform acceptance from local tests.
 
-### Provider errors in Sessions
-
-When a model request fails before it completes, the Agent Loop records an
-assistant message whose `error_message` is the fixed text "model request
-failed before completion"
-([retry_flow.go](../internal/agent/retry_flow.go)). The provider's error goes
-only to Agent events, so a Session cannot tell a provider outage from a
-request AICE built wrongly. Evaluation runs therefore classify these
-failures by hand ([Noise floor](evaluation.md#noise-floor)).
-
 ### Browser acceptance gaps
 
 Browser automation is the ordinary MCP service `user:browser`; agent-browser

@@ -122,6 +122,66 @@ func TestLoopRetriesProviderFailureBeforeStreamStarts(t *testing.T) {
 		result.ModelRounds[1].Assistant.StopReason != llm.StopReasonStop {
 		t.Fatalf("Run() turns = %#v", result.ModelRounds)
 	}
+	if got, want := result.ModelRounds[0].Assistant.ErrorMessage, "model request failed before completion: provider HTTP 429"; got != want {
+		t.Fatalf("failed attempt error_message = %q, want %q", got, want)
+	}
+}
+
+func TestLoopRecordsProviderSummaryWhenRequestNeverStarts(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	model := &startFailureModel{startErr: &llm.ProviderError{
+		StatusCode: http.StatusUnauthorized,
+		Code:       "authentication_error",
+		Err:        errors.New("invalid x-api-key sk-secret"),
+	}}
+	loop := mustRetryLoop(t, model, 3, 0)
+
+	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "hello")), nil)
+	if err == nil {
+		t.Fatal("Run() error = nil, want provider failure")
+	}
+	messages := result.Messages()
+	last, ok := messages[len(messages)-1].(llm.AssistantMessage)
+	if !ok {
+		t.Fatalf("last message = %#v, want assistant", messages[len(messages)-1])
+	}
+	if want := "agent run failed before completion: provider HTTP 401 authentication_error"; last.ErrorMessage != want {
+		t.Fatalf("terminal error_message = %q, want %q", last.ErrorMessage, want)
+	}
+}
+
+func TestLoopRecordsEveryAttemptWhenRetriesAreExhausted(t *testing.T) {
+	t.Parallel()
+
+	model := &startFailureModel{startErr: &llm.ProviderError{StatusCode: http.StatusServiceUnavailable}, failAll: true}
+	loop := mustRetryLoop(t, model, 2, 0)
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(t.Context(), testInput(testModel(), mustPrompt(t, "hello")), collectEvents(&events))
+	if err == nil {
+		t.Fatal("Run() error = nil, want provider failure")
+	}
+	var recorded []string
+	for _, message := range result.Messages() {
+		if assistant, ok := message.(llm.AssistantMessage); ok {
+			recorded = append(recorded, assistant.ErrorMessage)
+		}
+	}
+	want := "model request failed before completion: provider HTTP 503"
+	if model.calls != 3 || !reflect.DeepEqual(recorded, []string{want, want, want}) {
+		t.Fatalf("calls = %d, recorded = %q, want one record per attempt", model.calls, recorded)
+	}
+	var turnEnds int
+	for _, event := range events {
+		if event.Type == agent.EventTypeTurnEnd {
+			turnEnds++
+		}
+	}
+	if turnEnds != 3 {
+		t.Fatalf("turn_end events = %d, want 3", turnEnds)
+	}
 }
 
 func TestLoopDoesNotExecuteToolCallFromFailedRetryAttempt(t *testing.T) {
@@ -316,6 +376,7 @@ func mustRetryLoop(
 
 type startFailureModel struct {
 	startErr error
+	failAll  bool
 	script   *streamScript
 	calls    int
 	requests []llm.Request
@@ -327,7 +388,7 @@ func (m *startFailureModel) Stream(
 ) (llm.Stream, error) {
 	m.calls++
 	m.requests = append(m.requests, request)
-	if m.calls == 1 {
+	if m.calls == 1 || m.failAll {
 		return nil, m.startErr
 	}
 	return &scriptedStream{script: m.script}, nil

@@ -87,6 +87,32 @@ func (e *ProviderError) Error() string {
 	return "llm: provider error"
 }
 
+// Summary describes the failure from its metadata alone: transport or HTTP
+// status and a provider error code. It omits the error text, which may echo
+// request details, so it is safe to persist in Session history.
+func (e *ProviderError) Summary() string {
+	if e == nil {
+		return "provider error"
+	}
+	var summary string
+	switch {
+	case e.Transport:
+		summary = "provider transport error"
+	case e.StatusCode != 0:
+		summary = fmt.Sprintf("provider HTTP %d", e.StatusCode)
+	default:
+		summary = "provider error"
+	}
+	if code := normalizeErrorCode(e.Code); code != "" && len(code) <= 64 && !strings.ContainsFunc(code, invalidCodeRune) {
+		summary += " " + code
+	}
+	return summary
+}
+
+func invalidCodeRune(r rune) bool {
+	return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.')
+}
+
 // Unwrap preserves cancellation, deadline, and transport error identity.
 func (e *ProviderError) Unwrap() error {
 	if e == nil {
