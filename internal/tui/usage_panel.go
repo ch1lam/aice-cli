@@ -54,6 +54,13 @@ func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 	add("usage", "Output tokens", fmt.Sprint(u.Usage.OutputTokens))
 	add("usage", "Reasoning tokens (output subset)", fmt.Sprint(u.ReasoningTokens))
 	add("usage", "Cache read / write", fmt.Sprintf("%d / %d", u.Usage.CacheReadTokens, u.Usage.CacheWriteTokens))
+	add("usage", "Cache hit rate", cacheHitText(u.Usage, u.LastCall))
+	speed := "Not measured since this Session was opened"
+	if rate, ok := u.Throughput.TokensPerSecond(); ok {
+		speed = fmt.Sprintf("%.1f tok/s · %d output tokens over %s of generation (this process)",
+			rate, u.Throughput.OutputTokens, u.Throughput.Duration.Round(100*time.Millisecond))
+	}
+	add("usage", "Output speed", speed)
 	cost := u.CostStatus
 	if cost != "Unavailable" {
 		cost = fmt.Sprintf("$%.6f · %s", u.Usage.TotalCost, cost)
@@ -80,6 +87,23 @@ func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 	}
 	return s
 }
+
+// cacheHitText reports the Session rate and the last call's rate, which shows
+// a broken prompt prefix before it moves the cumulative figure.
+func cacheHitText(session, last interaction.DisplayUsage) string {
+	rate, ok := session.CacheHitRate()
+	if !ok {
+		return "No cache tokens reported"
+	}
+	text := fmt.Sprintf("%.1f%% Session", 100*rate)
+	// The Session reported cache telemetry, so a last call without cache
+	// tokens is a miss rather than missing telemetry.
+	if prompt := last.InputTokens + last.CacheReadTokens + last.CacheWriteTokens; prompt > 0 {
+		text += fmt.Sprintf(" · %.1f%% last call", 100*float64(last.CacheReadTokens)/float64(prompt))
+	}
+	return text
+}
+
 func (m model) openUsage(tab int) (model, tea.Cmd, bool) {
 	if m.readUsage == nil {
 		return m, nil, true

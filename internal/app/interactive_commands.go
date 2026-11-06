@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -568,6 +569,7 @@ func (s *interactiveSession) slashNew(
 	s.conversation.historyMu.Unlock()
 	s.stateMu.Lock()
 	s.totalUsage = llm.Usage{}
+	s.throughput = interaction.DisplayThroughput{}
 	s.sessionChanged = true
 	s.stateMu.Unlock()
 	if previous == nil {
@@ -696,6 +698,7 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		APIKeyConfigured: providerConfigured(s.providers, s.configuration),
 		PermissionMode:   s.permissionMode(),
 		Usage:            usage,
+		Throughput:       s.throughput,
 		Context:          s.contextSnapshotFor(s.model, s.configuration, s.systemPrompt),
 		SessionChanged:   s.sessionChanged,
 		Transcript:       s.transcript,
@@ -719,6 +722,14 @@ func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 		s.totalUsage = *total
 	}
 	return newDisplayUsage(s.totalUsage)
+}
+
+// addThroughput accumulates one measured main-run model call.
+func (s *interactiveSession) addThroughput(tokens int64, span time.Duration) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.throughput.OutputTokens += tokens
+	s.throughput.Duration += span
 }
 
 // clampedThinkingForModel re-clamps the requested reasoning level to a

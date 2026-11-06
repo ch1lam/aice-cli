@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -856,24 +858,40 @@ func TestComposerBorderShowsModelAndThinking(t *testing.T) {
 	}
 }
 
-func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
+func TestModelStatusLineShowsSpeedCacheAndCost(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
 	current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
 	current.sessionUsage = interaction.DisplayUsage{
 		InputTokens: 1200, OutputTokens: 456,
-		CacheReadTokens: 100, CacheWriteTokens: 20, TotalCost: 0.0074,
+		CacheReadTokens: 3800, CacheWriteTokens: 200, TotalCost: 0.0074,
 	}
-	for _, width := range []int{120, 80, 60, 20} {
+	current.throughput = interaction.DisplayThroughput{OutputTokens: 456, Duration: 12 * time.Second}
+
+	var statuses []string
+	for _, status := range current.usageStatuses() {
+		statuses = append(statuses, ansi.Strip(status))
+	}
+	want := []string{
+		"38 tok/s · cache 73% (3.8k) · $0.007",
+		"38 tok/s · cache 73% · $0.007",
+		"38 tok/s · cache 73%",
+		"38 tok/s",
+	}
+	if !slices.Equal(statuses, want) {
+		t.Fatalf("usage statuses = %q, want shed order %q", statuses, want)
+	}
+	for _, width := range []int{120, 60, 20} {
 		line := ansi.Strip(current.statusLine(width))
-		wants := []string{"↑1.2k", "↓456", "R100", "W20", "$0.007"}
-		if width == 20 {
+		wants := []string{"? shortcuts", "Ctrl+c clear", want[0]}
+		switch width {
+		case 60:
+			wants = []string{"? shortcuts", "Ctrl+c clear", "38 tok/s"}
+		case 20:
 			wants = []string{"?", "Ctrl+c"}
-			if strings.ContainsAny(line, "↑↓$") || strings.Contains(line, "R100") || strings.Contains(line, "W20") {
+			if strings.Contains(line, "tok/s") {
 				t.Fatal("usage displaced shortcuts in the narrow footer")
 			}
-		} else {
-			wants = append(wants, "? shortcuts", "Ctrl+c clear")
 		}
 		for _, want := range wants {
 			if !strings.Contains(line, want) {
@@ -886,18 +904,29 @@ func TestModelStatusLineShowsSessionUsageAndEstimatedCost(t *testing.T) {
 	}
 }
 
-func TestModelStatusLineShowsZeroUsageBeforeConversation(t *testing.T) {
+func TestModelStatusLineOmitsUnreportedMeasurements(t *testing.T) {
+	t.Parallel()
+	current := newModel(nil, nil)
+	current.sessionUsage = interaction.DisplayUsage{InputTokens: 1200, OutputTokens: 456, TotalCost: 0.0074}
+	// One burst-delivered call measured nothing; no cache telemetry arrived.
+	line := ansi.Strip(current.statusLine(80))
+	if !strings.Contains(line, "$0.007") || strings.Contains(line, "tok/s") || strings.Contains(line, "cache") {
+		t.Fatalf("status = %q, want only cost without speed or cache", line)
+	}
+}
+
+func TestModelStatusLineShowsZeroCostBeforeConversation(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
 	for _, width := range []int{80, 32, 15} {
 		line := ansi.Strip(current.statusLine(width))
-		wants := []string{"↑0", "↓0", "R0", "W0", "$0.000", "? shortcuts", "Ctrl+c clear"}
+		wants := []string{"$0.000", "? shortcuts", "Ctrl+c clear"}
 		if width < 80 {
 			wants = []string{"?", "Ctrl+c"}
 			if width == 32 {
 				wants = []string{"? shortcuts", "Ctrl+c clear"}
 			}
-			if strings.ContainsAny(line, "↑↓$") || strings.Contains(line, "R0") || strings.Contains(line, "W0") {
+			if strings.Contains(line, "$") {
 				t.Fatal("zero usage displaced shortcuts in the narrow footer")
 			}
 		}
@@ -925,15 +954,17 @@ func TestModelRunningStatusLineKeepsCancellationOnNarrowScreen(t *testing.T) {
 	}
 }
 
-func TestModelAnimatesSnapshotUsage(t *testing.T) {
+func TestModelAnimatesSnapshotTotalsButNotRates(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	state := interaction.RuntimeState{Usage: interaction.DisplayUsage{
-		InputTokens:  1_200,
-		OutputTokens: 456,
-		TotalCost:    0.0074,
-	}}
+	state := interaction.RuntimeState{
+		Usage: interaction.DisplayUsage{
+			InputTokens: 1_000, OutputTokens: 456,
+			CacheReadTokens: 9_000, TotalCost: 0.0074,
+		},
+		Throughput: interaction.DisplayThroughput{OutputTokens: 456, Duration: 12 * time.Second},
+	}
 
 	updatedModel, command := current.applyRunBatch(runBatchMsg{updates: []runUpdate{
 		{state: &state},
@@ -945,13 +976,11 @@ func TestModelAnimatesSnapshotUsage(t *testing.T) {
 	if !ok {
 		t.Fatalf("applyRunBatch() model = %T, want tui.model", updatedModel)
 	}
-	if updated.sessionUsage != state.Usage {
-		t.Fatalf("session usage = %#v, want snapshot %#v", updated.sessionUsage, state.Usage)
+	if updated.sessionUsage != state.Usage || updated.throughput != state.Throughput {
+		t.Fatalf("snapshot not applied: usage %#v throughput %#v", updated.sessionUsage, updated.throughput)
 	}
-	if status := updated.usageStatus(true); !strings.Contains(status, "↑0") ||
-		!strings.Contains(status, "↓0") ||
-		!strings.Contains(status, "$0.000") {
-		t.Fatalf("usage animation did not start at zero: %q", status)
+	if status := ansi.Strip(updated.usageStatuses()[0]); status != "38 tok/s · cache 90% (0) · $0.000" {
+		t.Fatalf("animation start = %q, want final rates with totals from zero", status)
 	}
 
 	generation := updated.usageAnimation.generation
@@ -963,11 +992,8 @@ func TestModelAnimatesSnapshotUsage(t *testing.T) {
 		)
 	}
 
-	status := updated.usageStatus(true)
-	for _, want := range []string{"↑1.2k", "↓456", "$0.007"} {
-		if !strings.Contains(status, want) {
-			t.Errorf("completed usage animation = %q, want %q", status, want)
-		}
+	if status := ansi.Strip(updated.usageStatuses()[0]); status != "38 tok/s · cache 90% (9.0k) · $0.007" {
+		t.Fatalf("completed usage animation = %q", status)
 	}
 }
 

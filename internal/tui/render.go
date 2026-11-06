@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -159,7 +160,7 @@ func (m model) footerView(width int) string {
 		rows := strings.Split(m.inputFullHelp(contentWidth), "\n")
 		// Controls start directly below the frame. Usage shares their first
 		// row when it fits, without reserving an otherwise empty status row.
-		for _, usage := range []string{m.usageStatus(true), m.usageStatus(false)} {
+		for _, usage := range m.usageStatuses() {
 			if line, ok := alignStatusLine(rows[0], usage, contentWidth); ok {
 				rows[0] = line
 				break
@@ -805,9 +806,8 @@ func (m model) statusLine(width int) string {
 	if !m.help.ShowAll {
 		shortcuts = m.help.ShortHelpView(m.footerKeys().ShortHelp())
 	}
-	fullUsage := m.usageStatus(true)
-	compactUsage := m.usageStatus(false)
-	for _, usage := range []string{fullUsage, compactUsage} {
+	usages := m.usageStatuses()
+	for _, usage := range usages {
 		if line, ok := alignStatusLine(shortcuts, usage, width); ok {
 			return line
 		}
@@ -816,7 +816,7 @@ func (m model) statusLine(width int) string {
 	if shortcuts != "" {
 		return mutedStyle.Render(m.inputHelp(width, false))
 	}
-	for _, usage := range []string{fullUsage, compactUsage} {
+	for _, usage := range usages {
 		if line, ok := alignStatusLine("", usage, width); ok {
 			return line
 		}
@@ -872,29 +872,40 @@ func alignStatusLine(left, right string, width int) (string, bool) {
 	return left + strings.Repeat(" ", gap) + right, true
 }
 
-func (m model) usageStatus(includeCache bool) string {
-	usage := m.usageAnimation.Value(m.sessionUsage)
-	inputTokens := usage.InputTokens
-	if !includeCache {
-		inputTokens += usage.CacheReadTokens + usage.CacheWriteTokens
+// usageStatuses returns the usage cell from widest to narrowest. Cache total
+// sheds first, then cost, then hit rate; output speed stays longest. Rates
+// use the snapshot target because interpolated counts form no real ratio.
+func (m model) usageStatuses() []string {
+	animated := m.usageAnimation.Value(m.sessionUsage)
+	var speed, hit string
+	if rate, ok := m.throughput.TokensPerSecond(); ok {
+		speed = formatRate(rate) + " tok/s"
 	}
+	if rate, ok := m.sessionUsage.CacheHitRate(); ok {
+		hit = fmt.Sprintf("cache %d%%", int(math.Floor(100*rate)))
+	}
+	cached := hit
+	if hit != "" {
+		cached += " (" + formatTokens(animated.CacheReadTokens) + ")"
+	}
+	cost := fmt.Sprintf("$%.3f", animated.TotalCost)
+	variants := [][]string{{speed, cached, cost}, {speed, hit, cost}, {speed, hit}, {speed}}
+	statuses := make([]string, 0, len(variants))
+	for _, parts := range variants {
+		parts = slices.DeleteFunc(parts, func(part string) bool { return part == "" })
+		status := mutedStyle.Render(strings.Join(parts, " · "))
+		if len(parts) > 0 && !slices.Contains(statuses, status) {
+			statuses = append(statuses, status)
+		}
+	}
+	return statuses
+}
 
-	parts := []string{
-		"↑" + formatTokens(inputTokens),
-		"↓" + formatTokens(usage.OutputTokens),
+func formatRate(rate float64) string {
+	if rate < 10 {
+		return strconv.FormatFloat(rate, 'f', 1, 64)
 	}
-	if includeCache {
-		parts = append(
-			parts,
-			"R"+formatTokens(usage.CacheReadTokens),
-		)
-		parts = append(
-			parts,
-			"W"+formatTokens(usage.CacheWriteTokens),
-		)
-	}
-	parts = append(parts, fmt.Sprintf("$%.3f", usage.TotalCost))
-	return mutedStyle.Render(strings.Join(parts, " "))
+	return strconv.FormatFloat(rate, 'f', 0, 64)
 }
 
 func formatTokens(count int64) string {

@@ -15,9 +15,12 @@ type UsageSnapshot struct {
 	Nodes, Messages, Compactions       int
 	Context                            DisplayContext
 	Usage                              DisplayUsage
-	ReasoningTokens                    int64
-	CostStatus                         string
-	Scope                              string
+	// LastCall is the most recently recorded model call's usage.
+	LastCall        DisplayUsage
+	Throughput      DisplayThroughput
+	ReasoningTokens int64
+	CostStatus      string
+	Scope           string
 	// Reviews and ReviewUsage cover auto mode classifier decisions recorded
 	// on tool results; they are not part of Usage.
 	Reviews     int

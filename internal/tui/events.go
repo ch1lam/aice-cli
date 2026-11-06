@@ -180,6 +180,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 		if update.state != nil {
 			m.sessionID = update.state.SessionID
 			m.contextUsage = update.state.Context
+			m.throughput = update.state.Throughput
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
 			m.permissionMode = update.state.PermissionMode

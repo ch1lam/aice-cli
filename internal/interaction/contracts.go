@@ -133,6 +133,33 @@ type DisplayUsage struct {
 	TotalCost        float64
 }
 
+// CacheHitRate returns cache reads as a fraction of all prompt tokens. It is
+// unknown until a cache read or write is reported: zero cannot distinguish a
+// miss from a provider that reports no cache telemetry.
+func (u DisplayUsage) CacheHitRate() (float64, bool) {
+	if u.CacheReadTokens <= 0 && u.CacheWriteTokens <= 0 {
+		return 0, false
+	}
+	prompt := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens
+	return float64(u.CacheReadTokens) / float64(prompt), true
+}
+
+// DisplayThroughput accumulates measured generation in this process. Duration
+// runs from each model call's first streamed content to its last stream event;
+// calls without a measurable span or reported output are excluded.
+type DisplayThroughput struct {
+	OutputTokens int64
+	Duration     time.Duration
+}
+
+// TokensPerSecond returns the output rate over measured generation time.
+func (t DisplayThroughput) TokensPerSecond() (float64, bool) {
+	if t.OutputTokens <= 0 || t.Duration <= 0 {
+		return 0, false
+	}
+	return float64(t.OutputTokens) / t.Duration.Seconds(), true
+}
+
 // DisplayContext describes current context occupancy, separately from billed usage.
 // Window == 0 means the effective capacity is unknown; Known describes Tokens.
 type DisplayContext struct {
@@ -152,7 +179,10 @@ type RuntimeState struct {
 	// PermissionMode is "default" or "auto".
 	PermissionMode string
 	Usage          DisplayUsage
-	Context        DisplayContext
+	// Throughput is measured, not recorded: it starts empty after /new or
+	// resume and covers only main-run model calls made since then.
+	Throughput DisplayThroughput
+	Context    DisplayContext
 	// SessionChanged reports that the active Session branch changed, so a
 	// frontend must discard its visible branch transcript.
 	SessionChanged bool

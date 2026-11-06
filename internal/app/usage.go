@@ -19,12 +19,15 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 		return interaction.UsageSnapshot{}, err
 	}
 	settings := s.settingsSnapshot()
+	s.stateMu.Lock()
+	throughput := s.throughput
+	s.stateMu.Unlock()
 	revision, _ := s.settingsStatus()
 	result := interaction.UsageSnapshot{Revision: revision, ReadAt: time.Now(), Directory: s.workspacePath,
 		Provider: string(settings.model.Provider), Model: settings.model.ID,
 		Context:      s.contextSnapshotFor(settings.model, settings.configuration, settings.systemPrompt),
 		WindowSource: contextWindowInformation(settings.model, settings.configuration), CostStatus: "Unavailable",
-		Scope: "Recorded usage across all branches and compactions; excludes temporary BTW answers. Interrupted requests may be unreported."}
+		Scope: "Recorded usage across all branches and compactions; excludes temporary BTW answers. Interrupted requests may be unreported.", Throughput: throughput}
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	store := s.conversation.store
@@ -51,6 +54,9 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 	for _, entry := range snapshot.Messages {
 		if a, ok := entry.Message.(llm.AssistantMessage); ok {
 			count(a.Usage)
+			if llm.ContextTokens(a.Usage) > 0 {
+				result.LastCall = newDisplayUsage(a.Usage)
+			}
 		}
 	}
 	for _, entry := range snapshot.Compactions {

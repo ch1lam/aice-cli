@@ -70,6 +70,7 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 	}
 	s.stateMu.Lock()
 	s.totalUsage = session.TotalUsage(snapshot)
+	s.throughput = interaction.DisplayThroughput{}
 	s.stateMu.Unlock()
 	s.publishTranscript(view)
 	// Once installed, cleanup failures are warnings, not a failed switch.

@@ -858,6 +858,7 @@ type interactiveSession struct {
 	trustSource    trust.Source
 	providers      []provider.Provider
 	totalUsage     llm.Usage
+	throughput     interaction.DisplayThroughput
 	sessionChanged bool
 	transcript     *interaction.Transcript
 	guard          *guard.Guard

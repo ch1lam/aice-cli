@@ -148,6 +148,7 @@ type model struct {
 	setPermissionMode     func(string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
+	throughput            interaction.DisplayThroughput
 	contextShowFraction   bool
 	contextPressed        bool
 	workspacePress        *tea.Mouse

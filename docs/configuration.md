@@ -226,6 +226,24 @@ to the original records' price coverage; current prices are never applied
 retroactively. Missing reports from interrupted requests remain unreported.
 This is not an account balance or subscription quota display.
 
+Cache hit rate is cache reads over all prompt tokens (input, cache reads and
+cache writes), shown for the Session and for the last recorded call; a falling
+last-call rate reveals a changed prompt prefix before the Session rate moves.
+It stays “No cache tokens reported” until a provider reports a cache read or
+write, because zero cannot distinguish a miss from absent telemetry.
+
+Output speed is output tokens over generation time, measured in this process
+only: each main-run call counts from its first streamed content to its last
+stream event, excluding request latency, tool execution and Session writes.
+Calls without reported output or that arrived in under 100 ms are excluded.
+Timing is not recorded, so `/new` and resuming start the measurement empty.
+
+The status bar summarizes the same values on the right of the footer:
+`42 tok/s · cache 94% (1.8M) · $0.123`, where the parenthesized total is
+Session cache reads. Missing measurements are omitted. As width drops it sheds
+the cache total, then cost, then hit rate; output speed stays longest. Totals
+refresh when a run or command completes.
+
 Session info shows identity, path, directory, active leaf and node/message/
 compaction counts. Opening any information window before the first prompt
 shows “Not started” and creates no Session file. Reads are asynchronous and

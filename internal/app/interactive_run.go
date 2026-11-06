@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -201,7 +202,11 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 		}
 		return agent.CompactionResult{History: compacted, Usage: usage}, err
 	}
+	timer := generationTimer{now: time.Now}
 	_, runErr := snapshot.loop.Run(ctx, input, func(eventCtx context.Context, event agent.AgentEvent) error {
+		if tokens, span, ok := timer.observe(event); ok {
+			r.session.addThroughput(tokens, span)
+		}
 		if r.sink == nil {
 			return nil
 		}

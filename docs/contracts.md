@@ -539,6 +539,10 @@ The panel's Stop action uses ordinary run cancellation and waits for completion.
 Usage reads derive from copied source records without consuming restored display
 state or creating empty Sessions. Read on open, lifecycle completion or manual
 refresh, never on each token delta. Missing prices/usage remain unknown.
+Output throughput is the one usage figure not derived from records: the
+application times main-run calls in its synchronous Agent event sink and
+publishes the in-memory sum with runtime state. It is never written to the
+Session, and the Loop and message types carry no timing.
 
 ### Interactive authentication
 
