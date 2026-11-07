@@ -59,7 +59,7 @@ func TestMCPPermissionCLIAndPrintAcrossSessions(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := filepath.Join(t.TempDir(), "session.jsonl")
-		args := []string{"--workspace", t.TempDir(), "--no-dep-install", "--no-update-check", "--session", path, "--print", "read fixture"}
+		args := []string{"--workspace", t.TempDir(), "--no-dep-install", "--no-update-check", "--session", path, "--permission-mode", "default", "--print", "read fixture"}
 		if yolo {
 			args = append(args, "--yolo")
 		}

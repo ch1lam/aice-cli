@@ -91,14 +91,15 @@ peak billing is twice the estimate.
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `anthropic`, `anthropic-subscription`, `openai-codex`, `aihubmix`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
+| Small model | `AICE_SMALL_MODEL` | Fast model of the same provider for side calls: the auto mode classifier, permission summaries and Session titles; empty uses Model; user settings only |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
 | Disable helper downloads | `AICE_NO_DEP_INSTALL` | Boolean; file key `no_dep_install` |
 | Disable startup update check | `AICE_NO_UPDATE_CHECK` | Boolean; file key `no_update_check` |
-| Permission mode | `AICE_PERMISSION_MODE` | `default` or `auto`; file key `permission_mode`; see [auto mode](execution-sessions.md#auto-mode) |
-| Auto mode classifier | none (file only) | `auto_mode` object with `model`, `environment`, `block`, `allow`; project settings may add `environment` and `block` only |
+| Permission mode | `AICE_PERMISSION_MODE` | `auto` (default) or `default`; file key `permission_mode`; see [auto mode](execution-sessions.md#auto-mode) |
+| Auto mode classifier | none (file only) | `auto_mode` object with `environment`, `block`, `allow`; project settings may add `environment` and `block` only |
 | Tool permission rules | none (file only) | `permissions` object with `allow`/`ask`/`deny` rule lists, concatenated from user and trusted project settings; see [permission rules](execution-sessions.md#permission-rules) |
 | Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
 
@@ -682,8 +683,8 @@ aice [--print <prompt>] [flags]
 ```
 
 `--permission-mode` overrides the `permission_mode` setting; see
-[auto mode](execution-sessions.md#auto-mode). It cannot be combined with
-`--yolo`.
+[auto mode](execution-sessions.md#auto-mode). `--yolo` runs in `default` mode
+and cannot be combined with `--permission-mode auto`.
 
 `--approve` and `--no-approve` are mutually exclusive startup Trust choices;
 they do not grant tool permissions. `--yolo` allows Ask decisions but cannot

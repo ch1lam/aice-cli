@@ -80,6 +80,7 @@ const (
 const (
 	settingsKeyProvider            = "provider"
 	settingsKeyModel               = "model"
+	smallModelKey                  = "small_model"
 	settingsKeyThinking            = "thinking"
 	settingsKeyDefaultProjectTrust = "default_project_trust"
 	settingsKeyCustomBaseURL       = "custom_base_url"
@@ -91,6 +92,7 @@ type Setting string
 const (
 	SettingProvider      Setting = settingsKeyProvider
 	SettingModel         Setting = settingsKeyModel
+	SettingSmallModel    Setting = smallModelKey
 	SettingThinking      Setting = settingsKeyThinking
 	SettingCustomBaseURL Setting = settingsKeyCustomBaseURL
 )
@@ -113,6 +115,7 @@ type Settings struct {
 	ContextWindows      []ContextWindow   `json:"context_windows,omitempty"`
 	Provider            string            `json:"provider,omitempty"`
 	Model               string            `json:"model,omitempty"`
+	SmallModel          string            `json:"small_model,omitempty"`
 	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
 	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
 	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
@@ -142,13 +145,17 @@ type Paths struct {
 // Config is an immutable effective snapshot owned by one application instance.
 // Interactive changes create another snapshot; they never reload file layers.
 type Config struct {
-	MaxTurns            int
-	RunNoProgressLimit  int
-	RunTokenBudget      int64
-	RunTimeout          time.Duration
-	ContextWindows      map[string]int64
-	Provider            string
-	Model               string
+	MaxTurns           int
+	RunNoProgressLimit int
+	RunTokenBudget     int64
+	RunTimeout         time.Duration
+	ContextWindows     map[string]int64
+	Provider           string
+	Model              string
+	// SmallModel names a fast model on the same provider for side calls: the
+	// auto mode classifier, permission summaries and Session titles. Empty
+	// uses Model.
+	SmallModel          string
 	Thinking            llm.ThinkingLevel
 	DefaultProjectTrust trust.Default
 	// APIKeys and BaseURLs hold API-key provider settings keyed by provider
@@ -230,6 +237,7 @@ func EnvironmentVariables() map[string]string {
 		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
 		"run_token_budget":      "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
 		"provider": EnvProvider, "model": EnvModel, "thinking": EnvThinking,
+		"small_model":           "AICE_SMALL_MODEL",
 		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
 		"context_windows":       "AICE_CONTEXT_WINDOWS",
 		"no_dep_install":        "AICE_NO_DEP_INSTALL", "no_update_check": "AICE_NO_UPDATE_CHECK",
@@ -320,6 +328,11 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 		}
 		if err := autoMode.extract(path, values, paths, &diagnostics); err != nil {
 			return Config{}, err
+		}
+		if _, ok := values[smallModelKey]; ok && path == paths.ProjectSettings {
+			// The classifier runs on the small model; only the user may weaken it.
+			delete(values, smallModelKey)
+			diagnostics = append(diagnostics, "Ignored small_model in project settings: only user settings may choose the classifier model")
 		}
 		if raw, ok := values[permissionsKey]; ok {
 			delete(values, permissionsKey)
@@ -463,6 +476,7 @@ func (c Config) settings() Settings {
 		RunTimeout:          c.RunTimeout.String(),
 		Provider:            c.Provider,
 		Model:               c.Model,
+		SmallModel:          c.SmallModel,
 		Thinking:            c.Thinking,
 		DefaultProjectTrust: c.DefaultProjectTrust,
 		NoDepInstall:        c.NoDepInstall,
@@ -543,6 +557,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		RunTimeout:          timeout,
 		Provider:            s.Provider,
 		Model:               s.Model,
+		SmallModel:          s.SmallModel,
 		Thinking:            s.Thinking,
 		DefaultProjectTrust: s.DefaultProjectTrust,
 		APIKeys:             apiKeys,
@@ -552,7 +567,7 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		PermissionMode:      s.PermissionMode,
 	}
 	if c.PermissionMode == "" {
-		c.PermissionMode = PermissionModeDefault
+		c.PermissionMode = PermissionModeAuto
 	}
 	if len(s.ContextWindows) != 0 {
 		c.ContextWindows = make(map[string]int64, len(s.ContextWindows))
@@ -688,6 +703,9 @@ func (s Settings) validate() error {
 	}
 	if strings.ContainsAny(s.Model, " \t\r\n") {
 		return fmt.Errorf("model must not contain whitespace")
+	}
+	if strings.ContainsAny(s.SmallModel, " \t\r\n") {
+		return fmt.Errorf("small_model must not contain whitespace")
 	}
 	switch s.Thinking {
 	case llm.ThinkingLevelUnknown,

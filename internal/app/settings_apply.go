@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -134,14 +135,16 @@ func (s *interactiveSession) applySettingsReserved(ctx context.Context, request 
 			return result, err
 		}
 	}
-	if candidate.PermissionMode == config.PermissionModeAuto && s.guardAdapter != nil && s.guardAdapter.yolo {
+	changesMode := slices.ContainsFunc(request.Changes, func(change interaction.SettingChange) bool { return change.ID == "permission_mode" })
+	yolo := s.guardAdapter != nil && s.guardAdapter.yolo
+	if changesMode && yolo && candidate.PermissionMode == config.PermissionModeAuto {
 		return result, fmt.Errorf("--yolo cannot be combined with permission mode auto")
 	}
 	if err := config.SaveSettingsPatch(ctx, candidate.Paths, patch); err != nil {
 		return result, err
 	}
 	result.Committed = true
-	if s.guardAdapter != nil && s.guardAdapter.auto != nil {
+	if changesMode && s.guardAdapter != nil && s.guardAdapter.auto != nil {
 		if err := s.guardAdapter.setPermissionMode(candidate.PermissionMode); err != nil {
 			return result, err
 		}

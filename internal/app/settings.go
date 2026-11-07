@@ -31,6 +31,8 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "models", "Provider", "Model service used for the next response.", timing, false
 	case "model":
 		return "models", "Model", "Select from this provider's catalog, or enter a custom model ID.", timing, false
+	case "small_model":
+		return "models", "Small model", "Fast model on the same provider for the auto mode classifier, permission summaries and Session titles. Empty uses the main model.", timing, false
 	case "thinking":
 		return "models", "Thinking", "Requested reasoning level; the model may use its nearest supported level.", timing, false
 	case "context_windows":
@@ -116,6 +118,15 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			}
 			if settings.modelErr != nil {
 				field.Description += " Current model unavailable: " + settings.modelErr.Error()
+			}
+		case config.SettingSmallModel:
+			field.Effective = settings.configuration.SmallModel
+			if field.Effective == "" {
+				field.Effective = settings.model.ID
+			}
+			field.AllowCustom = true
+			for _, model := range modelsForProvider(s.providers, activeProvider(settings.model, settings.configuration)) {
+				field.Choices = append(field.Choices, interaction.SettingChoice{Value: model.ID, Label: model.Name, Description: model.ID})
 			}
 		case config.SettingThinking:
 			field.Effective = string(settings.options.Thinking)

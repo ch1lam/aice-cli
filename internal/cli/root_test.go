@@ -340,22 +340,17 @@ func TestRootCommandDescribesOutputFormatFlag(t *testing.T) {
 	}
 }
 
-func TestRootCommandRejectsConflictingTrustFlags(t *testing.T) {
+func TestRootCommandRejectsConflictingFlags(t *testing.T) {
 	t.Parallel()
 
-	command := testRootCommand(t, &recordingPrinter{}, &recordingInteractor{})
-	command.SetOut(io.Discard)
-	command.SetArgs([]string{
-		"--workspace", "/workspace",
-		"--print", "inspect",
-		"--approve", "--no-approve",
-	})
-	err := command.ExecuteContext(t.Context())
-	if err == nil {
-		t.Fatal("ExecuteContext() error = nil, want conflict error")
-	}
-	if got := cli.ExitCode(err); got != 2 {
-		t.Errorf("ExitCode() = %d, want 2", got)
+	for _, conflict := range [][]string{{"--approve", "--no-approve"}, {"--yolo", "--permission-mode", "auto"}} {
+		command := testRootCommand(t, &recordingPrinter{}, &recordingInteractor{})
+		command.SetOut(io.Discard)
+		command.SetArgs(append([]string{"--workspace", "/workspace", "--print", "inspect"}, conflict...))
+		err := command.ExecuteContext(t.Context())
+		if got := cli.ExitCode(err); err == nil || got != 2 {
+			t.Errorf("%v: ExitCode() = %d, %v; want usage error", conflict, got, err)
+		}
 	}
 }
 

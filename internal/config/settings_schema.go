@@ -87,9 +87,10 @@ func SettingDefinitions() []SettingDefinition {
 	definitions := []SettingDefinition{
 		{ID: SettingProvider, Kind: EnumValue},
 		{ID: SettingModel, Kind: EnumValue},
+		{ID: SettingSmallModel, Kind: EnumValue},
 		{ID: SettingThinking, Kind: EnumValue, Default: SettingValue{Text: string(llm.DefaultThinkingLevel)}},
 		{ID: "default_project_trust", Kind: EnumValue, Default: SettingValue{Text: string(trust.DefaultAsk)}},
-		{ID: "permission_mode", Kind: EnumValue, Default: SettingValue{Text: string(PermissionModeDefault)}},
+		{ID: "permission_mode", Kind: EnumValue, Default: SettingValue{Text: string(PermissionModeAuto)}},
 		{ID: "no_dep_install", Kind: BoolValue},
 		{ID: "no_update_check", Kind: BoolValue},
 		{ID: "max_turns", Kind: IntValue},

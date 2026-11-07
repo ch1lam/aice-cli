@@ -334,17 +334,18 @@ prompts](project-trust.md).
 
 ### Auto mode
 
-`permission_mode` selects who resolves calls that would ask: `default` (the
-rules above; a person decides) or `auto`, where the action classifier in
-`internal/classify` decides eligible calls. The saved default comes from
+`permission_mode` selects who resolves calls that would ask: `auto` (the
+default), where the action classifier in `internal/classify` decides eligible
+calls, or `default` (the rules above; a person decides). The mode comes from
 settings, `AICE_PERMISSION_MODE` or `--permission-mode`; a Settings change is
 saved and applies to the next tool call. In the TUI, Shift+Tab switches the
 current Session between `default` and `auto` without saving, also from the next
 tool call, including during a run. The mode is shown as state, not as a
 transcript message: the TUI labels `default` as manual, the composer shows
 `manual ·` or `auto ·` before the model name, and the shortcut bar names the
-mode Shift+Tab switches to. `--yolo` cannot be combined
-with auto; a refused switch is reported beside the composer.
+mode Shift+Tab switches to. `--yolo` runs in `default` mode whatever the
+setting says; it cannot be combined with `--permission-mode auto` or a switch
+to auto, and a refused switch is reported beside the composer.
 
 In auto mode every call is routed by the default-mode result:
 
@@ -407,8 +408,8 @@ correct `expect` where the classifier was wrong, and add the case to
 ```json
 {
   "permission_mode": "auto",
+  "small_model": "deepseek-v4.1-flash",
   "auto_mode": {
-    "model": "deepseek-v4.1-flash",
     "environment": ["docs.acme.internal is our documentation host"],
     "block": ["Never run migrations against databases other than localhost"],
     "allow": ["Pushing to branches named feature/* is fine"]
@@ -416,10 +417,11 @@ correct `expect` where the classifier was wrong, and add the case to
 }
 ```
 
-`model` selects another model of the configured provider (empty uses the startup
-model); `environment`, `block` and `allow` append to the built-in trust
-boundary, block rules and allow exceptions. Trusted project settings may add
-`environment` and `block` only; project `model` and `allow` are ignored with a
+The classifier runs on `small_model`, another model of the configured provider
+(empty uses the startup model); see [Configuration](configuration.md#settings-and-precedence).
+`environment`, `block` and `allow` append to the built-in trust boundary, block
+rules and allow exceptions. Trusted project settings may add `environment` and
+`block` only; project `small_model` and `auto_mode.allow` are ignored with a
 diagnostic, and `auth.json` entries are ignored.
 
 The classifier is a usability and risk-reduction layer, not isolation. It can

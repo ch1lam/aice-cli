@@ -276,11 +276,11 @@ func TestAutoModeAttachmentsSkipClassifier(t *testing.T) {
 
 func TestAutoRunLimits(t *testing.T) {
 	t.Parallel()
-	limits := autoRunLimits(config.Config{PermissionMode: config.PermissionModeAuto})
+	limits := autoRunLimits(config.Config{}, true)
 	if limits.GuardDenials != (agent.GuardDenialLimit{Consecutive: autoBlockStreak, Total: autoBlockTotal}) {
 		t.Fatalf("auto limits = %+v", limits)
 	}
-	if limits := autoRunLimits(config.Config{PermissionMode: config.PermissionModeDefault}); limits.GuardDenials != (agent.GuardDenialLimit{}) {
+	if limits := autoRunLimits(config.Config{}, false); limits.GuardDenials != (agent.GuardDenialLimit{}) {
 		t.Fatalf("default limits = %+v", limits)
 	}
 }

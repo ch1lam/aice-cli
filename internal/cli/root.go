@@ -99,6 +99,9 @@ func NewRootCommand(dependencies Dependencies) (*cobra.Command, error) {
 			if strings.TrimSpace(options.workspace) == "" {
 				return newUsageError(errors.New("workspace must not be blank"))
 			}
+			if mode, _ := command.Flags().GetString("permission-mode"); options.yolo && mode == "auto" {
+				return newUsageError(errors.New("--yolo cannot be combined with --permission-mode auto"))
+			}
 			if command.Flags().Changed("session") &&
 				strings.TrimSpace(options.session) == "" {
 				return newUsageError(errors.New("session must not be blank"))

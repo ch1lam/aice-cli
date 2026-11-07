@@ -320,7 +320,7 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration)))
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -656,7 +656,12 @@ func (a *application) prepareRunEnvironment(
 	}
 	adapter.mcp = mcpRunRouter{}
 	adapter.auto = newAutoMode(a.autoClassifier(configured), workspace.PhysicalPath(), configured.configuration.AutoMode, !frontend.asks, false)
-	if err := adapter.setPermissionMode(configured.configuration.PermissionMode); err != nil {
+	// --yolo selects default mode: it allows asks itself, without a classifier.
+	mode := configured.configuration.PermissionMode
+	if yolo {
+		mode = config.PermissionModeDefault
+	}
+	if err := adapter.setPermissionMode(mode); err != nil {
 		return nil, err
 	}
 	prepared = true

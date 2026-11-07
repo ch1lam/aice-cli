@@ -67,19 +67,10 @@ func (a *application) autoClassifier(configured configuredModel) classifierFunc 
 	}
 }
 
-// newClassifier uses auto_mode.model on the same provider, or the startup
-// model.
+// newClassifier runs the classifier on the small model.
 func (a *application) newClassifier(configured configuredModel) (*classify.Classifier, error) {
-	if name := configured.configuration.AutoMode.Model; name != "" && name != configured.model.ID {
-		cfg := configured.configuration
-		cfg.Model = name
-		model, options, err := resolveModelSettings(a.dependencies.providers, cfg)
-		if err != nil {
-			return nil, fmt.Errorf("auto_mode.model: %w", err)
-		}
-		configured = configuredModel{configuration: cfg, model: model, options: options}
-	}
-	if err := a.initializeConfiguredModel(&configured); err != nil {
+	configured, err := a.smallModel(configured)
+	if err != nil {
 		return nil, err
 	}
 	return classify.New(classify.Config{Model: classifierModel{configured: configured}, ModelName: configured.model.ID})
@@ -87,9 +78,9 @@ func (a *application) newClassifier(configured configuredModel) (*classify.Class
 
 // autoRunLimits adds the headless fuse: a print run stops after repeated
 // denials instead of asking.
-func autoRunLimits(c config.Config) agent.RunLimits {
+func autoRunLimits(c config.Config, auto bool) agent.RunLimits {
 	limits := runLimits(c)
-	if c.PermissionMode == config.PermissionModeAuto {
+	if auto {
 		limits.GuardDenials = agent.GuardDenialLimit{Consecutive: autoBlockStreak, Total: autoBlockTotal}
 	}
 	return limits
