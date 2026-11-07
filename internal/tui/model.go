@@ -420,9 +420,11 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Blur()
 			m.resizeLayout()
 			m.refreshViewport(true)
-			return m, waitForGuardExpiry(message.req)
+			return m, tea.Batch(waitForGuardExpiry(message.req), m.guard.waitForSummary())
 		}
 		return m, nil
+	case guardSummaryMsg:
+		return m.applyGuardSummary(message), nil
 	case tea.WindowSizeMsg:
 		m.workspacePress = nil
 		m.contextPressed = false

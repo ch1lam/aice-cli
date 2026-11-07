@@ -34,6 +34,10 @@ type acpScriptModel struct {
 func (m *acpScriptModel) Stream(_ context.Context, request llm.Request) (llm.Stream, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if len(request.Tools) == 0 {
+		// A permission summary side call; it is not a turn of the script.
+		return textEventStream(request.Model, "RISK: reads a file outside the workspace", llm.Usage{}, llm.StopReasonStop), nil
+	}
 	m.turns++
 	if m.tools == nil {
 		for _, definition := range request.Tools {
@@ -389,8 +393,10 @@ func TestACPStopReasonsAndDeniedPermission(t *testing.T) {
 		}
 		updates, _ := server.client.snapshot()
 		for _, update := range updates {
-			if end := update.ToolCallUpdate; end != nil && end.ToolCallId == "outside" {
-				if end.Status == nil || *end.Status != sdk.ToolCallStatusFailed {
+			// A permission summary may update the call before its end; it
+			// carries content only.
+			if end := update.ToolCallUpdate; end != nil && end.ToolCallId == "outside" && end.Status != nil {
+				if *end.Status != sdk.ToolCallStatusFailed {
 					t.Fatalf("denied tool status = %v", end.Status)
 				}
 				return

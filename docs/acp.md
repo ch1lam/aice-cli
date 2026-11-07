@@ -39,6 +39,7 @@ configuration and its Guard permissions ([MCP](mcp.md)).
 | `tool_call_update` | Tool end: `completed` or `failed`, `kind` and `locations` from the actions recorded on the result, output text, unified diff text for edits |
 | `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost |
 | `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once` |
+| `tool_call_update` during a permission request | The ask's advisory [summary](execution-sessions.md#permission-prompt-summaries) as text content (`Why:`, `Does:`, `Risk:` lines), sent only while the request is open; the tool end's output replaces it |
 | `session/set_mode` | Permission mode `default` or `auto` for the next tool call, not saved |
 | config option `model` | The effective `provider/model`; setting it accepts only that value |
 
@@ -65,6 +66,9 @@ option. The unattended `allow` mode of a client therefore lifts asks only, as
 - A tool call is reported `in_progress` when the Loop dispatches it, before the
   Guard decides; the Loop has no separate execution-start event. A permission
   request during that call marks the wait for approval instead of `pending`.
+- A permission request cannot change once sent, so its summary arrives as a
+  separate update. A tool whose end reports no output or diff keeps the
+  summary as its content.
 - `request_user_input` is not offered: ACP has no question request, so the
   model states missing information in its reply.
 - Branches, `/btw`, Settings and slash commands have no ACP mapping.

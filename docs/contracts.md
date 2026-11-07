@@ -448,6 +448,10 @@ The runtime boundary preserves these ownership rules:
   cancellation wins racing submissions. Q&A publishes only a complete explicit
   reply, never focus, drafts or recommendations. Permission UI may preempt it
   while retaining draft state. Neither exchange uses the steering mailbox.
+  `GuardRequest.Summarize`, when set, starts the request's advisory
+  `GuardSummary` when a frontend shows it; the app owns the side call and its
+  cancellation, the frontend only renders what arrives and never waits for
+  it ([summaries](execution-sessions.md#permission-prompt-summaries)).
 - App offers a frontend one explicit `interaction.Frontend` capability set; a
   nil capability hides its feature. Frontends do not discover capabilities by
   type assertion.
