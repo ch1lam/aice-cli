@@ -54,6 +54,30 @@ func (s *Store) AppendTitle(ctx context.Context, title TitleRecord) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.appendTitle(ctx, title)
+}
+
+// AppendTitleIfUntitled appends title only while the Session has no title
+// record, checked under the writer lock, so an automatic title never follows
+// and overrides one written meanwhile. Any title record counts, including an
+// empty one that restores the derived default.
+func (s *Store) AppendTitleIfUntitled(ctx context.Context, title TitleRecord) (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.titles) != 0 {
+		return false, nil
+	}
+	if err := s.appendTitle(ctx, title); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// appendTitle requires the store lock.
+func (s *Store) appendTitle(ctx context.Context, title TitleRecord) error {
 	if err := s.validateWritable(ctx); err != nil {
 		return err
 	}

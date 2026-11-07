@@ -182,16 +182,19 @@ func (s *Store) LeafID() (string, error) {
 type StoreInfo struct {
 	Header     Header
 	HasRecords bool
+	// Titled reports that at least one title record exists.
+	Titled bool
 }
 
-// Info returns the header and whether any message or compaction was recorded.
+// Info returns the header, whether any message or compaction was recorded,
+// and whether the Session has a title record.
 func (s *Store) Info() (StoreInfo, error) {
 	if s == nil {
 		return StoreInfo{}, fmt.Errorf("session: store is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return StoreInfo{Header: s.header, HasRecords: len(s.messages) != 0 || len(s.compactions) != 0}, nil
+	return StoreInfo{Header: s.header, HasRecords: len(s.messages) != 0 || len(s.compactions) != 0, Titled: len(s.titles) != 0}, nil
 }
 
 // Snapshot returns a defensive copy of the loaded session records.

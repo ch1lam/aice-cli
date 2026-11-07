@@ -118,3 +118,34 @@ func TestTitleValidationAndPendingTools(t *testing.T) {
 		t.Fatal("title recovered pending tools", err)
 	}
 }
+
+func TestAppendTitleIfUntitledNeverFollowsAnExistingTitle(t *testing.T) {
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	if info, _ := store.Info(); info.Titled {
+		t.Fatal("fresh Session reported titled")
+	}
+	generated, _ := session.NewTitle("generated", "Generated", 1)
+	if ok, err := store.AppendTitleIfUntitled(t.Context(), generated); err != nil || !ok {
+		t.Fatal("untitled Session refused a title", ok, err)
+	}
+	again, _ := session.NewTitle("again", "Again", 2)
+	if ok, err := store.AppendTitleIfUntitled(t.Context(), again); err != nil || ok {
+		t.Fatal("conditional title followed an existing title", ok, err)
+	}
+	if snapshot, _ := store.Snapshot(); len(snapshot.Titles) != 1 || snapshot.Titles[0].Title != "Generated" {
+		t.Fatalf("titles = %+v", snapshot.Titles)
+	}
+
+	// An empty title that restores the default is still a title decision.
+	restored := mustCreate(t, filepath.Join(t.TempDir(), "restored.jsonl"))
+	empty, _ := session.NewTitle("empty", "", 1)
+	if err := restored.AppendTitle(t.Context(), empty); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := restored.Info(); !info.Titled {
+		t.Fatal("empty title record not reported")
+	}
+	if ok, err := restored.AppendTitleIfUntitled(t.Context(), generated); err != nil || ok {
+		t.Fatal("conditional title overrode an empty title record", ok, err)
+	}
+}
