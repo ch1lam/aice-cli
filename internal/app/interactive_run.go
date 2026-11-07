@@ -229,6 +229,9 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	if runErr != nil {
 		return fmt.Errorf("app: run agent: %w", runErr)
 	}
+	// A completed run of an untitled Session gets a generated title in the
+	// background; the run returns without waiting for it.
+	r.session.titleSession(r.session.conversation.store, configured)
 	return nil
 }
 

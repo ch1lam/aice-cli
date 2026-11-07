@@ -652,6 +652,32 @@ if it is absent or empty, use the first user request. No migration or separate
 legacy-reader path is needed. If neither contains displayable text, use the
 session filename stem.
 
+After a main run of an interactive TUI or ACP Session completes, a Session
+without any `title` record gets a generated one in the background. The first
+user message's typed text (without attached files or Skills, at most 2,000
+characters) and the first assistant reply's visible text (at most 1,000
+characters) are sent once to the provider's `small_model`
+([Configuration](configuration.md)) as a tool-free completion with thinking
+off. The answer is reduced to one line of at most 50 characters without
+labels, wrapping quotes, markdown or trailing punctuation, in the language of
+the user's message, and appended as an ordinary `title` record.
+
+- Generation never delays the run or the UI and is attempted at most once per
+  Session per process. A failure, an empty answer or the 30-second deadline
+  leaves the first-question fallback; a later process may try again after a
+  completed run while the Session still has no title record.
+- Any `title` record, including an empty one, means the Session is titled, so
+  a resumed titled Session and later turns never regenerate. The Store checks
+  this again under its writer lock just before appending, so a rename saved
+  while the model was answering wins and the generated title is dropped.
+- Exit cancels and joins a pending generation before the Store closes.
+  Switching Sessions closes the previous Store, so a generation still pending
+  for it is dropped.
+- `--print` runs and `/btw` side threads never generate titles. The side call's
+  usage is not recorded in the Session.
+- The history picker shows the new title on its next read, as after a rename;
+  an ACP client receives it as `session_info_update` ([ACP](acp.md)).
+
 A `run_config` record holds everything besides source history that shapes a
 model request: model identity, full system prompt, tool definitions in sending
 order, stream options and the tool-result view budget, plus the AICE build

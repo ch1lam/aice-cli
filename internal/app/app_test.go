@@ -1428,7 +1428,8 @@ func runInteractive(
 	return active.Run(ctx)
 }
 
-// recordingModel records every request and answers with one text response.
+// recordingModel records every main-run request and answers with one text
+// response; Session title side calls are answered without being recorded.
 // An empty stopReason means llm.StopReasonStop; a non-nil err fails Stream.
 type recordingModel struct {
 	response   string
@@ -1448,6 +1449,9 @@ func (m *toolLoopModel) Stream(
 	_ context.Context,
 	request llm.Request,
 ) (llm.Stream, error) {
+	if stream, ok := titleAnswer(request); ok {
+		return stream, nil
+	}
 	m.requests = append(m.requests, request)
 	if len(m.requests) == 1 {
 		call := llm.ToolCall{
@@ -1489,6 +1493,9 @@ func (m *recordingModel) Stream(
 	_ context.Context,
 	request llm.Request,
 ) (llm.Stream, error) {
+	if stream, ok := titleAnswer(request); ok {
+		return stream, nil
+	}
 	m.requests = append(m.requests, request)
 	if m.err != nil {
 		return nil, m.err

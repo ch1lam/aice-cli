@@ -34,6 +34,18 @@ type SessionRenamer interface {
 	RenameSession(context.Context, string, string) (SessionSummary, error)
 }
 
+// SessionTitle announces a title the application saved for a Session.
+type SessionTitle struct {
+	SessionID, Title string
+}
+
+// SessionTitleSource announces generated Session titles. Delivery is best
+// effort: an announcement nobody receives promptly is dropped, and the saved
+// title still appears wherever the Session catalog is read.
+type SessionTitleSource interface {
+	SessionTitles() <-chan SessionTitle
+}
+
 // SessionReader projects a branch for inspection without changing the saved
 // active leaf, acquiring writer ownership, or recovering interrupted tools.
 type SessionReader interface {

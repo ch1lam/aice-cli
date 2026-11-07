@@ -43,11 +43,14 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
+	// The client is told about generated titles as session_info_update.
+	runner.titleUpdates = make(chan interaction.SessionTitle, 4)
 	serveErr := acp.Serve(ctx, runner.frontend(), acp.Options{
 		Workspace: environment.workspace.PhysicalPath(),
 		Version:   buildinfo.Build(),
 		Host:      runner,
 	}, request.Input, request.Output)
+	runner.titles.close()
 	return errors.Join(serveErr, closeInteractiveStore(runner.conversation.store))
 }
 

@@ -82,6 +82,46 @@ func TestGuardAskMapsOptionsAndCancelDenies(t *testing.T) {
 	}
 }
 
+type updateClient struct {
+	sdk.Client
+	updates chan sdk.SessionNotification
+}
+
+func (c *updateClient) SessionUpdate(_ context.Context, params sdk.SessionNotification) error {
+	c.updates <- params
+	return nil
+}
+
+func TestGeneratedTitlesOfTheCurrentSessionBecomeSessionInfo(t *testing.T) {
+	agentIn, clientOut := io.Pipe()
+	clientIn, agentOut := io.Pipe()
+	client := &updateClient{updates: make(chan sdk.SessionNotification, 2)}
+	sdk.NewClientSideConnection(client, clientOut, clientIn)
+	a := &agent{sessionID: "current", ready: make(chan struct{})}
+	a.conn = sdk.NewAgentSideConnection(a, agentOut, agentIn)
+	close(a.ready)
+
+	titles := make(chan interaction.SessionTitle, 2)
+	titles <- interaction.SessionTitle{SessionID: "previous", Title: "Left behind"}
+	titles <- interaction.SessionTitle{SessionID: "current", Title: "修复解析器"}
+	close(titles)
+	a.serveTitles(t.Context(), titles)
+	select {
+	case got := <-client.updates:
+		info := got.Update.SessionInfoUpdate
+		if got.SessionId != "current" || info == nil || info.Title == nil || *info.Title != "修复解析器" {
+			t.Fatalf("update = %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no session_info_update")
+	}
+	select {
+	case got := <-client.updates:
+		t.Fatalf("title of another Session sent: %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestRunInputAcceptsBaselineContent(t *testing.T) {
 	t.Parallel()
 	input, err := runInput([]sdk.ContentBlock{

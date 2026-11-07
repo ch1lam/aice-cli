@@ -17,6 +17,8 @@ type Frontend struct {
 	Files           FileCompleter
 	Guards          GuardRequester
 	Questions       QuestionRequester
+	// Titles announces generated titles of the current Session.
+	Titles SessionTitleSource
 	// PermissionModes switches the Session's permission mode.
 	PermissionModes PermissionModeSwitcher
 	// CheckUpdate, when set, performs the welcome-screen update check.

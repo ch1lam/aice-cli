@@ -47,6 +47,9 @@ func Serve(ctx context.Context, frontend interaction.Frontend, options Options, 
 	if frontend.Guards != nil {
 		go agent.serveGuards(ctx, frontend.Guards.GuardRequests())
 	}
+	if frontend.Titles != nil {
+		go agent.serveTitles(ctx, frontend.Titles.SessionTitles())
+	}
 	select {
 	case <-agent.conn.Done():
 	case <-ctx.Done():
@@ -164,6 +167,31 @@ func (a *agent) switchSession(open func() (string, error)) (sdk.SessionId, error
 	}
 	a.sessionID = sdk.SessionId(id)
 	return a.sessionID, nil
+}
+
+// serveTitles reports each generated title of the current Session as a
+// session_info_update; a title of a Session the client left is not sent.
+func (a *agent) serveTitles(ctx context.Context, titles <-chan interaction.SessionTitle) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case title, ok := <-titles:
+			if !ok {
+				return
+			}
+			a.mu.Lock()
+			current := a.sessionID
+			a.mu.Unlock()
+			if string(current) != title.SessionID {
+				continue
+			}
+			_ = a.connection().SessionUpdate(ctx, sdk.SessionNotification{
+				SessionId: current,
+				Update:    sdk.SessionUpdate{SessionInfoUpdate: &sdk.SessionSessionInfoUpdate{Title: &title.Title}},
+			})
+		}
+	}
 }
 
 func (a *agent) requireSession(id sdk.SessionId) error {

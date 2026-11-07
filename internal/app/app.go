@@ -473,7 +473,9 @@ func (a *application) Interactive(
 	})
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
-	// interactive files so unused explicit paths do not accumulate.
+	// interactive files so unused explicit paths do not accumulate. A title
+	// still being generated is abandoned first.
+	runner.titles.close()
 	closeErr := closeInteractiveStore(runner.conversation.store)
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
@@ -720,6 +722,7 @@ func (a *application) newInteractiveSession(
 		trustSource:   environment.trust.Source,
 		providers:     a.dependencies.providers,
 		totalUsage:    usage,
+		titleModel:    a.titleModel,
 	}
 	runner.explainer = guardExplainer{explain: runner.explainGuardAsk, timeout: guardSummaryTimeout}
 	if environment.frontend.questions {
@@ -877,6 +880,12 @@ type interactiveSession struct {
 	// owns waiting and validation, the TUI only a display copy plus Reply.
 	questionRequests chan interaction.QuestionPrompt
 
+	// titleModel writes generated Session titles; nil disables them.
+	// titleUpdates is non-nil only for a frontend that shows them live.
+	titleModel   sessionTitleModel
+	titles       sessionTitler
+	titleUpdates chan interaction.SessionTitle
+
 	// sideMu guards the ephemeral /btw thread registry below. sideClock is
 	// the injectable time source used for idle windows and expiry; nil means
 	// wall-clock time.
@@ -915,13 +924,18 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 	}
 }
 
-// frontend offers every Session capability to an interactive frontend.
+// frontend offers every Session capability to an interactive frontend;
+// generated titles only to one that set up titleUpdates to show them.
 func (s *interactiveSession) frontend() interaction.Frontend {
-	return interaction.Frontend{
+	frontend := interaction.Frontend{
 		Runner: s, State: s, Commands: s, SideThreads: s, Sessions: s, Usage: s,
 		Settings: s, SettingsActions: s, SettingsWriter: s,
 		Files: s, Guards: s, Questions: s, PermissionModes: s,
 	}
+	if s.titleUpdates != nil {
+		frontend.Titles = s
+	}
+	return frontend
 }
 
 // sessionTools composes the Session base tools with web and optional

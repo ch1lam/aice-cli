@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/coder/acp-go-sdk"
 
@@ -32,6 +33,9 @@ type acpScriptModel struct {
 }
 
 func (m *acpScriptModel) Stream(_ context.Context, request llm.Request) (llm.Stream, error) {
+	if stream, ok := titleAnswer(request); ok {
+		return stream, nil
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(request.Tools) == 0 {
@@ -280,6 +284,21 @@ func TestACPServesSessionsThroughInteractionContracts(t *testing.T) {
 	}
 	if text != "done" || usage == nil || usage.Cost == nil || usage.Cost.Amount != 0.25 {
 		t.Fatalf("text = %q usage = %+v", text, usage)
+	}
+
+	// The generated title follows the completed first prompt.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		updates, _ := server.client.snapshot()
+		info := slices.IndexFunc(updates, func(update sdk.SessionUpdate) bool { return update.SessionInfoUpdate != nil })
+		if info >= 0 {
+			if title := updates[info].SessionInfoUpdate.Title; title == nil || *title != "Test title" {
+				t.Fatalf("session_info_update = %+v", updates[info].SessionInfoUpdate)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no session_info_update with the generated title")
+		}
 	}
 
 	// The Session survives the process; another client loads and replays it.

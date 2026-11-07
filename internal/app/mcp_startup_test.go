@@ -31,6 +31,9 @@ type mcpStartupModel struct {
 }
 
 func (m *mcpStartupModel) Stream(_ context.Context, r llm.Request) (llm.Stream, error) {
+	if stream, ok := titleAnswer(r); ok {
+		return stream, nil
+	}
 	m.requests = append(m.requests, r)
 	m.round++
 	var remote string

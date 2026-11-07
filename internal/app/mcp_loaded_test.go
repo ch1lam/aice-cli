@@ -24,6 +24,9 @@ type loadedToolsModel struct {
 }
 
 func (m *loadedToolsModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
+	if stream, ok := titleAnswer(request); ok {
+		return stream, nil
+	}
 	want := 0
 	for _, d := range request.Tools {
 		if strings.HasPrefix(d.Name, "mcp__service0__read") {
