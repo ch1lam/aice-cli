@@ -149,7 +149,8 @@ decision for the current fingerprint) or **Deny**. Any other reply denies.
 Prompts are serialized, so concurrent discovery asks once per service. Allow
 and Deny answers are remembered for that exact fingerprint until the process
 exits; a changed command, endpoint or credential asks again, and a cancelled
-prompt records nothing. Remote tool calls still ask separately.
+prompt records nothing. A later saved allow, such as `/mcp approve`, clears an
+in-run Deny for that service. Remote tool calls still ask separately.
 
 Print, the management CLI and other non-interactive callers never ask: an
 unapproved connection remains `needs_approval` and fails closed. `--yolo`

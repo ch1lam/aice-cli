@@ -172,3 +172,28 @@ func TestMCPInteractiveRunAsksBeforeFirstConnection(t *testing.T) {
 		t.Fatalf("initializes=%d calls=%d", initializes.Load(), calls.Load())
 	}
 }
+
+func TestMCPSavedApprovalClearsInRunDecline(t *testing.T) {
+	c := ownerTestConfig(t, 1)
+	key := "user:service0"
+	var opened atomic.Int32
+	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), false, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+		opened.Add(1)
+		return &mcpOwnedFixture{}, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	decline := withMCPConnectionApprover(t.Context(), func(context.Context, config.MCPServer) (bool, error) { return false, nil })
+	if _, err := o.Connections()[key].Tools(decline); err == nil {
+		t.Fatal("declined connection opened")
+	}
+	c = ownerTestApprove(t, c, key, config.MCPConnectionAllow)
+	if _, err := o.reconfigure(c.MCP); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.Connections()[key].Tools(t.Context()); err != nil || opened.Load() != 1 {
+		t.Fatalf("saved approval did not override the in-run decline: opened=%d err=%v", opened.Load(), err)
+	}
+}

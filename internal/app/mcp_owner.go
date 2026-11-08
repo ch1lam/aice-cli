@@ -154,6 +154,13 @@ func (o *mcpOwner) reconfigure(configuration config.MCPConfig, reconnect ...stri
 		delete(o.services, key)
 	}
 	o.configuration = configuration
+	// A saved allow is the user's later, explicit decision; it supersedes a
+	// Deny answered during a run.
+	for key := range o.declined {
+		if configuration.ConnectionDecision(key) == config.MCPConnectionAllow {
+			delete(o.declined, key)
+		}
+	}
 	for _, key := range configuration.ServerKeys() {
 		if o.services[key] != nil {
 			continue
