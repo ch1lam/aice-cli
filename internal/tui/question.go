@@ -26,8 +26,7 @@ type questionPanel struct {
 	// texts holds per-question text: the answer itself for custom/free-text
 	// questions, a supplement otherwise.
 	texts []string
-	// skipped marks explicit skips; settled marks answered-or-skipped.
-	skipped []bool
+	// settled marks answered questions.
 	settled []bool
 	// focus is the highlighted row; textFocus pins typing to the text field
 	// so option shortcuts never swallow edited text.
@@ -46,7 +45,6 @@ func newQuestionPanel(prompt interaction.QuestionPrompt) *questionPanel {
 		selected:    make([]int, count),
 		custom:      make([]bool, count),
 		texts:       make([]string, count),
-		skipped:     make([]bool, count),
 		settled:     make([]bool, count),
 		inputScroll: -1,
 	}
@@ -93,7 +91,7 @@ func (p *questionPanel) moveQuestion(delta int) {
 	p.index = min(max(p.index+delta, 0), count-1)
 	p.focus = p.initialFocus(p.index)
 	// Keep an already recorded choice visible when returning to a question.
-	if p.hasOptions() && !p.custom[p.index] && !p.skipped[p.index] && p.selected[p.index] >= 0 {
+	if p.hasOptions() && !p.custom[p.index] && p.selected[p.index] >= 0 {
 		p.focus = p.selected[p.index]
 	}
 	if p.custom[p.index] || !p.hasOptions() {
@@ -125,7 +123,6 @@ func (p *questionPanel) typeText(value string) {
 		return
 	}
 	p.texts[p.index] += value
-	p.skipped[p.index] = false
 	p.textFocus = true
 	if p.hasOptions() {
 		if p.focus == p.customRow() || p.selected[p.index] < 0 {
@@ -167,7 +164,6 @@ func (p *questionPanel) selectFocused() {
 		p.textFocus = true
 		p.selected[p.index] = -1
 		p.custom[p.index] = true
-		p.skipped[p.index] = false
 		p.settled[p.index] = strings.TrimSpace(p.texts[p.index]) != ""
 		p.notice = ""
 		p.scroll, p.inputScroll = -1, -1
@@ -175,7 +171,6 @@ func (p *questionPanel) selectFocused() {
 	}
 	p.selected[p.index] = p.focus
 	p.custom[p.index] = false
-	p.skipped[p.index] = false
 	p.settled[p.index] = true
 	p.textFocus = false
 	p.notice = ""
@@ -191,13 +186,9 @@ func (p *questionPanel) shouldSpaceSelect() bool {
 }
 
 // submitAttempt validates drafts and reports whether every question is
-// answered or skipped. Selection alone never submits a reply.
+// answered. Selection alone never submits a reply.
 func (p *questionPanel) submitAttempt() bool {
 	for i := range p.prompt.Request.Questions {
-		if p.skipped[i] {
-			p.settled[i] = true
-			continue
-		}
 		if p.selected[i] >= 0 && p.selected[i] < len(p.prompt.Request.Questions[i].Options) {
 			p.custom[i] = false
 			p.settled[i] = true
@@ -225,7 +216,7 @@ func (p *questionPanel) allSettled() bool {
 }
 
 // firstUnsettled moves to the lowest-index question still awaiting an
-// answer or skip, so an incomplete submit guides the user forward.
+// answer, so an incomplete submit guides the user forward.
 func (p *questionPanel) firstUnsettled() {
 	for offset := 0; offset < len(p.settled); offset++ {
 		if !p.settled[offset] {
@@ -250,10 +241,6 @@ func (p *questionPanel) buildReply() (interaction.QuestionReply, error) {
 	}
 	for i := range request.Questions {
 		item := &request.Questions[i]
-		if p.skipped[i] {
-			reply.Answers[item.ID] = interaction.QuestionAnswer{Status: interaction.QuestionSkipped}
-			continue
-		}
 		answer := interaction.QuestionAnswer{Status: interaction.QuestionAnswered}
 		if p.custom[i] || len(item.Options) == 0 {
 			answer.Text = strings.TrimSpace(p.texts[i])
