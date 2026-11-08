@@ -32,7 +32,7 @@ func settingPresentation(id string) (category, label, description string, timing
 	case "model":
 		return "models", "Model", "Select from this provider's catalog, or enter a custom model ID.", timing, false
 	case "small_model":
-		return "models", "Small model", "Fast model on the same provider for the auto mode classifier, permission summaries and Session titles. Empty uses the main model.", timing, false
+		return "models", "Small model", "Fast model on the same provider for the auto mode classifier and Session titles. Empty uses the main model.", timing, false
 	case "thinking":
 		return "models", "Thinking", "Requested reasoning level; the model may use its nearest supported level.", timing, false
 	case "context_windows":

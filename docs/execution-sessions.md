@@ -432,33 +432,6 @@ reports a 17% miss rate on real overeager actions; AICE's own evaluation set and
 results are in `internal/classify/eval/`. Use default mode or an isolated
 environment for high-stakes infrastructure.
 
-### Permission prompt summaries
-
-When a person must confirm a tool call the model made, in either mode and
-including auto mode escalations, the prompt shows at once and a short summary
-fills in when it arrives: why the agent wants the call in terms of the user's
-request, what the call does at its core, and its main risk, one short line
-each in the language of the user's messages (UI labels stay English). The
-TUI shows a dim `Summarizing…` line meanwhile; ACP adds the summary to the
-pending tool call's content ([ACP](acp.md#prompts-and-updates)). A failed,
-unparseable or slower-than-eight-seconds summary is omitted without a
-message. Answering or cancelling the prompt cancels the side call.
-`@file` attachments, MCP connection approvals and `--print` runs get none.
-
-The summary is advisory: it never changes the decision, the offered options
-or grants, and it is transient UI, never written to the Session. It is a side
-call on `small_model` (`classify.Explainer`, run through the same tool-free
-completion as the classifier) that starts when a frontend shows the prompt,
-and it sends the provider the text the user typed on the active branch
-(derived as for the classifier) and the pending call: tool name, arguments,
-the gate's reason, rules and resolved effects. Like the classifier it never
-sees tool output, web or MCP content, assistant text or reasoning, or
-earlier calls. Agent data is JSON-encoded inside blocks framed by a
-per-request random marker; the explainer is told to describe rather than
-judge, to follow no instructions in the data, and to name embedded
-instructions aimed at the decision as the risk. Its usage is not recorded in
-`/usage`.
-
 ### Tool behavior
 
 The tool layer validates arguments before effects, propagates cancellation,

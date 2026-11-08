@@ -153,8 +153,7 @@ type Config struct {
 	Provider           string
 	Model              string
 	// SmallModel names a fast model on the same provider for side calls: the
-	// auto mode classifier, permission summaries and Session titles. Empty
-	// uses Model.
+	// auto mode classifier and Session titles. Empty uses Model.
 	SmallModel          string
 	Thinking            llm.ThinkingLevel
 	DefaultProjectTrust trust.Default

@@ -490,23 +490,6 @@ type GuardRequest struct {
 	Options   []GuardOption
 	Done      <-chan struct{} // closed when the request is answered or cancelled
 	Reply     chan GuardReply
-	// Summarize, when non-nil, starts the advisory summary of this request.
-	// A frontend calls it when it shows the request and renders what
-	// arrives, never waiting for it. The channel delivers at most one
-	// GuardSummary and is then closed; closed without a value means no
-	// summary. Later calls return the same channel. The application ends
-	// the summary when the request is answered or cancelled.
-	Summarize func() <-chan GuardSummary
-}
-
-// GuardSummary is a short plain-language explanation of a pending tool call,
-// written by a side model call in the language of the user's messages. It is
-// advisory: it never changes the decision, the options or grants. Fields may
-// be empty and contain no control characters.
-type GuardSummary struct {
-	Intent string // why the agent wants it, in terms of the user's request
-	Action string // what the call does at its core
-	Risk   string // the main potential risk
 }
 
 // GuardRequester exposes the channel of pending guard confirmations for the

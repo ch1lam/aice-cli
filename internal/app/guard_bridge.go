@@ -324,18 +324,7 @@ func (s *interactiveSession) GuardRequests() <-chan interaction.GuardRequest {
 	return s.guardRequests
 }
 
-// askToolCall asks about a call the model made, with a plain-language summary
-// filled in asynchronously. Attachments the user chose go through
-// handleGuardAsk without one.
-func (s *interactiveSession) askToolCall(ctx context.Context, call llm.ToolCall, result agent.GuardApproval) (agent.GuardAskReply, error) {
-	return s.askGuard(ctx, call, result, true)
-}
-
 func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCall, result agent.GuardApproval) (agent.GuardAskReply, error) {
-	return s.askGuard(ctx, call, result, false)
-}
-
-func (s *interactiveSession) askGuard(ctx context.Context, call llm.ToolCall, result agent.GuardApproval, summarize bool) (agent.GuardAskReply, error) {
 	if s == nil || s.guardRequests == nil {
 		return agent.GuardAskReply{Decision: agent.GuardDeny}, nil
 	}
@@ -363,9 +352,6 @@ func (s *interactiveSession) askGuard(ctx context.Context, call llm.ToolCall, re
 		Options:   options,
 		Reply:     reply,
 		Done:      promptCtx.Done(),
-	}
-	if summarize {
-		req.Summarize = s.summarizeGuardAsk(promptCtx, call, result)
 	}
 	select {
 	case <-ctx.Done():

@@ -724,7 +724,6 @@ func (a *application) newInteractiveSession(
 		totalUsage:    usage,
 		titleModel:    a.titleModel,
 	}
-	runner.explainer = guardExplainer{explain: runner.explainGuardAsk, timeout: guardSummaryTimeout}
 	if environment.frontend.questions {
 		runner.questionRequests = make(chan interaction.QuestionPrompt, questionBridgeCapacity)
 	}
@@ -873,9 +872,6 @@ type interactiveSession struct {
 	guard          *guard.Guard
 	guardAdapter   *guardAdapter
 	guardRequests  chan interaction.GuardRequest
-	// explainer summarizes the Loop's Guard asks for the person deciding; its
-	// zero value shows none.
-	explainer guardExplainer
 	// questionRequests carries at most one live prompt to the TUI; the app
 	// owns waiting and validation, the TUI only a display copy plus Reply.
 	questionRequests chan interaction.QuestionPrompt
@@ -962,7 +958,7 @@ func (s *interactiveSession) sessionLoop(configuration config.Config, tools []ag
 		configuration,
 		tools,
 		agent.WithGuard(s.guardAdapter),
-		agent.WithGuardAskHandler(s.askToolCall),
+		agent.WithGuardAskHandler(s.handleGuardAsk),
 	)
 }
 

@@ -23,20 +23,10 @@ type guardPanel struct {
 	selection    int
 	feedback     bool // Deny is collecting an optional note
 	feedbackText string
-	// summaries delivers the request's advisory summary; summarizing is set
-	// until it arrives or is omitted, and summary is nil unless one arrived.
-	summaries   <-chan interaction.GuardSummary
-	summarizing bool
-	summary     *interaction.GuardSummary
 }
 
-// newGuardPanel shows request and starts its summary, if it offers one.
 func newGuardPanel(request *interaction.GuardRequest) guardPanel {
 	panel := guardPanel{request: request, viewport: viewport.New()}
-	if request.Summarize != nil {
-		panel.summaries = request.Summarize()
-		panel.summarizing = panel.summaries != nil
-	}
 	panel.viewport.KeyMap = viewport.KeyMap{}
 	panel.viewport.FillHeight = true
 	return panel
@@ -56,44 +46,6 @@ func waitForGuardRequest(requests <-chan interaction.GuardRequest) tea.Cmd {
 		copied := req
 		return guardRequestMsg{req: &copied}
 	}
-}
-
-// guardSummaryMsg carries the advisory summary of the request whose Reply
-// channel it names; ok is false when none will arrive.
-type guardSummaryMsg struct {
-	reply   chan interaction.GuardReply
-	summary interaction.GuardSummary
-	ok      bool
-}
-
-// waitForGuardSummary never delays the prompt: it reads the summary in the
-// background and gives up when the request ends.
-func (p guardPanel) waitForSummary() tea.Cmd {
-	if p.request == nil || p.summaries == nil {
-		return nil
-	}
-	summaries, done, reply := p.summaries, p.request.Done, p.request.Reply
-	return func() tea.Msg {
-		select {
-		case summary, ok := <-summaries:
-			return guardSummaryMsg{reply: reply, summary: summary, ok: ok}
-		case <-done:
-			return nil
-		}
-	}
-}
-
-func (m model) applyGuardSummary(message guardSummaryMsg) model {
-	if m.guard.request == nil || m.guard.request.Reply != message.reply {
-		return m
-	}
-	m.guard.summarizing = false
-	if message.ok && message.summary != (interaction.GuardSummary{}) {
-		summary := message.summary
-		m.guard.summary = &summary
-	}
-	m.resizeGuard()
-	return m
 }
 
 func (m model) handleGuardAction(match inputActionMatch) (model, tea.Cmd, bool) {
@@ -224,9 +176,6 @@ func (m *model) resizeGuard() {
 	if content := guardKeyLine(m.guard.request); content != "" {
 		sections = append(sections, content)
 	}
-	if summary := m.guard.summaryView(); summary != "" {
-		sections = append(sections, summary)
-	}
 	if secondary := guardSecondaryLine(m.guard.request.Reason, m.guard.request.RuleID); secondary != "" {
 		sections = append(sections, secondary)
 	}
@@ -328,28 +277,6 @@ func renderGuardCommand(command, highlight string) string {
 		guardEmphasisStyle.Render(display[:index]) +
 		guardHighlightStyle.Render(display[index:end]) +
 		guardEmphasisStyle.Render(display[end:])
-}
-
-// summaryView renders the advisory summary under the action, or a dim
-// placeholder while it is being written.
-func (p guardPanel) summaryView() string {
-	if p.summarizing {
-		return mutedStyle.Render("Summarizing…")
-	}
-	if p.summary == nil {
-		return ""
-	}
-	var lines []string
-	for _, row := range []struct{ label, text string }{
-		{"Why ", p.summary.Intent},
-		{"Does", p.summary.Action},
-		{"Risk", p.summary.Risk},
-	} {
-		if text := strings.TrimSpace(row.text); text != "" {
-			lines = append(lines, mutedStyle.Render(row.label+"  ")+text)
-		}
-	}
-	return strings.Join(lines, "\n")
 }
 
 func guardSecondaryLine(reason, ruleID string) string {

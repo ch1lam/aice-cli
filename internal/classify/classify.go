@@ -9,9 +9,6 @@
 //
 // The verdict is advisory. Deterministic gate floors (credentials, AICE
 // configuration, privilege, disk) never reach the classifier.
-//
-// Explainer reuses the same framing to describe a pending call to the person
-// deciding a permission prompt; it never judges the call.
 package classify
 
 import (
@@ -147,14 +144,14 @@ func New(cfg Config) (*Classifier, error) {
 	if cfg.Model == nil {
 		return nil, errors.New("classify: model is required")
 	}
-	nonce, err := newNonce()
-	if err != nil {
-		return nil, err
+	nonce := make([]byte, 12)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("classify: generate nonce: %w", err)
 	}
 	c := &Classifier{
 		model:         cfg.Model,
 		label:         strings.TrimSpace(cfg.ModelName) + "@" + PromptVersion,
-		nonce:         nonce,
+		nonce:         hex.EncodeToString(nonce),
 		fastTimeout:   cfg.FastTimeout,
 		reasonTimeout: cfg.ReasonTimeout,
 	}
@@ -165,15 +162,6 @@ func New(cfg Config) (*Classifier, error) {
 		c.reasonTimeout = 30 * time.Second
 	}
 	return c, nil
-}
-
-// newNonce returns a fresh random block marker for framing agent data.
-func newNonce() (string, error) {
-	nonce := make([]byte, 12)
-	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("classify: generate nonce: %w", err)
-	}
-	return hex.EncodeToString(nonce), nil
 }
 
 // Stage parameters. The first stage is a single word; reasoning-only models

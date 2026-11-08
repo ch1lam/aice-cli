@@ -116,12 +116,7 @@ func (c *Classifier) prompt(req Request) (system, prefix string) {
 }
 
 func (c *Classifier) block(b *strings.Builder, kind, body string) {
-	frame(b, c.nonce, kind, body)
-}
-
-// frame writes one block delimited by the nonce marker.
-func frame(b *strings.Builder, nonce, kind, body string) {
-	fmt.Fprintf(b, "<<<AICE:%s:%s>>>\n%s\n<<<AICE:%s:END>>>\n", nonce, kind, body, nonce)
+	fmt.Fprintf(b, "<<<AICE:%s:%s>>>\n%s\n<<<AICE:%s:END>>>\n", c.nonce, kind, body, c.nonce)
 }
 
 // trimIntent keeps the first and the most recent turns within the budget.

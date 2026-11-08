@@ -4,7 +4,7 @@ import "fmt"
 
 // smallModel resolves small_model on the same provider as configured, or
 // returns configured unchanged when it is unset or names the same model. Side
-// calls (the auto mode classifier, permission summaries, Session titles) run
+// calls (the auto mode classifier, Session titles) run
 // on it so they stay fast and cheap.
 func (a *application) smallModel(configured configuredModel) (configuredModel, error) {
 	if name := configured.configuration.SmallModel; name != "" && name != configured.model.ID {
