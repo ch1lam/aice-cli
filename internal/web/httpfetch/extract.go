@@ -74,6 +74,9 @@ func findFirst(node *html.Node, tag atom.Atom) *html.Node {
 	return nil
 }
 
+// textOf flattens a subtree such as a link, code block or table cell. Nested
+// elements follow the same skip rules as walk, so hidden or executable content
+// never reaches the model through a flattened subtree.
 func textOf(node *html.Node) string {
 	if node == nil {
 		return ""
@@ -81,6 +84,9 @@ func textOf(node *html.Node) string {
 	var builder strings.Builder
 	var visit func(*html.Node)
 	visit = func(n *html.Node) {
+		if n != node && n.Type == html.ElementNode && (skippedElements[n.DataAtom] || hasAttr(n, "hidden")) {
+			return
+		}
 		if n.Type == html.TextNode {
 			builder.WriteString(n.Data)
 		}
