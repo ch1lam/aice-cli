@@ -98,7 +98,7 @@ func (s *interactiveSession) ensureSessionStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.conversation.store = store
+	s.conversation.installStore(store, s.conversation.history, "", false)
 	return nil
 }
 func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Delivery) error {

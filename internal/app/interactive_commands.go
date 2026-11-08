@@ -560,13 +560,8 @@ func (s *interactiveSession) slashNew(
 	// the TUI, which only submits slash commands while idle.
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
-	previous := s.conversation.store
-	s.conversation.store = nil
-	s.conversation.historyLeaf, s.conversation.historyReady = "", false
+	previous := s.conversation.installStore(nil, nil, "", false)
 	s.guard.ResetSessionGrants()
-	s.conversation.historyMu.Lock()
-	s.conversation.history = nil
-	s.conversation.historyMu.Unlock()
 	s.stateMu.Lock()
 	s.totalUsage = llm.Usage{}
 	s.throughput = interaction.DisplayThroughput{}
@@ -575,24 +570,32 @@ func (s *interactiveSession) slashNew(
 	if previous == nil {
 		return "Started new session", nil
 	}
-	previousPath := previous.Path()
+	// Once detached, cleanup failures are warnings, not a failed switch.
+	output, err := releasePreviousSession(previous)
+	if err != nil {
+		output += "\nCleanup warning: " + err.Error()
+	}
+	return output, nil
+}
+
+// releasePreviousSession closes a detached Session, removing it when it never
+// recorded anything instead of leaving a header-only stub.
+func releasePreviousSession(previous *session.Store) (string, error) {
+	path := previous.Path()
 	info, err := previous.Info()
 	if err != nil {
-		return "", errors.Join(
-			fmt.Errorf("app: read previous session: %w", err),
-			previous.Close(),
-		)
+		return "Started new session", errors.Join(fmt.Errorf("app: read previous session: %w", err), previous.Close())
 	}
 	if err := previous.Close(); err != nil {
-		return "", err
+		return "Started new session", err
 	}
-	if !info.HasRecords {
-		if err := os.Remove(previousPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("app: remove empty session: %w", err)
-		}
-		return "Started new session", nil
+	if info.HasRecords {
+		return "Started new session\nPrevious session preserved: " + path, nil
 	}
-	return "Started new session\nPrevious session preserved: " + previousPath, nil
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "Started new session", fmt.Errorf("app: remove empty session: %w", err)
+	}
+	return "Started new session", nil
 }
 
 func (s *interactiveSession) slashInit(
@@ -678,8 +681,8 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 	}
 	usage := s.usageSnapshot()
 	sessionID := ""
-	if s.conversation.store != nil {
-		if info, err := s.conversation.store.Info(); err == nil {
+	if store := s.conversation.currentStore(); store != nil {
+		if info, err := store.Info(); err == nil {
 			sessionID = info.Header.ID
 		}
 	}
@@ -710,8 +713,8 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 
 func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	var total *llm.Usage
-	if s.conversation.store != nil {
-		if snapshot, err := s.conversation.store.Snapshot(); err == nil {
+	if store := s.conversation.currentStore(); store != nil {
+		if snapshot, err := store.Snapshot(); err == nil {
 			usage := session.TotalUsage(snapshot)
 			total = &usage
 		}
