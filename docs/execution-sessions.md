@@ -717,7 +717,9 @@ before completion", followed by the
 [`ProviderError.Summary`](../internal/llm/provider_error.go): transport or HTTP
 status and the provider error code, such as `provider HTTP 429
 rate_limit_error`. The summary omits the error text, which may echo request
-details. Owner: [retry_flow.go](../internal/agent/retry_flow.go).
+details. A limit or preparation check that stops the run before the request is
+sent is not an attempt: it records only the run's terminal message. Owner:
+[retry_flow.go](../internal/agent/retry_flow.go).
 
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that

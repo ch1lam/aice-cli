@@ -200,7 +200,9 @@ retain the short content summary; Session keeps the additive metadata.
 - Default model retries allow three retries after the first attempt, with
   2/4/8-second backoff. Longer provider retry hints are honored up to one minute;
   larger hints stop retries. Cancellation, protocol/context errors, event-sink
-  failures and configured stop reasons are not retried. Tool execution is never
+  failures and configured stop reasons are not retried. A provider error event
+  that arrives before the stream's `start` is classified by its cause, like one
+  after it, rather than as a protocol error. Tool execution is never
   retried by this policy. [retry.go](../internal/agent/retry.go) owns classification.
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,

@@ -265,14 +265,22 @@ func (e *runExecution) runInteraction(ctx context.Context, turnNumber *int) (ste
 				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
 			}
 			currentTurn := *turnNumber
+			record := func() error {
+				return e.recordIncompleteAttempt(ctx, currentTurn, outcome.started, streamErr)
+			}
+			if !outcome.dispatched {
+				// No request was sent, so there is no attempt to record;
+				// finalization writes the terminal failure.
+				record = func() error {
+					return e.emit(ctx, AgentEvent{Type: EventTypeTurnEnd, TurnNumber: currentTurn, Err: streamErr})
+				}
+			}
 			next, err = e.retryTurn(
 				ctx,
 				&retryAttempt,
 				turnNumber,
 				streamErr,
-				func() error {
-					return e.recordIncompleteAttempt(ctx, currentTurn, outcome.started, streamErr)
-				},
+				record,
 				e.armReasoningReplayRetry(streamErr),
 			)
 		}

@@ -79,6 +79,11 @@ func TestMaxTurnsCountsFailedModelAttempts(t *testing.T) {
 			if !strings.Contains(result.ModelRounds[len(result.ModelRounds)-1].Assistant.ErrorMessage, "maximum model turns") {
 				t.Fatal("lost limit reason after failure")
 			}
+			// The second attempt never reached the model, so only the failed
+			// attempt and the terminal limit message follow the prompt.
+			if len(result.ModelRounds) != 2 {
+				t.Fatalf("rounds = %d, want failed attempt plus terminal limit", len(result.ModelRounds))
+			}
 		})
 	}
 }

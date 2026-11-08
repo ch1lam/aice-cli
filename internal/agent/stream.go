@@ -14,6 +14,9 @@ type assistantOutcome struct {
 	terminalErr error
 	complete    bool
 	started     bool
+	// dispatched reports that the request reached the model; a failure before
+	// it is not a model attempt and records nothing.
+	dispatched bool
 }
 
 func (e *runExecution) streamAssistant(
@@ -59,13 +62,14 @@ func (e *runExecution) streamAssistant(
 	}
 	stream, err := e.loop.model.Stream(ctx, request)
 	if err != nil {
-		return assistantOutcome{}, fmt.Errorf("agent: start model stream: %w", err)
+		return assistantOutcome{dispatched: true}, fmt.Errorf("agent: start model stream: %w", err)
 	}
 	if stream == nil {
-		return assistantOutcome{}, fmt.Errorf("%w: model returned a nil stream", ErrProtocol)
+		return assistantOutcome{dispatched: true}, fmt.Errorf("%w: model returned a nil stream", ErrProtocol)
 	}
 
 	outcome, consumeErr := e.consumeAssistant(ctx, turnNumber, request.Model, stream)
+	outcome.dispatched = true
 	if outcome.complete {
 		outcome.message.RequestConfig = e.requestConfigID
 	}
@@ -105,7 +109,7 @@ func (e *runExecution) consumeAssistant(
 		switch event.Type {
 		case llm.EventTypeStart:
 			if started {
-				return assistantOutcome{}, fmt.Errorf("%w: duplicate start event", ErrProtocol)
+				return assistantOutcome{started: started}, fmt.Errorf("%w: duplicate start event", ErrProtocol)
 			}
 			started = true
 			message := llm.NewAssistantMessage(model)
@@ -114,17 +118,22 @@ func (e *runExecution) consumeAssistant(
 				TurnNumber: turnNumber,
 				Message:    message,
 			}); err != nil {
-				return assistantOutcome{}, err
+				return assistantOutcome{started: started}, err
 			}
 		case llm.EventTypeDone, llm.EventTypeError:
 			if !started {
+				// A provider can fail before its first item; keep that error
+				// so the retry policy judges it rather than the missing start.
+				if event.Type == llm.EventTypeError && event.Err != nil {
+					return assistantOutcome{}, fmt.Errorf("agent: model stream failed: %w", event.Err)
+				}
 				return assistantOutcome{}, fmt.Errorf(
 					"%w: terminal event arrived before start",
 					ErrProtocol,
 				)
 			}
 			if event.Message == nil {
-				return assistantOutcome{}, fmt.Errorf(
+				return assistantOutcome{started: started}, fmt.Errorf(
 					"%w: terminal event has no assistant message",
 					ErrProtocol,
 				)
@@ -135,7 +144,7 @@ func (e *runExecution) consumeAssistant(
 				usage = message.Usage
 			}
 			if err := message.Validate(); err != nil {
-				return assistantOutcome{}, fmt.Errorf(
+				return assistantOutcome{started: started}, fmt.Errorf(
 					"%w: validate terminal assistant message: %v",
 					ErrProtocol,
 					err,
@@ -159,7 +168,7 @@ func (e *runExecution) consumeAssistant(
 			llm.EventTypeToolCallEnd,
 			llm.EventTypeUsage:
 			if !started {
-				return assistantOutcome{}, fmt.Errorf(
+				return assistantOutcome{started: started}, fmt.Errorf(
 					"%w: %s event arrived before start",
 					ErrProtocol,
 					event.Type,
@@ -174,10 +183,10 @@ func (e *runExecution) consumeAssistant(
 				TurnNumber:            turnNumber,
 				AssistantMessageEvent: &streamEvent,
 			}); err != nil {
-				return assistantOutcome{}, err
+				return assistantOutcome{started: started}, err
 			}
 		default:
-			return assistantOutcome{}, fmt.Errorf(
+			return assistantOutcome{started: started}, fmt.Errorf(
 				"%w: unsupported stream event type %q",
 				ErrProtocol,
 				event.Type,
