@@ -210,3 +210,13 @@ func TestStopReasonsAndToolOutcome(t *testing.T) {
 		t.Fatalf("rawInput = %v", got)
 	}
 }
+
+func TestToolStartSendsBashDescriptionAsContent(t *testing.T) {
+	start := toolStart(interaction.ToolDisplay{ID: "c", Name: "bash", Detail: "rm -rf build", Description: "Remove the stale build output"}).ToolCall
+	if start == nil || start.Title != "bash rm -rf build" || len(start.Content) != 1 || start.Content[0].Content.Content.Text.Text != "Remove the stale build output" {
+		t.Fatalf("tool start = %+v", start)
+	}
+	if plain := toolStart(interaction.ToolDisplay{ID: "c", Name: "bash", Detail: "ls"}).ToolCall; len(plain.Content) != 0 {
+		t.Fatalf("undescribed tool start content = %+v", plain.Content)
+	}
+}

@@ -170,12 +170,23 @@ func (t *promptTurn) forward(ctx context.Context, event interaction.Event) error
 	return t.agent.connection().SessionUpdate(ctx, sdk.SessionNotification{SessionId: t.session, Update: update})
 }
 
+// toolStart keeps the command in a bash call's title and sends its stated
+// reason as content, which the tool end's output replaces.
 func toolStart(tool interaction.ToolDisplay) sdk.SessionUpdate {
-	return sdk.StartToolCall(sdk.ToolCallId(tool.ID), toolTitle(tool),
+	opts := []sdk.ToolCallStartOpt{
 		sdk.WithStartKind(toolKind(tool.Kind)),
 		sdk.WithStartStatus(sdk.ToolCallStatusInProgress),
 		sdk.WithStartLocations(locations(tool.Locations)),
-		sdk.WithStartRawInput(rawInput(tool.Arguments)))
+		sdk.WithStartRawInput(rawInput(tool.Arguments)),
+	}
+	if tool.Description != "" {
+		opts = append(opts, sdk.WithStartContent(descriptionContent(tool.Description)))
+	}
+	return sdk.StartToolCall(sdk.ToolCallId(tool.ID), toolTitle(tool), opts...)
+}
+
+func descriptionContent(description string) []sdk.ToolCallContent {
+	return []sdk.ToolCallContent{sdk.ToolContent(sdk.TextBlock(description))}
 }
 
 // toolEnd reports the outcome. AICE results retain a unified diff rather

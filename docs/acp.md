@@ -35,11 +35,11 @@ configuration and its Guard permissions ([MCP](mcp.md)).
 | prompt text, `resource_link`, `image` | `RunInput` prompt text, explicit file references for `file://` links (other links stay text), images |
 | `session/cancel` | Cancels the running Agent run; stop reason `cancelled` |
 | `agent_message_chunk` / `agent_thought_chunk` | Streamed assistant text and thinking deltas |
-| `tool_call` | Tool start: `kind` and `locations` from the Guard's action extraction, `rawInput` the call's actual arguments |
+| `tool_call` | Tool start: `kind` and `locations` from the Guard's action extraction, `rawInput` the call's actual arguments; a bash call's title keeps the command and its `description` is text content until the tool end replaces it |
 | `tool_call_update` | Tool end: `completed` or `failed`, `kind` and `locations` from the actions recorded on the result, output text, unified diff text for edits |
 | `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost |
 | `session_info_update` | `title` of the current Session once its generated title is saved, after the first completed prompt of an untitled Session ([Sessions](execution-sessions.md#sessions)); sent asynchronously, possibly after the prompt response |
-| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask carries the call's `description` as text content, and its title keeps the command |
+| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask repeats the tool start's title and `description` content |
 | `session/set_mode` | Permission mode `default` or `auto` for the next tool call, not saved |
 | config option `model` | The effective `provider/model`; setting it accepts only that value |
 

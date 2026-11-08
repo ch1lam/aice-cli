@@ -474,7 +474,8 @@ credentials/prompt content out of logs.
 - `bash` requires a one-line `description` of why the command runs. A
   permission prompt shows it above the full command, and a folded TUI tool
   card shows it in place of the command, which the expanded card shows in
-  full. The command stays the thing being confirmed: the description is agent
+  full. ACP keeps the command as the tool title and sends the description as
+  content ([ACP](acp.md#prompts-and-updates)). The command stays the thing being confirmed: the description is agent
   text and can misstate the command,
   and the classifier judges the command, not how it is described. A missing
   description does not fail the call.
