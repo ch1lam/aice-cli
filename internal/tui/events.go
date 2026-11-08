@@ -473,9 +473,6 @@ func (m *model) finishRun(err error) tea.Cmd {
 		} else {
 			m.entries = append(m.entries, transcriptEntry{kind: entryError, text: message})
 		}
-		m.status = message
-	} else {
-		m.status = "Ready for the next prompt"
 	}
 	m.resizeLayout()
 	m.refreshViewport(follow)

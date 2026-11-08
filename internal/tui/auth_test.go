@@ -58,7 +58,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 			if m.authActive() || m.authPrompt() != nil || m.running || m.input.Value() != "" || !m.input.Focused() {
 				t.Fatal("login state survived cancellation")
 			}
-			if strings.Contains(m.transcriptView(), prompt.Code) || m.status != "Login cancelled" {
+			if strings.Contains(m.transcriptView(), prompt.Code) || m.entries[len(m.entries)-1].text != "Login cancelled" {
 				t.Fatal("transient authorization remained visible")
 			}
 		})

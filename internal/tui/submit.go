@@ -115,7 +115,6 @@ func (m model) submitSlashCommand(
 			},
 		)
 		m.resetCommandInput()
-		m.status = "Slash commands listed"
 		return m.settleCommand(true, nil)
 	case "clear":
 		if request.Arguments != "" {
@@ -126,7 +125,6 @@ func (m model) submitSlashCommand(
 		m.folds = nil
 		m.activeProcessID = 0
 		m.resetCommandInput()
-		m.status = "Visible transcript cleared; Session history is unchanged"
 		// Clearing the transcript brings back the logo and a fresh tip.
 		m.welcomeTip.selectNext()
 		return m.settleCommand(true, m.welcomeAnimation.Start())
@@ -213,7 +211,6 @@ func (m model) openCommandMenu(
 	m.commandDismissed = false
 	m.activeRun = nil
 	m.acceptsDelivery = false
-	m.status = command.Menu.Title
 	return m.settleCommand(false, nil)
 }
 
@@ -236,7 +233,6 @@ func (m model) selectCommandMenuOption() (model, tea.Cmd, bool) {
 	if flow.choose(option) {
 		m.input.SetValue("/" + flow.command.Name + " ")
 		m.input.CursorEnd()
-		m.status = option.Menu.Title
 		return m.settleCommand(false, nil)
 	}
 	m.promptHistory = appendPromptHistory(m.promptHistory, flow.raw)
@@ -251,14 +247,11 @@ func (m model) backOrCancelCommandMenu() (model, tea.Cmd, bool) {
 		frame := m.flow.menu()
 		m.input.SetValue(frame.draft)
 		m.input.CursorEnd()
-		m.status = frame.menu.Title
 		return m.settleCommand(false, nil)
 	}
 
-	name := m.flow.command.Name
 	m.flow = nil
 	m.commandDismissed = true
-	m.status = "/" + name + " selection cancelled"
 	return m.settleCommand(false, m.input.Focus())
 }
 
@@ -284,10 +277,8 @@ func (m *model) showCredentialStep() {
 	step := m.flow.credential()
 	m.input.Reset()
 	m.input.Placeholder = step.label + " (input hidden)"
-	m.status = step.label + " required"
 	if step.hint != "" {
 		m.input.Placeholder = step.label + " (" + step.hint + ", input hidden)"
-		m.status = step.title()
 	}
 }
 
@@ -298,7 +289,7 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 	flow := m.flow
 	problem, done := flow.submitCredential(m.input.Value())
 	if problem != "" {
-		m.status = problem
+		m.inputNotice = problem
 		return m, nil, true
 	}
 	if !done {
@@ -326,7 +317,6 @@ func (m model) cancelSecretInput() (model, tea.Cmd, bool) {
 		kind: entryNotice,
 		text: prompt + " entry cancelled",
 	})
-	m.status = prompt + " entry cancelled; run /login to try again"
 	return m.settleCommand(true, m.input.Focus())
 }
 
@@ -350,7 +340,6 @@ func (m model) commandError(
 		transcriptEntry{kind: entryError, text: message},
 	)
 	m.resetCommandInput()
-	m.status = message
 	return m.settleCommand(true, nil)
 }
 

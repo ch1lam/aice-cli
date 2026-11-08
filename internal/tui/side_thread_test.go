@@ -940,9 +940,6 @@ func TestModelCtrlDEndsIdleThread(t *testing.T) {
 	if len(manager.closeIDs) != 1 || manager.closeIDs[0] != info.ID {
 		t.Fatalf("closed ids = %#v, want [%d]", manager.closeIDs, info.ID)
 	}
-	if updated.status != "BTW thread ended" {
-		t.Fatalf("status = %q, want end notice", updated.status)
-	}
 }
 
 func TestModelCtrlDRunningThreadRequiresConfirmation(t *testing.T) {

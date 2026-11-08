@@ -178,7 +178,9 @@ type model struct {
 	clipboard        tea.Cmd
 	clipboardRead    clipboardRead
 	clearQuitPending bool
-	inputNotice      string
+	// inputNotice is idle feedback shown above the composer; status labels
+	// only an active run's activity row.
+	inputNotice string
 	// Retained only until NewRun accepts the submission, so rejection restores it.
 	submittedInput *interaction.RunInput
 	submittedDraft composerDraft

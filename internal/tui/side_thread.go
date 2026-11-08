@@ -613,7 +613,7 @@ func (m *model) finishSideRun(thread *sideThreadState, err error) {
 		if strings.TrimSpace(thread.draft) != "" {
 			m.side.newDraft = thread.draft
 		}
-		m.status = "BTW thread expired and was deleted"
+		m.inputNotice = "BTW thread expired and was deleted"
 		m.closeSidePanelToMain()
 		if m.side.newDraft != "" {
 			m.pastes = nil
@@ -633,7 +633,6 @@ func (m model) endSideThreadNow(id uint64) (model, tea.Cmd) {
 	delete(m.side.threads, id)
 	m.side.confirm = nil
 	if m.side.shows(id) {
-		m.status = "BTW thread ended"
 		m.closeSidePanelToMain()
 	} else {
 		m.resizeLayout()
