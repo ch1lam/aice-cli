@@ -389,3 +389,19 @@ func TestFuseOptionSwitchesToDefault(t *testing.T) {
 		t.Fatalf("reply %+v auto=%v", reply, adapter.autoActive())
 	}
 }
+
+func TestAutoModePrefersRunScopedClassifier(t *testing.T) {
+	t.Parallel()
+	adapter, startup, _ := newAutoAdapter(t, guard.Config{}, false, classify.Block)
+	run := &scriptedClassifier{decisions: []classify.Decision{classify.Allow}}
+	var tr transcript
+	tr.user(t, "run the script")
+	ctx := withRunClassifier(tr.ctx(t), run.classify)
+	result, err := adapter.Check(ctx, bashCall(t, "python3 -c 'print(1)'"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Decision != agent.GuardAllow || len(run.requests) != 1 || len(startup.requests) != 0 {
+		t.Fatalf("decision=%v run=%d startup=%d, want the run's classifier only", result.Decision, len(run.requests), len(startup.requests))
+	}
+}

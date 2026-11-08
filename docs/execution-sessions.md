@@ -418,7 +418,9 @@ correct `expect` where the classifier was wrong, and add the case to
 ```
 
 The classifier runs on `small_model`, another model of the configured provider
-(empty uses the startup model); see [Configuration](configuration.md#settings-and-precedence).
+(empty uses the main model). Each interactive run uses the provider, model and
+credentials current when it starts, so `/login` and `/model` apply to the next
+run; see [Configuration](configuration.md#settings-and-precedence).
 `environment`, `block` and `allow` append to the built-in trust boundary, block
 rules and allow exceptions. Trusted project settings may add `environment` and
 `block` only; project `small_model` and `auto_mode.allow` are ignored with a
