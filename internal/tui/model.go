@@ -326,6 +326,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if m.reading != nil && !readerMessage(message) {
+		// The live model keeps running underneath a reader: its timers,
+		// checks and waits must reach it, not the reader that replaced it.
+		next, command := m.reading.previous.update(message)
+		live := next.(model)
+		m.reading.previous = &live
+		return m, command
+	}
 	switch message := message.(type) {
 	case tea.KeyPressMsg:
 		return m.routeKey(message)
