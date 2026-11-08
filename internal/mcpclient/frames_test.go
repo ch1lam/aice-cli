@@ -31,6 +31,19 @@ func TestFrameBoundBeforeDecode(t *testing.T) {
 	}
 }
 
+func TestStandaloneStreamLimitDoesNotFailCurrentOperation(t *testing.T) {
+	r := &receipts{}
+	r.begin("tools/call")
+	reader := newFrameReader(io.NopCloser(strings.NewReader("data: "+strings.Repeat("x", 9000)+"\n\n")), 8000, true, false, r)
+	reader.standalone = true
+	if _, err := io.ReadAll(reader); !errors.Is(err, ErrLimit) {
+		t.Fatalf("err=%v, want the stream to fail", err)
+	}
+	if r.finish().limited {
+		t.Fatal("oversized standalone frame marked the current operation limited")
+	}
+}
+
 func TestSSEExactMultilineReceiptAndNotification(t *testing.T) {
 	changed := 0
 	r := &receipts{onNotification: func(method string) {

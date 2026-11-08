@@ -15,8 +15,11 @@ type frameReader struct {
 	sse      bool
 	jsonBody bool
 	receipts *receipts
-	pending  []byte
-	done     bool
+	// standalone marks the HTTP GET stream: it answers no operation, so an
+	// oversized frame there fails only that stream, not the current call.
+	standalone bool
+	pending    []byte
+	done       bool
 }
 
 func newFrameReader(source io.ReadCloser, limit int, sse, jsonBody bool, receipts *receipts) *frameReader {
@@ -34,7 +37,7 @@ func (r *frameReader) Read(p []byte) (int, error) {
 		}
 		frame, err := r.frame()
 		if err != nil {
-			if err == ErrLimit {
+			if err == ErrLimit && !r.standalone {
 				r.receipts.limit()
 			}
 			return 0, err

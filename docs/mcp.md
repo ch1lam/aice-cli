@@ -598,7 +598,9 @@ Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to
 24 MiB or lower limits. Initialization defaults to 15 seconds and operations to
 60 seconds including queue time. SDK frame limits use the configured message
-limit too. HTTP also bounds dialing/headers/cleanup.
+limit too. HTTP also bounds dialing/headers/cleanup. An oversized frame on
+the standalone HTTP GET stream fails that stream only; it does not mark the
+operation in flight as over its limit.
 
 Calls and resource reads dispatch once. Pre-dispatch validation/cancellation is
 `not_dispatched`; an observed result/protocol error is `returned`; a failure after
