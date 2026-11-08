@@ -147,7 +147,6 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.cancelRun = update.cancel
 			if m.cancelRequested {
 				m.cancelRun()
-				m.status = "Cancelling current response..."
 			} else {
 				m.status = "Thinking..."
 			}
@@ -441,6 +440,12 @@ func (m *model) finishRun(err error) tea.Cmd {
 		m.revokeConclusion()
 	}
 	m.updateActiveProcessDuration(time.Now())
+	// A tool whose end event never arrived did not complete; stop its spinner.
+	for i := range m.entries {
+		if e := &m.entries[i]; e.kind == entryTool && !e.toolDone && !e.toolPreparing {
+			e.toolDone, e.toolError = true, true
+		}
+	}
 	m.running = false
 	m.restoreCommandDraftIfIdle()
 	m.acceptsDelivery = false

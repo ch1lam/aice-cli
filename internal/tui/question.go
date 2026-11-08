@@ -570,12 +570,7 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 				m.viewport.PageDown()
 			}
 		case inputActionQuestionCancel:
-			if m.cancelRun != nil {
-				m.cancelRun()
-			} else {
-				m.cancelRequested = true
-			}
-			m.status = "Cancelling current response..."
+			m.requestRunCancellation()
 		}
 		return m, nil, true
 	}
@@ -633,12 +628,7 @@ func (m model) handleQuestionAction(match inputActionMatch) (model, tea.Cmd, boo
 		l := m.layoutQuestionDialog(m.layoutWidth())
 		panel.scroll = min(max(l.offset+match.argument*l.height, 0), len(l.rows)-l.height)
 	case inputActionQuestionCancel:
-		if m.cancelRun != nil {
-			m.cancelRun()
-		} else {
-			m.cancelRequested = true
-		}
-		m.status = "Cancelling current response..."
+		m.requestRunCancellation()
 	}
 	return m, nil, true
 }

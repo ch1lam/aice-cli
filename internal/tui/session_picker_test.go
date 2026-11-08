@@ -389,7 +389,7 @@ func TestSessionPickerCloseButton(t *testing.T) {
 func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
-	m.sessionPicker.restoring = true
+	m.sessionPicker.restoring, m.running = true, true
 	cancelled := false
 	m.cancelRun = func() { cancelled = true }
 	mouse := findPainted(t, m, "✘")

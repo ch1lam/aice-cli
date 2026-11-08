@@ -17,7 +17,6 @@ func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 		}
 		m.input.Reset()
 		m.input.Blur()
-		m.status = "Cancelling command..."
 		return m.settleCommand(false, nil)
 	case inputActionAuthSelect:
 		options := m.flow.prompt.Menu.Options

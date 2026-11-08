@@ -216,5 +216,4 @@ func (m *model) requestRunCancellation() {
 	if m.cancelRun != nil {
 		m.cancelRun()
 	}
-	m.status = "Cancelling current response..."
 }
