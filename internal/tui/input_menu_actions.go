@@ -61,7 +61,7 @@ func (m model) handleSecretAction(match inputActionMatch) (model, tea.Cmd, bool)
 	case inputActionMenuCancel:
 		return m.cancelSecretInput()
 	case inputActionSecretNewline:
-		m.status = "API key must be entered on one line"
+		m.inputNotice = "API key must be entered on one line"
 	}
 	return m, nil, true
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -515,8 +516,10 @@ func TestModelEscapeCancelsOnlyActiveRun(t *testing.T) {
 	if !cancelled {
 		t.Fatal("esc did not invoke active run cancellation")
 	}
-	if updated.status != "Cancelling current response..." {
-		t.Errorf("status = %q, want cancellation status", updated.status)
+	// Later stream updates must not replace the cancellation label.
+	updated.status = "Responding..."
+	if label := ansi.Strip(updated.activityIndicator()); !strings.Contains(label, "Cancelling current response...") {
+		t.Errorf("activity = %q, want cancellation status", label)
 	}
 }
 
@@ -2315,5 +2318,22 @@ func TestModelComposerCursorMatchesRenderedInputAfterClear(t *testing.T) {
 				t.Fatal("rendered editor placeholder not found")
 			})
 		}
+	}
+}
+
+func TestModelFinishRunSettlesToolsWithoutEndEvent(t *testing.T) {
+	t.Parallel()
+	current := newModel(make(chan runRequest), make(chan struct{}))
+	current.running = true
+	current.entries = []transcriptEntry{
+		{kind: entryTool, toolName: "read"},
+		{kind: entryTool, toolName: "write", toolPreparing: true, writePreview: &writePreview{}},
+	}
+	current.finishRun(errors.New("recording failed"))
+	if running := current.entries[0]; !running.toolDone || !running.toolError {
+		t.Fatalf("unfinished tool = %+v, want settled as failed", running)
+	}
+	if preview := current.entries[1]; preview.toolDone || !preview.toolPreparing {
+		t.Fatal("unexecuted write preview was marked as run")
 	}
 }

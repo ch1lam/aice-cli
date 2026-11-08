@@ -178,7 +178,9 @@ type model struct {
 	clipboard        tea.Cmd
 	clipboardRead    clipboardRead
 	clearQuitPending bool
-	inputNotice      string
+	// inputNotice is idle feedback shown above the composer; status labels
+	// only an active run's activity row.
+	inputNotice string
 	// Retained only until NewRun accepts the submission, so rejection restores it.
 	submittedInput *interaction.RunInput
 	submittedDraft composerDraft
@@ -326,6 +328,14 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
+	if m.reading != nil && !readerMessage(message) {
+		// The live model keeps running underneath a reader: its timers,
+		// checks and waits must reach it, not the reader that replaced it.
+		next, command := m.reading.previous.update(message)
+		live := next.(model)
+		m.reading.previous = &live
+		return m, command
+	}
 	switch message := message.(type) {
 	case tea.KeyPressMsg:
 		return m.routeKey(message)

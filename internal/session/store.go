@@ -31,11 +31,16 @@ var (
 type Store struct {
 	mu   sync.Mutex
 	file *os.File
-	// Open retains its locked repair handle while writes use an append handle.
+	// lockFile holds the writer lock. Unlike the append handle it can
+	// truncate, which Windows refuses through O_APPEND.
 	lockFile *os.File
 	path     string
 	storeState
 	closed bool
+	// broken is set when a failed append could not be rolled back. The
+	// file's tail no longer matches the retained state, so later appends
+	// would chain to the wrong parent; reopening repairs or replays it.
+	broken error
 }
 
 // Create creates a new session file and writes its versioned header.
@@ -63,7 +68,7 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 			return nil, fmt.Errorf("session: create directory: %w", err)
 		}
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("session: create file: %w", err)
 	}
@@ -89,7 +94,11 @@ func Create(ctx context.Context, path string, metadata Metadata) (*Store, error)
 	if err := file.Sync(); err != nil {
 		return nil, cleanup(fmt.Errorf("session: sync header: %w", err))
 	}
-	return newStore(file, path, newStoreState(Snapshot{Header: header})), nil
+	appendFile, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
+	if err != nil {
+		return nil, cleanup(fmt.Errorf("session: open file for append: %w", err))
+	}
+	return newStore(appendFile, file, path, newStoreState(Snapshot{Header: header})), nil
 }
 
 // Open loads an existing session and truncates only an incomplete final record.
@@ -145,14 +154,13 @@ func openStore(ctx context.Context, path string, repair bool) (*Store, error) {
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("session: reopen file for append: %w", err), closeWriter(file))
 	}
-	store := newStore(appendFile, path, state)
-	store.lockFile = file
-	return store, nil
+	return newStore(appendFile, file, path, state), nil
 }
 
-func newStore(file *os.File, path string, state storeState) *Store {
+func newStore(file, lockFile *os.File, path string, state storeState) *Store {
 	return &Store{
 		file:       file,
+		lockFile:   lockFile,
 		path:       path,
 		storeState: state,
 	}
@@ -360,6 +368,9 @@ func (s *Store) validateWritable(ctx context.Context) error {
 	if s.closed {
 		return ErrClosed
 	}
+	if s.broken != nil {
+		return s.broken
+	}
 	return validateContext(ctx)
 }
 
@@ -383,9 +394,11 @@ func (s *Store) appendData(
 		return fmt.Errorf("session: stat before %s append: %w", label, err)
 	}
 	rollback := func(cause error) error {
-		truncateErr := s.file.Truncate(info.Size())
-		syncErr := s.file.Sync()
-		return errors.Join(cause, truncateErr, syncErr)
+		if err := errors.Join(s.lockFile.Truncate(info.Size()), s.lockFile.Sync()); err != nil {
+			s.broken = fmt.Errorf("session: an earlier write could not be rolled back; reopen the Session: %w", errors.Join(cause, err))
+			return s.broken
+		}
+		return cause
 	}
 	if err := writeRecord(s.file, data); err != nil {
 		return rollback(fmt.Errorf("session: append %s: %w", label, err))
@@ -407,13 +420,7 @@ func (s *Store) Close() error {
 		return nil
 	}
 	s.closed = true
-	var err error
-	if s.lockFile != nil {
-		err = errors.Join(s.file.Close(), closeWriter(s.lockFile))
-	} else {
-		err = closeWriter(s.file)
-	}
-	if err != nil {
+	if err := errors.Join(s.file.Close(), closeWriter(s.lockFile)); err != nil {
 		return fmt.Errorf("session: close file: %w", err)
 	}
 	return nil

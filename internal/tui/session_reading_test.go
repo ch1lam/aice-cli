@@ -163,3 +163,21 @@ func TestReadingQuitFromBothFocuses(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionReadingForwardsBackgroundMessagesToLiveModel(t *testing.T) {
+	live := newModel(nil, nil)
+	generation := live.welcomeAnimation.generation
+	reader := newModel(nil, nil)
+	reader.entries = []transcriptEntry{{kind: entryUser, text: "Old question"}}
+	reader.reading = &sessionReading{previous: &live}
+
+	reader = updateModel(t, reader, welcomeTickMsg{generation: generation})
+	reader = updateModel(t, reader, updateCheckMsg{result: interaction.UpdateCheckResult{Status: interaction.UpdateCheckStatusCurrent}})
+	restored := reader.closeReading()
+	if !restored.welcomeAnimation.running || restored.welcomeAnimation.frame != 1 {
+		t.Fatalf("live welcome animation = %+v, want it still ticking", restored.welcomeAnimation)
+	}
+	if restored.welcomeUpdate.state != welcomeUpdateCurrent {
+		t.Fatalf("live update state = %v, want the reader-time result", restored.welcomeUpdate.state)
+	}
+}

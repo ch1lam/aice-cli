@@ -127,6 +127,42 @@ func TestLoopRetriesProviderFailureBeforeStreamStarts(t *testing.T) {
 	}
 }
 
+func TestLoopRetriesErrorEventBeforeStreamStart(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	providerErr := &llm.ProviderError{StatusCode: http.StatusServiceUnavailable, Err: errors.New("overloaded")}
+	failed := assistantMessage(modelInfo, llm.StopReasonError)
+	failed.ErrorMessage = "overloaded"
+	succeeded := assistantMessage(modelInfo, llm.StopReasonStop, textPart("done"))
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: []llm.Event{{Type: llm.EventTypeError, Message: &failed, Err: providerErr}}},
+		{events: terminalEvents(succeeded)},
+	}}
+	loop := mustRetryLoop(t, model, 1, 0)
+
+	var events []agent.AgentEvent
+	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "hello")), collectEvents(&events))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(model.requests) != 2 || len(result.ModelRounds) != 2 {
+		t.Fatalf("requests/rounds = %d/%d, want 2/2", len(model.requests), len(result.ModelRounds))
+	}
+	if got, want := result.ModelRounds[0].Assistant.ErrorMessage, "model request failed before completion: provider HTTP 503"; got != want {
+		t.Fatalf("failed attempt error_message = %q, want %q", got, want)
+	}
+	starts := 0
+	for _, event := range events {
+		if _, ok := event.Message.(llm.AssistantMessage); ok && event.Type == agent.EventTypeMessageStart && event.TurnNumber == result.ModelRounds[0].Number {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("failed attempt message_start events = %d, want 1", starts)
+	}
+}
+
 func TestLoopRecordsProviderSummaryWhenRequestNeverStarts(t *testing.T) {
 	t.Parallel()
 

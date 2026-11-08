@@ -67,3 +67,44 @@ func TestFailedWriteDoesNotConsumeCachedCall(t *testing.T) {
 		t.Fatalf("retry: %+v %v", update, err)
 	}
 }
+
+func TestFailedRollbackRejectsLaterWritesUntilReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	store, err := Create(t.Context(), path, Metadata{ID: "test", CreatedAt: 1, WorkingDirectory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	user, _ := llm.NewUserMessage(llm.NewTextContent("inspect").Part())
+	first, _ := NewMessage("first", "", 1, user)
+	second, _ := NewMessage("second", "", 2, user)
+
+	// Neither the write nor its truncation can succeed through read-only
+	// handles, so the file's tail is unknown after the failure.
+	readonly, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readonly.Close()
+	file, lockFile := store.file, store.lockFile
+	store.file, store.lockFile = readonly, readonly
+	writeErr := store.AppendMessage(t.Context(), first)
+	store.file, store.lockFile = file, lockFile
+	if writeErr == nil {
+		t.Fatal("write unexpectedly succeeded")
+	}
+	if err := store.AppendMessage(t.Context(), second); err == nil || !errors.Is(err, store.broken) {
+		t.Fatalf("append after failed rollback = %v, want the rollback failure", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if err := reopened.AppendMessage(t.Context(), second); err != nil {
+		t.Fatalf("append after reopen: %v", err)
+	}
+}

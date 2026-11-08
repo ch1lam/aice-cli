@@ -255,13 +255,12 @@ func (s *interactiveSession) endSideRun(id uint64) {
 	defer s.lifecycle.mu.Unlock()
 	s.sideMu.Lock()
 	defer s.sideMu.Unlock()
-	thread, ok := s.sideThreads[id]
-	if !ok {
-		return
-	}
-	thread.isRunning = false
+	// The slot was reserved for this run whether or not its thread survives.
 	s.lifecycle.sideRunning--
-	thread.lastActiveAt = s.sideNow()
+	if thread, ok := s.sideThreads[id]; ok {
+		thread.isRunning = false
+		thread.lastActiveAt = s.sideNow()
+	}
 }
 
 // purgeExpiredThreadsLocked permanently deletes every non-running thread

@@ -36,7 +36,10 @@ func installRipgrep(ctx context.Context, opts Options) error {
 	}
 	defer os.Remove(archivePath)
 
-	extractTo, err := os.MkdirTemp("", "aice-rg-*")
+	// Extract on the destination filesystem so publishing is one atomic
+	// rename: presence of rg means a complete executable, even across a crash
+	// or a concurrent install.
+	extractTo, err := os.MkdirTemp(opts.BinDir, ".rg-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -64,14 +67,13 @@ func installRipgrep(ctx context.Context, opts Options) error {
 	if !found {
 		return fmt.Errorf("extract %s: archive does not contain %s", asset, binName)
 	}
-	dest := filepath.Join(opts.BinDir, binName)
-	if err := moveFile(from, dest); err != nil {
-		return fmt.Errorf("install %s: %w", binName, err)
-	}
 	if opts.Goos != "windows" {
-		if err := os.Chmod(dest, 0o755); err != nil {
+		if err := os.Chmod(from, 0o755); err != nil {
 			return fmt.Errorf("chmod %s: %w", binName, err)
 		}
+	}
+	if err := os.Rename(from, filepath.Join(opts.BinDir, binName)); err != nil {
+		return fmt.Errorf("install %s: %w", binName, err)
 	}
 	return nil
 }

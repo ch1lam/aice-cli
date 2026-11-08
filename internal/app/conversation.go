@@ -13,6 +13,7 @@ import (
 // conversationState owns the durable transcript, its derived history, and the
 // main interaction's pending messages. historySyncMu serializes store/history
 // updates; historyMu protects history and activeMainRun for side snapshots.
+// Replacing store holds both, so currentStore may read it under historyMu alone.
 // When both locks are needed, acquire historySyncMu before historyMu, keeping
 // file I/O outside historyMu. The zero value represents a session not yet started.
 // A conversationState must not be copied after first use.
@@ -25,6 +26,30 @@ type conversationState struct {
 	historyLeaf   string
 	historyReady  bool
 	activeMainRun *mainRunState
+}
+
+// installStore replaces the Session with its derived history and returns the
+// previous store for the caller to close. The caller holds historySyncMu.
+func (c *conversationState) installStore(
+	store *session.Store,
+	history []llm.AgentMessage,
+	leaf string,
+	ready bool,
+) *session.Store {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
+	previous := c.store
+	c.store, c.history = store, history
+	c.historyLeaf, c.historyReady = leaf, ready
+	return previous
+}
+
+// currentStore is for readers outside the store's serialization, such as UI
+// refreshes; the store may be closed by a concurrent switch.
+func (c *conversationState) currentStore() *session.Store {
+	c.historyMu.RLock()
+	defer c.historyMu.RUnlock()
+	return c.store
 }
 
 type mainRunState struct {

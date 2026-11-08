@@ -149,7 +149,8 @@ decision for the current fingerprint) or **Deny**. Any other reply denies.
 Prompts are serialized, so concurrent discovery asks once per service. Allow
 and Deny answers are remembered for that exact fingerprint until the process
 exits; a changed command, endpoint or credential asks again, and a cancelled
-prompt records nothing. Remote tool calls still ask separately.
+prompt records nothing. A later saved allow, such as `/mcp approve`, clears an
+in-run Deny for that service. Remote tool calls still ask separately.
 
 Print, the management CLI and other non-interactive callers never ask: an
 unapproved connection remains `needs_approval` and fails closed. `--yolo`
@@ -598,7 +599,9 @@ Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to
 24 MiB or lower limits. Initialization defaults to 15 seconds and operations to
 60 seconds including queue time. SDK frame limits use the configured message
-limit too. HTTP also bounds dialing/headers/cleanup.
+limit too. HTTP also bounds dialing/headers/cleanup. An oversized frame on
+the standalone HTTP GET stream fails that stream only; it does not mark the
+operation in flight as over its limit.
 
 Calls and resource reads dispatch once. Pre-dispatch validation/cancellation is
 `not_dispatched`; an observed result/protocol error is `returned`; a failure after

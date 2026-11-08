@@ -57,13 +57,10 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 	if err := ctx.Err(); err != nil {
 		return "", errors.Join(err, store.Close())
 	}
-	previous := c.store
-	c.store = store
-	c.historyLeaf, c.historyReady = snapshot.LeafID, true
-	c.historyMu.Lock()
-	c.history = history
-	c.historyMu.Unlock()
+	previous := c.installStore(store, history, snapshot.LeafID, true)
+	s.sideMu.Lock()
 	clear(s.sideThreads)
+	s.sideMu.Unlock()
 	view.ResetSideThreads = true
 	if s.guard != nil {
 		s.guard.ResetSessionGrants()

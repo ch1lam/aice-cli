@@ -136,10 +136,9 @@ func (t *httpTransport) RoundTrip(request *http.Request) (*http.Response, error)
 	if resp.StatusCode != http.StatusOK {
 		observer = &receipts{} // HTTP error bodies are not MCP results
 	}
-	resp.Body = &cancelBody{
-		ReadCloser: newFrameReader(resp.Body, t.limit, mediaType == "text/event-stream", mediaType != "text/event-stream", observer),
-		cancel:     cancel, stop: stop,
-	}
+	reader := newFrameReader(resp.Body, t.limit, mediaType == "text/event-stream", mediaType != "text/event-stream", observer)
+	reader.standalone = req.Method == http.MethodGet
+	resp.Body = &cancelBody{ReadCloser: reader, cancel: cancel, stop: stop}
 	return resp, nil
 }
 

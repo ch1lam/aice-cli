@@ -34,10 +34,7 @@ func TestCloseReleasesWriterWithInheritedDescriptor(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			file := store.file
-			if store.lockFile != nil {
-				file = store.lockFile
-			}
+			file := store.lockFile
 			// A child between fork and exec retains the same open file description,
 			// even with close-on-exec set. Dup reproduces that lifetime deterministically.
 			fd, err := syscall.Dup(int(file.Fd()))

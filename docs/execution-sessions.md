@@ -418,7 +418,9 @@ correct `expect` where the classifier was wrong, and add the case to
 ```
 
 The classifier runs on `small_model`, another model of the configured provider
-(empty uses the startup model); see [Configuration](configuration.md#settings-and-precedence).
+(empty uses the main model). Each interactive run uses the provider, model and
+credentials current when it starts, so `/login` and `/model` apply to the next
+run; see [Configuration](configuration.md#settings-and-precedence).
 `environment`, `block` and `allow` append to the built-in trust boundary, block
 rules and allow exceptions. Trusted project settings may add `environment` and
 `block` only; project `small_model` and `auto_mode.allow` are ignored with a
@@ -689,9 +691,11 @@ older entry, the next message becomes a new child and creates a branch.
 Each source message is appended and synced before the next dependent action.
 In particular, assistant tool calls are durable before tools execute, and each
 tool result is durable before the next tool runs. Recording failure stops the
-run; AICE does not retry persistence from the final result or UI events. If the
-live Session has an incomplete tool group, reopen it for recovery or use `/new`
-before continuing. Display
+run; AICE does not retry persistence from the final result or UI events. A
+failed append is truncated away through the writer's lock handle; if that
+rollback also fails, the Store rejects every later write until the Session is
+reopened. If the live Session has an incomplete tool group, reopen it for
+recovery or use `/new` before continuing. Display
 failure still permits already-known results to be saved. Usage is counted from
 assistant messages and summary checkpoints once, including abandoned branches.
 
@@ -717,7 +721,9 @@ before completion", followed by the
 [`ProviderError.Summary`](../internal/llm/provider_error.go): transport or HTTP
 status and the provider error code, such as `provider HTTP 429
 rate_limit_error`. The summary omits the error text, which may echo request
-details. Owner: [retry_flow.go](../internal/agent/retry_flow.go).
+details. A limit or preparation check that stops the run before the request is
+sent is not an attempt: it records only the run's terminal message. Owner:
+[retry_flow.go](../internal/agent/retry_flow.go).
 
 `/btw` side threads are outside this persistence model. Each new thread
 freezes the already accepted context at its first question, then uses that
@@ -811,8 +817,10 @@ The TUI exposes the same behavior through `/session`, `/tree`, and
 `/checkout`. `/new` detaches from the current Session without creating a
 file; the next accepted prompt starts a fresh one. A previous file that
 recorded messages is left untouched and stays resumable with `--session`.
-`/clear` only clears the visible transcript. `/new` does not rebuild the
-process environment: prompt files and skill discovery are reused. Dynamic Guard
+Once detached, a failure to close or remove the previous file is reported as a
+warning; the switch still completes. `/clear` only clears the visible
+transcript. `/new` does not rebuild the process environment: prompt files and
+skill discovery are reused. Dynamic Guard
 grants are cleared. Browser state belongs to the browser MCP service and is
 neither reset nor restored from history; see [Browser automation](browser.md#lifetime-and-concurrency). Restart AICE
 to reload prompt files or Skills.

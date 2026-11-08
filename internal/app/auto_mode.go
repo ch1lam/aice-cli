@@ -46,6 +46,14 @@ var humanOnlyRules = []string{
 // classifierFunc judges one request; tests replace the model-backed classifier.
 type classifierFunc func(context.Context, classify.Request) (classify.Verdict, error)
 
+type runClassifierKey struct{}
+
+// withRunClassifier scopes a classifier to one run so it follows the model
+// settings that run uses, including a /login or /model after startup.
+func withRunClassifier(ctx context.Context, classifier classifierFunc) context.Context {
+	return context.WithValue(ctx, runClassifierKey{}, classifier)
+}
+
 // autoClassifier creates the model-backed classifier on first use, so an
 // unauthenticated Session can start; a failed setup is retried next time
 // and reports Unavailable, which a person resolves.
@@ -148,7 +156,11 @@ func (a *autoMode) decide(ctx context.Context, call llm.ToolCall, res agent.Guar
 	req.Action = classifierAction(call, res)
 	req.Environment = gitEnvironment(a.workspace)
 	req.Environment.Slots = a.slots
-	verdict, err := a.classify(ctx, req)
+	classifier := a.classify
+	if scoped, ok := ctx.Value(runClassifierKey{}).(classifierFunc); ok {
+		classifier = scoped
+	}
+	verdict, err := classifier(ctx, req)
 	if err != nil {
 		return agent.GuardResult{}, err
 	}

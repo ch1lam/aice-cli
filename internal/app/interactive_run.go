@@ -98,7 +98,7 @@ func (s *interactiveSession) ensureSessionStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.conversation.store = store
+	s.conversation.installStore(store, s.conversation.history, "", false)
 	return nil
 }
 func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Delivery) error {
@@ -165,8 +165,14 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	r.mu.Lock()
 	r.model = snapshot.model
 	r.mu.Unlock()
+	configured := configuredModel{
+		configuration: snapshot.configuration,
+		model:         snapshot.model,
+		options:       snapshot.options,
+	}
 	ctx = withMCPConnectionApprover(ctx, r.session.approveMCPConnection(snapshot.configuration.Paths))
 	ctx = withMCPElicitor(ctx, r.session.elicitMCP)
+	ctx = withRunClassifier(ctx, r.session.application.autoClassifier(configured))
 	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
 	if err != nil {
 		return err
@@ -175,11 +181,6 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()
 
-	configured := configuredModel{
-		configuration: snapshot.configuration,
-		model:         snapshot.model,
-		options:       snapshot.options,
-	}
 	// This run-local projection includes completed messages even while a tool
 	// group is not yet replay-safe for the conversation's side snapshots.
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)

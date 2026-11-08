@@ -27,6 +27,19 @@ type sessionReading struct {
 	savedViewport transcriptViewport
 }
 
+// readerMessage reports whether a message belongs to an open reader: terminal
+// input and its own resize and copy notice. Everything else is forwarded to
+// the live model. A late history result is dropped; the reader is already open.
+func readerMessage(message tea.Msg) bool {
+	switch message.(type) {
+	case tea.KeyPressMsg, tea.KeyReleaseMsg, tea.PasteMsg,
+		tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.BlurMsg,
+		tea.WindowSizeMsg, copyNoticeExpiredMsg, sessionReadingResult:
+		return true
+	}
+	return false
+}
+
 func (m *model) requestSessionReading() tea.Cmd {
 	p := m.sessionPicker
 	item, ok := p.list.SelectedItem().(sessionListItem)

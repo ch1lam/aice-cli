@@ -13,13 +13,14 @@ import (
 	"testing"
 )
 
-func TestBrowserReclaimsStaleInstallLockWithConcurrentWaiters(t *testing.T) {
+func TestBrowserInstallIgnoresLegacyLockAndSerializesInstallers(t *testing.T) {
 	var hits atomic.Int32
 	opts := browserOptions(t, func(w http.ResponseWriter, _ *http.Request) { hits.Add(1); _, _ = w.Write([]byte("browser")) })
 	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	if err := command.Run(); err != nil {
 		t.Fatal(err)
 	}
+	// A crashed older installer left its directory lock with a dead pid.
 	lock := filepath.Join(opts.BinDir, "agent-browser.lock")
 	if err := os.Mkdir(lock, 0700); err != nil {
 		t.Fatal(err)
@@ -38,8 +39,5 @@ func TestBrowserReclaimsStaleInstallLockWithConcurrentWaiters(t *testing.T) {
 	wg.Wait()
 	if hits.Load() != 1 {
 		t.Fatalf("downloads %d", hits.Load())
-	}
-	if _, err := os.Stat(lock); !os.IsNotExist(err) {
-		t.Fatal("installation lock retained")
 	}
 }

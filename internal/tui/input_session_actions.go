@@ -133,11 +133,7 @@ func (m model) handleSessionAction(match inputActionMatch) (tea.Model, tea.Cmd) 
 	case inputActionSessionMove, inputActionSessionPage:
 		return m, m.moveSessionSelection(match)
 	case inputActionSessionCancelRestore:
-		if m.cancelRun != nil {
-			m.cancelRun()
-		} else {
-			m.cancelRequested = true
-		}
+		m.requestRunCancellation()
 	case inputActionSessionCancelRename:
 		if p.cancelRename != nil {
 			p.cancelRename()

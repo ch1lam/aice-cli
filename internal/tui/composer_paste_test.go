@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func typeText(t *testing.T, current model, text string) model {
@@ -304,18 +305,6 @@ func TestEditorShortcutOpensExternalEditor(t *testing.T) {
 	}
 }
 
-func TestPastePlaceholderStatusNamesEditor(t *testing.T) {
-	t.Setenv("VISUAL", "myeditor --wait")
-	t.Setenv("EDITOR", "")
-
-	current := testModel(t, 80, 24)
-	current = updateModel(t, current, tea.PasteMsg{Content: largePasteFixture("body", 50)})
-
-	if want := "Ctrl+g edits in myeditor --wait"; !strings.Contains(current.status, want) {
-		t.Errorf("status = %q, want it to contain %q", current.status, want)
-	}
-}
-
 func TestOpenComposerEditorMissingBinary(t *testing.T) {
 	t.Setenv("VISUAL", "aice-missing-editor-xyz")
 	t.Setenv("EDITOR", "")
@@ -325,11 +314,14 @@ func TestOpenComposerEditorMissingBinary(t *testing.T) {
 	if command != nil {
 		t.Fatal("missing editor produced an editor command")
 	}
-	if want := `"aice-missing-editor-xyz"`; !strings.Contains(updated.status, want) {
-		t.Errorf("status = %q, want it to name the missing binary %s", updated.status, want)
+	if want := `"aice-missing-editor-xyz"`; !strings.Contains(updated.inputNotice, want) {
+		t.Errorf("notice = %q, want it to name the missing binary %s", updated.inputNotice, want)
 	}
-	if !strings.Contains(updated.status, "VISUAL") {
-		t.Errorf("status = %q, want it to say how to configure the editor", updated.status)
+	if !strings.Contains(updated.inputNotice, "VISUAL") {
+		t.Errorf("notice = %q, want it to say how to configure the editor", updated.inputNotice)
+	}
+	if !strings.Contains(ansi.Strip(updated.composerView(120)), "aice-missing-editor-xyz") {
+		t.Error("missing-editor notice is not rendered")
 	}
 }
 
@@ -358,8 +350,8 @@ func TestEditorErrorNamesFailedEditor(t *testing.T) {
 	if got := updated.input.Value(); got != before {
 		t.Error("failed editor run changed the draft")
 	}
-	if want := `"myeditor --wait"`; !strings.Contains(updated.status, want) {
-		t.Errorf("status = %q, want it to contain %q", updated.status, want)
+	if want := `"myeditor --wait"`; !strings.Contains(updated.inputNotice, want) {
+		t.Errorf("notice = %q, want it to contain %q", updated.inputNotice, want)
 	}
 }
 
@@ -389,8 +381,8 @@ func TestEditorEmptyResultKeepsDraft(t *testing.T) {
 			if got := updated.input.Value(); got != before {
 				t.Error("empty editor result changed the draft")
 			}
-			if !strings.Contains(updated.status, "empty") {
-				t.Errorf("status = %q, want it to report the empty result", updated.status)
+			if !strings.Contains(updated.inputNotice, "empty") {
+				t.Errorf("notice = %q, want it to report the empty result", updated.inputNotice)
 			}
 		})
 	}

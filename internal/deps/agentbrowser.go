@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 )
 
 // AgentBrowserInstalled checks the private pinned installation, never PATH.
@@ -121,43 +122,21 @@ func replaceBrowserFiles(stage string, files []browserReplacement) (err error) {
 	return nil
 }
 
+// lockBrowserInstall serializes installers with an OS file lock. The kernel
+// releases it when the holder exits, so a crash never leaves a stale lock.
 func lockBrowserInstall(ctx context.Context, opts Options) (func(), error) {
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
-	lock := filepath.Join(opts.BinDir, "agent-browser.lock")
-	announced := false
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		err := os.Mkdir(lock, 0700)
-		if err == nil {
-			if err := os.WriteFile(filepath.Join(lock, "pid"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
-				os.RemoveAll(lock)
-				return nil, err
-			}
-			return func() { os.RemoveAll(lock) }, nil
-		}
-		if !os.IsExist(err) {
-			return nil, err
-		}
-		reclaimed, err := reclaimBrowserInstallLock(lock)
-		if err != nil {
-			return nil, err
-		}
-		if reclaimed {
-			continue
-		}
-		if !announced {
-			fmt.Fprintln(opts.Log, "aice: another aice is installing agent-browser; waiting ...")
-			announced = true
-		}
-		timer := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
+	path := filepath.Join(opts.BinDir, "agent-browser.install")
+	brief, stop := context.WithTimeout(ctx, 200*time.Millisecond)
+	unlock, err := lockedfile.Lock(brief, path)
+	stop()
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		fmt.Fprintln(opts.Log, "aice: another aice is installing agent-browser; waiting ...")
+		unlock, err = lockedfile.Lock(ctx, path)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = unlock() }, nil
 }

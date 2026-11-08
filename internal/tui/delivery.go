@@ -149,13 +149,13 @@ func (m model) applyDeliveryResult(result deliveryResult) (tea.Model, tea.Cmd) {
 		m.input.files = result.draft.files
 		m.input.skills = result.draft.skills
 		m.pastes = result.draft.pastes
-		m.inputNotice = result.err.Error()
-		m.status = "Pending input was not accepted"
-		if errors.Is(result.err, interaction.ErrFull) {
-			m.status = "Pending input is full"
-		}
-		if errors.Is(result.err, interaction.ErrClosed) {
-			m.status = "Current response just finished"
+		switch {
+		case errors.Is(result.err, interaction.ErrFull):
+			m.inputNotice = "Pending input is full"
+		case errors.Is(result.err, interaction.ErrClosed):
+			m.inputNotice = "Current response just finished; press Enter to send"
+		default:
+			m.inputNotice = result.err.Error()
 		}
 	} else {
 		m.promptHistory = appendPromptHistory(m.promptHistory, result.text)

@@ -135,7 +135,9 @@ const samplePage = `<!DOCTYPE html><html><head><meta charset="utf-8"><title> Sam
 <table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>a</td><td>1 | 2</td></tr></tbody></table>
 <blockquote><p>Quoted</p></blockquote>
 <img src="https://example.test/x.png" alt="An image"><iframe src="https://evil.test"></iframe>
-<p hidden>hidden text</p><div aria-hidden="true">shown despite aria</div></main>
+<p hidden>hidden text</p><div aria-hidden="true">shown despite aria</div>
+<p><a href="/x">visible<span hidden>hidden link text</span></a></p><pre>kept<script>pre script</script></pre>
+<table><tr><td>cell<script>cell script</script></td></tr></table></main>
 <footer>Footer noise</footer><noscript>noscript</noscript></body></html>`
 
 func TestFetchHTMLExtractsMarkdown(t *testing.T) {
@@ -173,7 +175,7 @@ func TestFetchHTMLExtractsMarkdown(t *testing.T) {
 			t.Fatalf("markdown lacks %q:\n%s", want, text)
 		}
 	}
-	for _, forbidden := range []string{"alert", "body{}", "Nav", "Site header", "Footer noise", "noscript", "hidden text", "evil.test"} {
+	for _, forbidden := range []string{"alert", "body{}", "Nav", "Site header", "Footer noise", "noscript", "hidden text", "evil.test", "hidden link text", "pre script", "cell script"} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("markdown contains %q:\n%s", forbidden, text)
 		}

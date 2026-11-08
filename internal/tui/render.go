@@ -790,7 +790,13 @@ func (m model) showsActivitySpinner() bool {
 
 func (m model) activityIndicator() string {
 	status := strings.TrimSpace(m.status)
-	if status == "" {
+	switch {
+	case m.cancelRequested && m.authActive():
+		// Cancellation outlasts later stream updates until the run finishes.
+		status = "Cancelling command..."
+	case m.cancelRequested:
+		status = "Cancelling current response..."
+	case status == "":
 		status = "Working..."
 	}
 	// Only the thinking row carries the Grok-style sweep. Answering, tools
