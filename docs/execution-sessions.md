@@ -691,9 +691,11 @@ older entry, the next message becomes a new child and creates a branch.
 Each source message is appended and synced before the next dependent action.
 In particular, assistant tool calls are durable before tools execute, and each
 tool result is durable before the next tool runs. Recording failure stops the
-run; AICE does not retry persistence from the final result or UI events. If the
-live Session has an incomplete tool group, reopen it for recovery or use `/new`
-before continuing. Display
+run; AICE does not retry persistence from the final result or UI events. A
+failed append is truncated away through the writer's lock handle; if that
+rollback also fails, the Store rejects every later write until the Session is
+reopened. If the live Session has an incomplete tool group, reopen it for
+recovery or use `/new` before continuing. Display
 failure still permits already-known results to be saved. Usage is counted from
 assistant messages and summary checkpoints once, including abandoned branches.
 
