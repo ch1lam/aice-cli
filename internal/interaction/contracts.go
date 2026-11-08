@@ -259,16 +259,19 @@ type ToolDisplay struct {
 	// display value comparable for frontend cache keys.
 	Evidence *EvidenceDisplay
 	// Review is set when auto mode decided the call.
-	Review     *ReviewDisplay
-	ID         string
-	Name       string
-	Detail     string
-	Failed     bool
-	Content    string
-	HasContent bool
-	Arguments  []byte
-	Kind       ToolKind
-	Locations  []ToolLocation
+	Review *ReviewDisplay
+	ID     string
+	Name   string
+	Detail string
+	// Description is a bash call's stated reason for its command, Detail.
+	// It is agent text; the command stays visible beside it.
+	Description string
+	Failed      bool
+	Content     string
+	HasContent  bool
+	Arguments   []byte
+	Kind        ToolKind
+	Locations   []ToolLocation
 }
 
 // ReviewDisplay is an automatic permission decision on a tool call.
@@ -480,16 +483,19 @@ type GuardReply struct {
 type GuardRequest struct {
 	ID string
 	// Title optionally replaces the prompt title derived from the fields below.
-	Title     string
-	ToolName  string
-	Reason    string
-	RuleID    string
-	Command   string
-	Path      string
-	Highlight string
-	Options   []GuardOption
-	Done      <-chan struct{} // closed when the request is answered or cancelled
-	Reply     chan GuardReply
+	Title    string
+	ToolName string
+	Reason   string
+	RuleID   string
+	Command  string
+	// Description is the agent's own one-line reason for Command. It is
+	// untrusted: a frontend shows it beside the full command, never instead.
+	Description string
+	Path        string
+	Highlight   string
+	Options     []GuardOption
+	Done        <-chan struct{} // closed when the request is answered or cancelled
+	Reply       chan GuardReply
 }
 
 // GuardRequester exposes the channel of pending guard confirmations for the

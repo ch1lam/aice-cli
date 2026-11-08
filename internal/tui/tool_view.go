@@ -45,10 +45,15 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 		if entry.toolExpanded && toolHasPath(entry.toolName) {
 			heading += "  " + detailStyle.Render(detail)
 		} else {
+			// A bash call's stated reason heads the card; the body shows the command.
+			described := entry.toolName == "bash" && entry.toolDescription != ""
+			if described {
+				detail = entry.toolDescription
+			}
 			detail = strings.Join(strings.Fields(detail), " ")
 			available := m.contentWidth() - 2 - ansi.StringWidth(heading) - ansi.StringWidth(stats) - 2
 			truncated := ansi.Truncate(detail, max(available, 1), "…")
-			if entry.toolName == "bash" {
+			if entry.toolName == "bash" && !described {
 				heading += "  " + highlightBashLine(truncated)
 			} else {
 				heading += "  " + detailStyle.Render(truncated)

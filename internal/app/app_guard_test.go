@@ -498,6 +498,20 @@ func TestHandleGuardAskHighlightFromPattern(t *testing.T) {
 	}
 }
 
+func TestHandleGuardAskCommandDescription(t *testing.T) {
+	t.Parallel()
+
+	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
+	call := llm.ToolCall{ID: "call-1", Name: "bash", Arguments: json.RawMessage(`{"command":"rm -rf build","description":"  Remove the\n stale build output "}`)}
+	_, request := handleGuardAskWithReply(t, session, call, agent.GuardApproval{
+		RuleID: guard.RuleBashDelete,
+		Action: agent.GuardAction{Kind: "command", Command: "rm -rf build", ToolName: "bash"},
+	}, interaction.GuardReply{OptionID: guardOptionAllowOnce})
+	if request.Description != "Remove the stale build output" {
+		t.Fatalf("Description = %q", request.Description)
+	}
+}
+
 func TestHandleGuardAskAllowRunFileGrantsPathNotParent(t *testing.T) {
 	t.Parallel()
 

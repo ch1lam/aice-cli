@@ -59,9 +59,15 @@ func (a *agent) answerGuard(ctx context.Context, request interaction.GuardReques
 		case <-promptCtx.Done():
 		}
 	}()
+	toolCall := sdk.ToolCallUpdate{ToolCallId: sdk.ToolCallId(request.ID), Title: &title}
+	if request.Description != "" {
+		// The title keeps the command; the agent's stated reason travels as
+		// content, which the tool end's output replaces.
+		toolCall.Content = []sdk.ToolCallContent{sdk.ToolContent(sdk.TextBlock(request.Description))}
+	}
 	response, err := a.connection().RequestPermission(promptCtx, sdk.RequestPermissionRequest{
 		SessionId: session,
-		ToolCall:  sdk.ToolCallUpdate{ToolCallId: sdk.ToolCallId(request.ID), Title: &title},
+		ToolCall:  toolCall,
 		Options:   options,
 	})
 	if err != nil || response.Outcome.Selected == nil {

@@ -39,7 +39,7 @@ configuration and its Guard permissions ([MCP](mcp.md)).
 | `tool_call_update` | Tool end: `completed` or `failed`, `kind` and `locations` from the actions recorded on the result, output text, unified diff text for edits |
 | `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost |
 | `session_info_update` | `title` of the current Session once its generated title is saved, after the first completed prompt of an untitled Session ([Sessions](execution-sessions.md#sessions)); sent asynchronously, possibly after the prompt response |
-| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once` |
+| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask carries the call's `description` as text content, and its title keeps the command |
 | `session/set_mode` | Permission mode `default` or `auto` for the next tool call, not saved |
 | config option `model` | The effective `provider/model`; setting it accepts only that value |
 

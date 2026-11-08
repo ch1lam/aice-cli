@@ -21,9 +21,10 @@ const (
   "type": "object",
   "properties": {
     "command": {"type": "string", "description": "Bash command to execute"},
+    "description": {"type": "string", "description": "One short sentence, in the language of the user's messages, saying why this command runs and what it does for the task; shown to the user when they confirm it"},
     "timeout": {"type": "number", "exclusiveMinimum": 0, "maximum": 600, "description": "Timeout in seconds (default: 120, maximum: 600)"}
   },
-  "required": ["command"],
+  "required": ["command", "description"],
   "additionalProperties": false
 }`
 )
@@ -85,8 +86,11 @@ func (b *Bash) Definition() llm.ToolDefinition {
 // Execute runs one command with the host process environment.
 func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
-		Command string  `json:"command"`
-		Timeout float64 `json:"timeout"`
+		Command string `json:"command"`
+		// Description is shown to the user, never executed; a missing one
+		// does not fail the call.
+		Description string  `json:"description"`
+		Timeout     float64 `json:"timeout"`
 	}
 	args, err := decodeArguments[arguments](ctx, call, "bash")
 	if err != nil {

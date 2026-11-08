@@ -47,6 +47,23 @@ func TestGuardViewRendersCommandCard(t *testing.T) {
 	}
 }
 
+func TestGuardViewShowsCommandDescriptionAboveCommand(t *testing.T) {
+	t.Parallel()
+
+	current := newGuardTestModel(t, interaction.GuardRequest{
+		ToolName:    "bash",
+		Command:     "rm -rf build",
+		Description: "Remove the stale \x1b[31mbuild output",
+		Options:     guardTestOptions(),
+	})
+	view := guardViewText(current)
+	description := strings.Index(view, "Remove the stale build output")
+	command := strings.Index(view, "$ rm -rf build")
+	if description < 0 || command < 0 || description > command {
+		t.Fatalf("description should precede the command without escapes:\n%s", view)
+	}
+}
+
 func TestGuardViewTitles(t *testing.T) {
 	t.Parallel()
 

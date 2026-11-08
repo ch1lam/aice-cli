@@ -44,6 +44,23 @@ func TestToolPathFoldsInHeader(t *testing.T) {
 	}
 }
 
+func TestBashDescriptionHeadsCardAndBodyKeepsCommand(t *testing.T) {
+	m := newModel(nil, nil)
+	m.width = 100
+	entry := transcriptEntry{toolName: "bash", toolDetail: "rm -rf build", toolDescription: "Remove the stale build output", toolDone: true}
+	header := ansi.Strip(m.toolHeaderView(entry))
+	if !strings.HasSuffix(header, "  Remove the stale build output") || strings.Contains(header, "rm -rf") {
+		t.Fatalf("header = %q, want the description only", header)
+	}
+	if body := ansi.Strip(m.toolBodyView(entry)); !strings.Contains(body, "rm -rf build") {
+		t.Fatalf("body lost the command: %q", body)
+	}
+	entry.toolDescription = ""
+	if header := ansi.Strip(m.toolHeaderView(entry)); !strings.Contains(header, "rm -rf build") {
+		t.Fatalf("undescribed header = %q, want the command", header)
+	}
+}
+
 func TestReadOutputCodePanel(t *testing.T) {
 	for _, width := range []int{28, 50, 100} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {

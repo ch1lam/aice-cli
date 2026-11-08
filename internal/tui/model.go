@@ -66,6 +66,7 @@ type transcriptEntry struct {
 	toolID              string
 	toolName            string
 	toolDetail          string
+	toolDescription     string // bash: the agent's stated reason, shown folded
 	toolDone            bool
 	toolError           bool
 	toolTruncation      interaction.TruncationDisplay

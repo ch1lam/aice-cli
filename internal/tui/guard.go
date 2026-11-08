@@ -173,6 +173,10 @@ func (m *model) resizeGuard() {
 	}
 	style, width := m.guardLayout(max(m.width-2*m.horizontalPadding(), 1))
 	sections := []string{headerStyle.Render(guardTitle(m.guard.request))}
+	// The agent's stated reason leads; the full command below is what runs.
+	if description := sanitizeSingleLineText(m.guard.request.Description); description != "" {
+		sections = append(sections, description)
+	}
 	if content := guardKeyLine(m.guard.request); content != "" {
 		sections = append(sections, content)
 	}

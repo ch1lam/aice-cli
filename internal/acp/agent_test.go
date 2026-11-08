@@ -82,6 +82,48 @@ func TestGuardAskMapsOptionsAndCancelDenies(t *testing.T) {
 	}
 }
 
+func TestAnswerGuardSendsCommandDescriptionAsContent(t *testing.T) {
+	for name, test := range map[string]struct {
+		description string
+		want        int
+	}{
+		"described":   {description: "Remove the stale build output", want: 1},
+		"undescribed": {want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agentIn, clientOut := io.Pipe()
+			clientIn, agentOut := io.Pipe()
+			client := &permissionClient{
+				answer: func(sdk.RequestPermissionRequest) sdk.RequestPermissionResponse {
+					return sdk.RequestPermissionResponse{Outcome: sdk.NewRequestPermissionOutcomeCancelled()}
+				},
+				requests: make(chan sdk.RequestPermissionRequest, 1),
+			}
+			sdk.NewClientSideConnection(client, clientOut, clientIn)
+			a := &agent{sessionID: "s", ready: make(chan struct{})}
+			a.conn = sdk.NewAgentSideConnection(a, agentOut, agentIn)
+			close(a.ready)
+
+			a.answerGuard(t.Context(), interaction.GuardRequest{
+				ID: "call-1", ToolName: "bash", Command: "rm -rf build", Description: test.description,
+				Options: []interaction.GuardOption{{ID: "allow-once"}, {ID: "deny", Deny: true}},
+				Reply:   make(chan interaction.GuardReply, 1), Done: make(chan struct{}),
+			})
+			request := <-client.requests
+			if title := *request.ToolCall.Title; title != "bash rm -rf build" {
+				t.Fatalf("title = %q", title)
+			}
+			content := request.ToolCall.Content
+			if len(content) != test.want {
+				t.Fatalf("content = %#v, want %d blocks", content, test.want)
+			}
+			if test.want == 1 && (content[0].Content == nil || content[0].Content.Content.Text == nil || content[0].Content.Content.Text.Text != test.description) {
+				t.Fatalf("content = %#v", content[0])
+			}
+		})
+	}
+}
+
 type updateClient struct {
 	sdk.Client
 	updates chan sdk.SessionNotification

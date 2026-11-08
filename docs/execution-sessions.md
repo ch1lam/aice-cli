@@ -471,6 +471,13 @@ credentials/prompt content out of logs.
   file cap. It is not a filesystem snapshot or a bound on all temporary decoding
   allocations. [Truncation metadata](contracts.md#tool-truncation-metadata) distinguishes
   match, byte and long-line limits.
+- `bash` requires a one-line `description` of why the command runs. A
+  permission prompt shows it above the full command, and a folded TUI tool
+  card shows it in place of the command, which the expanded card shows in
+  full. The command stays the thing being confirmed: the description is agent
+  text and can misstate the command,
+  and the classifier judges the command, not how it is described. A missing
+  description does not fail the call.
 - `bash` deliberately crosses a shell boundary. Its 50 KiB combined output keeps
   the beginning and most recent end with a truncation marker, plus exit/timeout
   status. Cancellation terminates its process tree. On Windows native Bash uses

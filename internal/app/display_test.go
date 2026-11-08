@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,6 +10,24 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
+
+func TestDisplayToolCallCarriesBashDescription(t *testing.T) {
+	t.Parallel()
+
+	display := displayToolCall(llm.ToolCall{ID: "c", Name: "bash", Arguments: json.RawMessage(`{"command":"rm -rf build","description":" Remove the\n stale build output "}`)})
+	if display.Detail != "rm -rf build" || display.Description != "Remove the stale build output" {
+		t.Fatalf("display = %q / %q", display.Detail, display.Description)
+	}
+	for name, call := range map[string]llm.ToolCall{
+		"other tool": {Name: "write", Arguments: json.RawMessage(`{"path":"a","description":"x"}`)},
+		"missing":    {Name: "bash", Arguments: json.RawMessage(`{"command":"ls"}`)},
+		"invalid":    {Name: "bash", Arguments: json.RawMessage(`{`)},
+	} {
+		if got := commandDescription(call); got != "" {
+			t.Errorf("%s: description = %q, want empty", name, got)
+		}
+	}
+}
 
 func TestTranslateAgentEventIgnoresUnrenderedEvents(t *testing.T) {
 	t.Parallel()

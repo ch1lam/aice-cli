@@ -353,6 +353,9 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 		Reply:     reply,
 		Done:      promptCtx.Done(),
 	}
+	if req.Command != "" {
+		req.Description = commandDescription(call)
+	}
 	select {
 	case <-ctx.Done():
 		return agent.GuardAskReply{Decision: agent.GuardDeny}, ctx.Err()

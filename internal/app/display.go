@@ -193,6 +193,22 @@ func assistantConcludes(message llm.AssistantMessage) bool {
 	return strings.TrimSpace(text) != ""
 }
 
+// commandDescription is the reason a bash call states for its command,
+// collapsed to one line. It is agent text: a frontend may lead with it, but
+// the full command stays reachable.
+func commandDescription(call llm.ToolCall) string {
+	if call.Name != "bash" {
+		return ""
+	}
+	var args struct {
+		Description string `json:"description"`
+	}
+	if json.Unmarshal(call.Arguments, &args) != nil {
+		return ""
+	}
+	return strings.Join(strings.Fields(args.Description), " ")
+}
+
 func toolCallDetail(call llm.ToolCall) string {
 	var arguments struct {
 		Command string `json:"command"`
@@ -372,7 +388,7 @@ func displayToolReview(result *llm.ToolResultMessage) *interaction.ReviewDisplay
 }
 
 func displayToolCall(call llm.ToolCall) interaction.ToolDisplay {
-	display := interaction.ToolDisplay{ID: call.ID, Name: call.Name, Detail: toolCallDetail(call), Arguments: slices.Clone(call.Arguments)}
+	display := interaction.ToolDisplay{ID: call.ID, Name: call.Name, Detail: toolCallDetail(call), Description: commandDescription(call), Arguments: slices.Clone(call.Arguments)}
 	if call.Name == "write" {
 		var args struct {
 			Content *string `json:"content"`
