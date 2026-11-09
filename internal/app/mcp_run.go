@@ -144,7 +144,7 @@ func (o *mcpOwner) bindRun(ctx context.Context, model llm.Model) (runContext con
 	}
 	statuses := o.Status()
 	for i, status := range statuses {
-		line := status.Key + ": " + status.State + "\n"
+		line := status.Key + ": " + string(status.State) + "\n"
 		if summary.Len()+len(line) > 3900 {
 			fmt.Fprintf(&summary, "%d more configured services; use tool_search to inspect availability.\n", len(statuses)-i)
 			break

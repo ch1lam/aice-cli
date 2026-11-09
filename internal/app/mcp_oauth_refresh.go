@@ -83,7 +83,6 @@ func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService
 	}
 	if len(s.secrets) > 4094 || bytes > (4<<20)-(16<<10) {
 		s.authFailed = true
-		s.status.State, s.status.Detail = "needs_auth", "MCP credential redaction history is full; explicitly reconnect before refreshing"
 		o.mu.Unlock()
 		return fmt.Errorf("MCP credential redaction history limit reached")
 	}
@@ -110,7 +109,6 @@ func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService
 	}
 	if err != nil {
 		s.authFailed = true
-		_ = o.policyLocked(s)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -123,21 +121,7 @@ func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService
 		return err
 	}
 	s.server = updated
-	s.status.State, s.status.Detail = "disconnected", ""
-	if s.client != nil {
-		s.status.State = "ready"
-	}
 	return nil
-}
-
-func (o *mcpOwner) recordAuthenticationFailure(s *mcpOwnedService, err error) {
-	if !mcpAuthenticationRejected(err) {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	s.authFailed = s.server.Settings.OAuth != nil
-	s.status.State, s.status.Detail = "needs_auth", "MCP authentication was rejected; no operation was replayed"
 }
 
 func (b mcpBorrowedConnection) MCPSecrets() []string {

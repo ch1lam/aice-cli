@@ -524,6 +524,11 @@ application. States are `disconnected`, `connecting`, `ready`, `needs_approval`,
 exact saved or [in-run](#in-run-connection-approval) connection approval;
 missing credentials never reach transport.
 Status uses local sanitized facts and never connects optional services.
+`disabled`, `needs_approval` and credential `needs_auth` are derived from the
+current policy on every read, so they clear as soon as the policy passes. The
+other states record the latest operation: a successful call shows `ready`
+again, a lost transport shows `failed`, and a rejected credential shows
+`needs_auth`; tool and protocol errors leave the state unchanged.
 
 Operations serialize per service, including queue time in the call timeout
 (default 60 seconds), without holding bookkeeping locks across I/O. Searches

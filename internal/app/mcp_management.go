@@ -374,11 +374,11 @@ func mcpManagementStatus(configuration config.Config, owner *mcpOwner, key strin
 		server := configuration.MCP.Servers[id]
 		status := statuses[id]
 		if status.State == "" {
-			status.State = "disconnected"
+			status.State = mcpDisconnected
 		}
 		definition, _ := json.Marshal(server.Settings)
 		savedFingerprint, savedScope, _ := configuration.MCP.StoredPermissions(id)
-		result = append(result, interaction.MCPService{Key: id, Enabled: server.Enabled, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: status.State, Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
+		result = append(result, interaction.MCPService{Key: id, Enabled: server.Enabled, Name: server.Settings.Name, Source: server.Source.Kind + ":" + server.Source.Location, State: string(status.State), Detail: status.Detail, Fingerprint: server.Fingerprint, Approval: string(configuration.MCP.ConnectionDecision(id)), Definition: definition, ToolCount: status.ToolCount, CatalogKnown: status.CatalogKnown, EligibleTools: status.EligibleTools, PermissionScope: configuration.MCP.PermissionScope(id), Permissions: storedMCPPermissions(configuration.MCP, id), SavedPermissionFingerprint: savedFingerprint, SavedPermissionScope: savedScope})
 	}
 	return result
 }
