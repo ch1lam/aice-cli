@@ -55,7 +55,6 @@ and routes; README files may summarize product behavior and link to details.
 | Verification, CI, git and collaboration | [Collaboration](docs/collaboration.md) |
 | Code entry points, conflicting evidence, known deviations | [Maintenance](docs/maintenance.md) |
 | Harbor evaluation through ACP, task sets, maintenance tasks | [Evaluation](docs/evaluation.md) |
-| Evaluation architecture, ACP frontend, Session reconstruction (approved plan) | [Evaluation design](docs/plans/AICE_Evaluation_Design.md) |
 
 ## Guardrails
 

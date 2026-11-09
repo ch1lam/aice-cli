@@ -25,8 +25,6 @@ and quickstart. Use this index for task-specific guides.
 - [Maintenance](maintenance.md): code entry points and known discrepancies.
 - [Evaluation](evaluation.md): running AICE in Harbor through ACP, task sets,
   experiments and the multi-step maintenance tasks.
-- [Evaluation design](plans/AICE_Evaluation_Design.md): approved plan for the
-  evaluation architecture and ACP frontend.
 
 ## Project and support
 
