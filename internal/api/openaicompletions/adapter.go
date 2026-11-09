@@ -598,6 +598,7 @@ type stream struct {
 	thinking     *streamcore.PartState
 	text         *streamcore.PartState
 	toolCalls    map[int64]*streamcore.PartState
+	lastToolCall int64
 	nextIndex    int
 	finishReason string
 	started      bool
@@ -733,11 +734,26 @@ func (s *stream) textDelta(delta string) []llm.Event {
 	}}
 }
 
-func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
-	index := int64(len(s.toolCalls))
+// toolCallIndex keys a delta to its call. Some compatible servers send index
+// only on a call's first chunk: without one, a chunk continues the latest call
+// unless it names a different call ID.
+func (s *stream) toolCallIndex(call wireToolCall) int64 {
 	if call.Index != nil {
-		index = *call.Index
+		return *call.Index
 	}
+	if last, ok := s.toolCalls[s.lastToolCall]; ok && (call.ID == "" || call.ID == last.ToolCall.ID) {
+		return s.lastToolCall
+	}
+	next := int64(0)
+	for index := range s.toolCalls {
+		next = max(next, index+1)
+	}
+	return next
+}
+
+func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
+	index := s.toolCallIndex(call)
+	s.lastToolCall = index
 
 	state, exists := s.toolCalls[index]
 	if !exists {
