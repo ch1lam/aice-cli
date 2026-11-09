@@ -87,7 +87,8 @@ func (m model) settingsPanelView() string {
 	var body string
 	if field := p.editing; field != nil {
 		title += " · " + field.Label
-		if field.Kind == interaction.SettingInfo {
+		switch p.mode() {
+		case settingsModeInfo:
 			details := sanitizeMultilineText(field.Description)
 			if len(field.Details) > 0 {
 				details = renderDetails(field.Details, l.inner)
@@ -95,13 +96,13 @@ func (m model) settingsPanelView() string {
 			lines := strings.Split(ansi.Hardwrap(details, l.inner, true), "\n")
 			start := min(p.detailOffset, max(0, len(lines)-l.bodyHeight))
 			body = strings.Join(lines[start:min(len(lines), start+l.bodyHeight)], "\n")
-		} else if p.action != nil {
+		case settingsModeAction:
 			body = p.actionView()
-		} else if p.collection != nil {
+		case settingsModeCollection:
 			body = p.collectionView()
-		} else if p.confirmUnset {
+		case settingsModeConfirmUnset:
 			body = "Remove the user override\n\n" + settingDetails(*field, p.snapshot.SavePath)
-		} else if field.Kind == interaction.SettingEnum && !field.AllowCustom {
+		case settingsModeChoice:
 			var rows []string
 			start, end := p.visibleChoices()
 			for i := start; i < end; i++ {
@@ -116,7 +117,7 @@ func (m model) settingsPanelView() string {
 				)))
 			}
 			body = strings.Join(rows, "\n")
-		} else {
+		default:
 			body = sanitizeSingleLineText(field.Label) + "\n" + p.input.View() + "\n\n" + sanitizeMultilineText(field.Description)
 		}
 	} else {
@@ -349,21 +350,22 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		if event.Button == tea.MouseWheelUp {
 			delta = -1
 		}
-		if p.action != nil {
+		switch p.mode() {
+		case settingsModeAction:
 			deltaKey := tea.KeyDown
 			if delta < 0 {
 				deltaKey = tea.KeyUp
 			}
 			return m.settingActionKey(tea.KeyPressMsg{Code: deltaKey})
-		} else if p.collection != nil {
+		case settingsModeCollection:
 			if !p.collection.editing {
 				p.collection.row = max(0, min(p.collection.row+delta, p.collection.count()-1))
 			}
-		} else if p.editing != nil && p.editing.Kind == interaction.SettingInfo {
+		case settingsModeInfo:
 			p.detailOffset = max(0, p.detailOffset+delta)
-		} else if p.editing != nil {
+		case settingsModeChoice:
 			p.choice = max(0, min(p.choice+delta, len(p.editing.Choices)-1))
-		} else {
+		case settingsModeBrowse, settingsModeSearch:
 			p.moveSettingSelection(delta)
 		}
 	}
