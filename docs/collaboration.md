@@ -34,6 +34,23 @@
 - Verify CLI/TUI work through the actual user-facing command. Do not treat package tests alone as proof that interactive behavior works.
 - Do not invent build, release, changelog, or publishing commands before the repository defines them.
 
+## Test scope
+
+Tests protect core behavior, not every branch. Keep a test when it guards a
+contract (Agent Loop event order, Session format, NDJSON/ACP output), a
+safety boundary (Guard decisions, Project Trust, secret handling), a
+concurrency or cancellation path, or a real bug that once shipped (one
+regression test each). Provider and protocol adapters keep table-driven
+cases. Do not add tests for private fields, rendered wording, impossible
+states, or a second copy of an existing assertion. TUI tests drive `Update`
+and `View` through messages instead of setting model fields.
+
+When restructuring an area, first write lean boundary tests against the old
+code, then delete the area's superseded tests, then refactor with those tests
+unchanged. Packages untouched by a refactor are pruned the same way as
+separate, per-package changes. The long-run target is about half as many test
+lines as production lines.
+
 The [CI](../.github/workflows/ci.yml) and [release](../.github/workflows/release.yml)
 workflows share [verify.yml](../.github/workflows/verify.yml): Linux/macOS/Windows,
 the Go version from `go.mod`, ripgrep, race tests, vet and offline installer tests.

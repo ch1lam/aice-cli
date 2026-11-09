@@ -58,7 +58,8 @@ ownership boundaries do not by themselves make tests redundant. Use named
 subtests for distinct cases. Parallelize tests only when they do not share
 mutable state or process environment. Default tests must not need provider
 credentials or paid APIs. Required commands live in
-[Collaboration](collaboration.md#verification-commands).
+[Collaboration](collaboration.md#verification-commands); what deserves a test is in
+[Test scope](collaboration.md#test-scope).
 
 Internal Go APIs change with their callers. Delete superseded implementations,
 compatibility shims and fallback paths when their replacement lands, following
