@@ -210,7 +210,7 @@ func TestWebCommandFailedSaveKeepsSnapshotAndReportsCredential(t *testing.T) {
 		t.Fatal("credential-only success not persisted")
 	}
 	// Changes are refused while a response is running.
-	s.conversation.activeMainRun = &mainRunState{}
+	s.lifecycle.mainRunning = true
 	if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "fetch"}); err == nil || !strings.Contains(err.Error(), "while a response is running") {
 		t.Fatalf("active run allowed change: %v", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -139,5 +140,70 @@ func TestInteractiveCompactionsReuseRunSettingsAfterExternalChange(t *testing.T)
 		if model.requests[index].SystemPrompt != compactionSystemPrompt {
 			t.Fatal("summary prompt changed")
 		}
+	}
+}
+
+type summaryHookModel struct {
+	*recordingModel
+	onSummary func()
+}
+
+func (m summaryHookModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
+	if request.SystemPrompt == compactionSystemPrompt {
+		m.onSummary()
+	}
+	return m.recordingModel.Stream(ctx, request)
+}
+
+func TestInteractiveCompactionSummaryDoesNotBlockSideThreads(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	runPrintTurn(t, workspace, path, "old question", "old answer")
+	info := llm.Model{ID: "original", Name: "Original", API: llm.API("test-api"), Provider: llm.ProviderID("test-provider"), ContextWindow: 10000, MaxTokens: 1000}
+	global, home := compactPrintConfig(t, info)
+	var runner interaction.Runner
+	summaries := 0
+	model := summaryHookModel{recordingModel: &recordingModel{response: "answer", usage: llm.Usage{TotalTokens: 9000}}, onSummary: func() {
+		summaries++
+		created := make(chan error, 1)
+		go func() { _, _, err := runner.(interaction.SideThreadManager).CreateSideThread("btw"); created <- err }()
+		select {
+		case err := <-created:
+			if err != nil {
+				t.Errorf("side thread during summary: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("side thread creation blocked behind the summary request")
+		}
+	}}
+	command, err := newTestCommand(t, dependencies{
+		loadConfig:                 func(config.LoadOptions) (config.Config, error) { return global, nil },
+		newModel:                   func(config.Config) (agent.Model, error) { return model, nil },
+		providers:                  []provider.Provider{&compactTestProvider{model: info, service: model}},
+		compactionKeepRecentTokens: 1,
+		userHomeDir:                func() (string, error) { return home, nil },
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			runner = frontend.Runner
+			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "initial"}, func(context.Context, interaction.Event) error { return nil })
+			if err != nil {
+				return err
+			}
+			if err := active.Deliver(context.Background(), interaction.Delivery{ID: "follow", Text: "follow", Kind: interaction.DeliveryKindFollowUp}); err != nil {
+				return err
+			}
+			return active.Run(ctx)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace, "--session", path})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if summaries == 0 || len(openSessionSnapshot(t, path).Compactions) != summaries {
+		t.Fatalf("summaries = %d", summaries)
 	}
 }

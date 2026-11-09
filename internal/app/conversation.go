@@ -13,6 +13,8 @@ import (
 // conversationState owns the durable transcript, its derived history, and the
 // main interaction's pending messages. historySyncMu serializes store/history
 // updates; historyMu protects history and activeMainRun for side snapshots.
+// activeMainRun only carries pending messages: whether a main run is active is
+// owned by the settings lifecycle reservation, which spans the whole run.
 // Replacing store holds both, so currentStore may read it under historyMu alone.
 // When both locks are needed, acquire historySyncMu before historyMu, keeping
 // file I/O outside historyMu. The zero value represents a session not yet started.
@@ -42,6 +44,15 @@ func (c *conversationState) installStore(
 	c.store, c.history = store, history
 	c.historyLeaf, c.historyReady = leaf, ready
 	return previous
+}
+
+// replaceHistory publishes history derived at leaf after a store change the
+// caller made, such as a compaction checkpoint. The caller holds historySyncMu.
+func (c *conversationState) replaceHistory(history []llm.AgentMessage, leaf string) {
+	c.historyMu.Lock()
+	c.history = history
+	c.historyMu.Unlock()
+	c.historyLeaf, c.historyReady = leaf, true
 }
 
 // currentStore is for readers outside the store's serialization, such as UI

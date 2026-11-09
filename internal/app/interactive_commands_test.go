@@ -289,13 +289,15 @@ func TestInteractiveSessionSlashNewRejectsArgumentsAndActiveRun(t *testing.T) {
 		t.Fatal("/new with arguments error = nil, want usage error")
 	}
 
-	runner.conversation.activeMainRun = &mainRunState{}
+	if err := runner.reserveMainRun(0); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name: "new",
-	}); err == nil || !strings.Contains(err.Error(), "while a response is running") {
+	}); !errors.Is(err, interaction.ErrSettingsRunning) {
 		t.Fatalf("/new during a run error = %v, want active-run refusal", err)
 	}
-	runner.conversation.activeMainRun = nil
+	runner.releaseMainRun()
 	if got := runner.conversation.store.Path(); got != sessionPath {
 		t.Fatalf("store path after refused /new = %q, want %q", got, sessionPath)
 	}

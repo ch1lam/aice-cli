@@ -868,6 +868,10 @@ declared tool results are complete. Initial, steering and follow-up inputs enter
 the next request once. Automatic retention is capped at a quarter of the known
 model window; a completed group exceeding that cap can be summarized whole.
 An oversized unanswered input is preserved and may still prevent continuation.
+The summary request does not hold the Session commit lock, so BTW threads and
+snapshots stay available meanwhile. The checkpoint's parent is the leaf it
+summarized; if anything was committed in between, the append fails instead of
+attaching the summary to a different leaf.
 
 Stateless `--print` uses the same paired-group selection and summary format in
 memory, without creating a Session file. A request gets at most one compaction

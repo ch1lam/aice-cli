@@ -46,12 +46,14 @@ func TestInteractiveSessionNewResetsGrantsAfterDetach(t *testing.T) {
 		}
 		check(guard.DecisionAllow)
 	}
-	runner.conversation.activeMainRun = &mainRunState{}
+	if err := runner.reserveMainRun(0); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "new"}); err == nil {
 		t.Fatal("active /new succeeded")
 	}
 	check(guard.DecisionAllow)
-	runner.conversation.activeMainRun = nil
+	runner.releaseMainRun()
 	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "new", Arguments: "invalid"}); err == nil {
 		t.Fatal("invalid /new succeeded")
 	}

@@ -35,16 +35,6 @@ func (s *interactiveSession) beginSettingsOperation(revision *uint64, requiresId
 	if requiresIdle && (l.preparing > 0 || l.mainRunning || l.sideRunning > 0) {
 		return interaction.ErrSettingsRunning
 	}
-	// Existing embedding consumers can own a conversation directly. Preserve
-	// that active-run authority in addition to the application reservation.
-	if requiresIdle {
-		s.conversation.historyMu.RLock()
-		active := s.conversation.activeMainRun != nil
-		s.conversation.historyMu.RUnlock()
-		if active {
-			return interaction.ErrSettingsRunning
-		}
-	}
 	l.changing = true
 	l.warnings = nil
 	return nil

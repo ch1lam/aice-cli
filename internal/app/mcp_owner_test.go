@@ -367,7 +367,9 @@ func TestMCPOwnerStatusFollowsLatestOperation(t *testing.T) {
 		t.Fatal("interrupted discovery succeeded")
 	}
 	call := func(err error) mcpState {
-		client.call = func(context.Context) (mcpclient.Result, error) { return mcpclient.Result{State: llm.ExecutionReturned}, err }
+		client.call = func(context.Context) (mcpclient.Result, error) {
+			return mcpclient.Result{State: llm.ExecutionReturned}, err
+		}
 		_, _ = connection.CallChecked(t.Context(), "read", json.RawMessage(`{}`), func(context.Context) error { return nil })
 		return o.Status()[0].State
 	}
