@@ -206,6 +206,7 @@ type runExecution struct {
 	degradeReasoning bool
 	recordedMessages int
 	recorderErr      error
+	lifecycle        eventLifecycle
 }
 
 // step tells the Loop how a run phase ended. stepAbort stops immediately
@@ -228,61 +229,47 @@ func (e *runExecution) run(ctx context.Context) (step, error) {
 		return stepAbort, err
 	}
 
-	turnNumber := 1
-	if err := e.startInputTurn(ctx, turnNumber, InputMessage{
+	if err := e.startInputTurn(ctx, InputMessage{
 		Message: e.input.Prompt,
 	}, InputKindUnknown); err != nil {
 		return stepAbort, err
 	}
 
 	for {
-		next, err := e.runInteraction(ctx, &turnNumber)
+		next, err := e.runInteraction(ctx)
 		if next != stepSettled {
 			return next, err
 		}
 		if err := e.finishInteraction(ctx); err != nil {
 			return stepAbort, err
 		}
-		if next, err := e.pollFollowUp(ctx, &turnNumber); next != stepContinue {
+		if next, err := e.pollFollowUp(ctx); next != stepContinue {
 			return next, err
 		}
 	}
 }
 
-func (e *runExecution) runInteraction(ctx context.Context, turnNumber *int) (step, error) {
-	retryAttempt := 0
+func (e *runExecution) runInteraction(ctx context.Context) (step, error) {
 	for {
-		outcome, streamErr := e.streamAssistant(ctx, *turnNumber, retryAttempt == 0)
+		outcome, streamErr := e.streamAssistant(ctx, e.lifecycle.attempt == 0)
 		if isEventSinkError(streamErr) {
 			return stepAbort, streamErr
 		}
 		var next step
 		var err error
 		if outcome.complete {
-			next, err = e.settleToolsAndSteering(ctx, turnNumber, &retryAttempt, outcome, streamErr)
+			next, err = e.settleToolsAndSteering(ctx, outcome, streamErr)
 		} else {
 			if streamErr == nil {
 				streamErr = fmt.Errorf("%w: assistant turn did not complete", ErrProtocol)
 			}
-			currentTurn := *turnNumber
-			record := func() error {
-				return e.recordIncompleteAttempt(ctx, currentTurn, outcome.started, streamErr)
-			}
+			record := func() error { return e.recordIncompleteAttempt(ctx, streamErr) }
 			if !outcome.dispatched {
 				// No request was sent, so there is no attempt to record;
 				// finalization writes the terminal failure.
-				record = func() error {
-					return e.emit(ctx, AgentEvent{Type: EventTypeTurnEnd, TurnNumber: currentTurn, Err: streamErr})
-				}
+				record = func() error { return e.endTurn(ctx, AgentEvent{Err: streamErr}) }
 			}
-			next, err = e.retryTurn(
-				ctx,
-				&retryAttempt,
-				turnNumber,
-				streamErr,
-				record,
-				e.armReasoningReplayRetry(streamErr),
-			)
+			next, err = e.retryTurn(ctx, streamErr, record, e.armReasoningReplayRetry(streamErr))
 		}
 		if next != stepContinue {
 			return next, err
@@ -292,13 +279,12 @@ func (e *runExecution) runInteraction(ctx context.Context, turnNumber *int) (ste
 
 func (e *runExecution) settleToolsAndSteering(
 	ctx context.Context,
-	turnNumber *int,
-	retryAttempt *int,
 	outcome assistantOutcome,
 	streamErr error,
 ) (step, error) {
+	turnNumber := e.lifecycle.turn
 	e.result.ModelRounds = append(e.result.ModelRounds, ModelRound{
-		Number:      *turnNumber,
+		Number:      turnNumber,
 		Inputs:      e.takePendingInputs(),
 		Assistant:   outcome.message,
 		ToolResults: []llm.ToolResultMessage{},
@@ -309,7 +295,7 @@ func (e *runExecution) settleToolsAndSteering(
 	}
 	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeMessageEnd,
-		TurnNumber: *turnNumber,
+		TurnNumber: turnNumber,
 		Message:    outcome.message,
 		Err:        outcome.terminalErr,
 	}); err != nil {
@@ -324,7 +310,7 @@ func (e *runExecution) settleToolsAndSteering(
 		} else if len(calls) > 0 {
 			err = e.syntheticToolResults(
 				ctx,
-				*turnNumber,
+				turnNumber,
 				calls,
 				"model request failed before tool execution",
 				false,
@@ -336,10 +322,8 @@ func (e *runExecution) settleToolsAndSteering(
 		}
 	} else {
 		e.history = append(e.history, outcome.message)
-		if *retryAttempt > 0 {
-			if err := e.emitRetryEnd(ctx, *retryAttempt, true, nil); err != nil {
-				return stepAbort, err
-			}
+		if err := e.endRetry(ctx, true, nil); err != nil {
+			return stepAbort, err
 		}
 		calls, err := extractToolCalls(outcome.message)
 		if err != nil {
@@ -349,11 +333,11 @@ func (e *runExecution) settleToolsAndSteering(
 			if outcome.message.StopReason == llm.StopReasonLength {
 				toolErr = e.failTruncatedToolCalls(
 					ctx,
-					*turnNumber,
+					turnNumber,
 					calls,
 				)
 			} else {
-				toolErr = e.executeTools(ctx, *turnNumber, calls)
+				toolErr = e.executeTools(ctx, turnNumber, calls)
 			}
 			if isEventSinkError(toolErr) || e.recorderErr != nil {
 				return stepAbort, toolErr
@@ -363,9 +347,7 @@ func (e *runExecution) settleToolsAndSteering(
 	}
 
 	completedTurn := e.result.ModelRounds[len(e.result.ModelRounds)-1]
-	if err := e.emit(ctx, AgentEvent{
-		Type:        EventTypeTurnEnd,
-		TurnNumber:  *turnNumber,
+	if err := e.endTurn(ctx, AgentEvent{
 		Message:     completedTurn.Assistant,
 		ToolResults: slices.Clone(completedTurn.ToolResults),
 		Err:         runErr,
@@ -373,7 +355,7 @@ func (e *runExecution) settleToolsAndSteering(
 		return stepAbort, errors.Join(runErr, err)
 	}
 	if modelErr != nil {
-		return e.retryTurn(ctx, retryAttempt, turnNumber, runErr, nil, e.armReasoningReplayRetry(modelErr))
+		return e.retryTurn(ctx, runErr, nil, e.armReasoningReplayRetry(modelErr))
 	}
 	if runErr != nil {
 		return stepEnd, runErr
@@ -388,19 +370,12 @@ func (e *runExecution) settleToolsAndSteering(
 	}
 	if steers {
 		e.repetition = repetitionTracker{}
-		(*turnNumber)++
-		*retryAttempt = 0
 		e.history = append(e.history, steering.Message)
 		e.pendingInputs = append(e.pendingInputs, steering.Message)
 		if err := e.recordMessage(ctx, steering.Message); err != nil {
 			return stepAbort, err
 		}
-		if err := e.startInputTurn(
-			ctx,
-			*turnNumber,
-			steering,
-			InputKindSteering,
-		); err != nil {
+		if err := e.startInputTurn(ctx, steering, InputKindSteering); err != nil {
 			return stepAbort, err
 		}
 		return stepContinue, nil
@@ -416,18 +391,13 @@ func (e *runExecution) settleToolsAndSteering(
 	if err := e.checkGuardDenials(); err != nil {
 		return stepEnd, err
 	}
-	*retryAttempt = 0
-	(*turnNumber)++
-	if err := e.emit(ctx, AgentEvent{
-		Type:       EventTypeTurnStart,
-		TurnNumber: *turnNumber,
-	}); err != nil {
+	if err := e.beginTurn(ctx); err != nil {
 		return stepAbort, err
 	}
 	return stepContinue, nil
 }
 
-func (e *runExecution) pollFollowUp(ctx context.Context, turnNumber *int) (step, error) {
+func (e *runExecution) pollFollowUp(ctx context.Context) (step, error) {
 	followUp, followsUp, followUpErr := e.nextInput(
 		e.input.FollowUp,
 		"follow-up",
@@ -447,30 +417,22 @@ func (e *runExecution) pollFollowUp(ctx context.Context, turnNumber *int) (step,
 	}
 	e.history = append(e.history, followUp.Message)
 
-	(*turnNumber)++
-	if err := e.startInputTurn(
-		ctx,
-		*turnNumber,
-		followUp,
-		InputKindFollowUp,
-	); err != nil {
+	if err := e.startInputTurn(ctx, followUp, InputKindFollowUp); err != nil {
 		return stepAbort, err
 	}
 	return stepContinue, nil
 }
 
+// startInputTurn opens a turn with an accepted input message.
 func (e *runExecution) startInputTurn(
 	ctx context.Context,
-	turnNumber int,
 	input InputMessage,
 	kind InputKind,
 ) error {
-	if err := e.emit(ctx, AgentEvent{
-		Type:       EventTypeTurnStart,
-		TurnNumber: turnNumber,
-	}); err != nil {
+	if err := e.beginTurn(ctx); err != nil {
 		return err
 	}
+	turnNumber := e.lifecycle.turn
 	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeMessageStart,
 		TurnNumber: turnNumber,

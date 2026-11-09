@@ -380,7 +380,10 @@ defines the frontend's internal numeric enum. Use those declarations when
 changing events; do not treat numeric enum positions as a public wire format.
 `internal/app` translates between them. `interaction_end` marks interaction
 settlement and `turn_end` marks a completed model round. Neither event owns
-persistence; the synchronous message recorder does.
+persistence; the synchronous message recorder does. Inside the Loop, turn and
+retry boundaries are emitted only by `eventLifecycle` (`internal/agent/lifecycle.go`),
+which owns the turn number, the retry attempt and whether the attempt's
+assistant message started; `TestLoopEventLifecycleSequences` pins the order.
 
 The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
