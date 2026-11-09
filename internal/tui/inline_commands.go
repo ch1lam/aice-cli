@@ -109,7 +109,7 @@ func (m model) chooseSlashCommand() (model, tea.Cmd, bool) {
 }
 
 func (m *model) restoreCommandDraftIfIdle() {
-	if m.commandDraft == nil || m.running || m.inputContext().domain != inputMain {
+	if m.commandDraft == nil || m.run.running() || m.inputContext().domain != inputMain {
 		return
 	}
 	draft := *m.commandDraft

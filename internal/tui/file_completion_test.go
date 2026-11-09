@@ -37,7 +37,7 @@ func TestFileCompletionConfirmDoesNotSubmit(t *testing.T) {
 				if want := "look @" + item.Path + " "; m.input.Value() != want {
 					t.Fatalf("draft = %q, want %q", m.input.Value(), want)
 				}
-				if m.running || m.submittedInput != nil || m.fileCompletionVisible() {
+				if m.run.running() || m.run.submitted != nil || m.fileCompletionVisible() {
 					t.Fatal("confirmation sent the draft or kept completion open")
 				}
 			})
@@ -59,7 +59,7 @@ func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	updated, command := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updated.(model)
-	if want := `看 @中文 目录/ 后续 @README.md`; m.input.Value() != want || command == nil || m.running {
+	if want := `看 @中文 目录/ 后续 @README.md`; m.input.Value() != want || command == nil || m.run.running() {
 		t.Fatalf("drilled draft = %q, command missing = %v", m.input.Value(), command == nil)
 	}
 	ref, ok := m.fileReferenceAtCursor()
@@ -77,7 +77,7 @@ func TestFileCompletionRightContinuesMatchingAndPreservesTail(t *testing.T) {
 	}
 	m = updateModel(t, m, fileCompletionResult{generation: m.fileCompletion.generation, items: []interaction.FileCompletion{{Path: "中文 目录/config.go"}}})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if want := `看 @中文 目录/config.go 后续 @README.md`; m.input.Value() != want || m.running || m.fileCompletionVisible() {
+	if want := `看 @中文 目录/config.go 后续 @README.md`; m.input.Value() != want || m.run.running() || m.fileCompletionVisible() {
 		t.Fatalf("confirmed draft = %q", m.input.Value())
 	}
 }
@@ -145,7 +145,7 @@ func TestFileCompletionPendingKeysNeverSubmitOrUseStaleResults(t *testing.T) {
 				m.fileCompletion.items = []interaction.FileCompletion{{Path: "old.go"}}
 			}
 			m = updateModel(t, m, tea.KeyPressMsg{Code: code})
-			if m.input.Value() != "@i" || m.running || m.submittedInput != nil {
+			if m.input.Value() != "@i" || m.run.running() || m.run.submitted != nil {
 				t.Fatalf("pending key %d (retained %v) changed/submitted draft: %q", code, retained, m.input.Value())
 			}
 		}
@@ -171,11 +171,11 @@ func TestFileCompletionScrollsBeyondFirstPage(t *testing.T) {
 		t.Fatalf("scrolled menu = %q", view)
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.input.Value() != `@file12.go ` || m.running {
+	if m.input.Value() != `@file12.go ` || m.run.running() {
 		t.Fatalf("scrolled selection = %q", m.input.Value())
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.submittedInput == nil || len(m.submittedInput.Files) != 1 || m.submittedInput.Files[0] != "file12.go" {
+	if m.run.submitted == nil || len(m.run.submitted.Files) != 1 || m.run.submitted.Files[0] != "file12.go" {
 		t.Fatal("second Enter did not submit confirmed reference")
 	}
 }
@@ -186,7 +186,7 @@ func TestFileCompletionModifiedEnterStillInsertsNewline(t *testing.T) {
 	m.input.SetValue("@i")
 	m = updateModel(t, m, m.requestFileCompletion()())
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
-	if m.input.Value() != "@i\n" || m.running {
+	if m.input.Value() != "@i\n" || m.run.running() {
 		t.Fatalf("Shift+Enter = %q", m.input.Value())
 	}
 }
@@ -288,7 +288,7 @@ func TestFileReferencesSkipOpaquePasteAndPreserveDraftOnAsyncFailure(t *testing.
 	m.insertPastePlaceholder(strings.Repeat("literal @missing\n", 10))
 	m, command, _ := m.submit() // Inspect the frozen request without starting a controller.
 	_ = command
-	if m.submittedInput == nil || len(m.submittedInput.Files) != 1 || m.submittedInput.Files[0] != "main.go" {
+	if m.run.submitted == nil || len(m.run.submitted.Files) != 1 || m.run.submitted.Files[0] != "main.go" {
 		t.Fatal("literal paste became a file reference")
 	}
 	// Do not start the controller: preflight failure is rendered from a terminal update.

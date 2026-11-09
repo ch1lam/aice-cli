@@ -447,7 +447,7 @@ func TestWelcomeAnimationStopsWhenRunStarts(t *testing.T) {
 	current := testModel(t, 80, 24)
 	generation := current.welcomeAnimation.generation
 
-	current.running = true
+	current.run.kind = runPrompt
 	updated, command := current.Update(welcomeTickMsg{generation: generation})
 	if command != nil {
 		t.Errorf("Update returned command %T, want nil", command)

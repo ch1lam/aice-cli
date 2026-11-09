@@ -47,7 +47,7 @@ func TestSessionUnavailableActionsAreHiddenAndCannotReachComposer(t *testing.T) 
 	for _, code := range []rune{tea.KeyEnter, tea.KeyF2, tea.KeyF4} {
 		m = updateModel(t, m, tea.KeyPressMsg{Code: code})
 	}
-	if m.sessionPicker.rename != nil || m.running || m.input.Value() != "keep my draft" || m.sessionPicker.notice != "Broken session" {
+	if m.sessionPicker.rename != nil || m.run.running() || m.input.Value() != "keep my draft" || m.sessionPicker.notice != "Broken session" {
 		t.Fatal("disabled session action executed or leaked input")
 	}
 }

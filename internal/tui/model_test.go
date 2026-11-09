@@ -32,7 +32,7 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 	if !handled || command == nil {
 		t.Fatal("enter did not submit the prompt")
 	}
-	if !updated.running || updated.acceptsDelivery || !updated.input.Focused() {
+	if !updated.run.running() || updated.run.acceptsDelivery() || !updated.input.Focused() {
 		t.Fatal("model did not enter running state while the run was being prepared")
 	}
 
@@ -73,13 +73,13 @@ func TestModelSubmitsPromptAndConsumesAgentEvents(t *testing.T) {
 		{done: true},
 	}})
 
-	if updated.running {
+	if updated.run.running() {
 		t.Fatal("model remains running after terminal update")
 	}
 	if !updated.input.Focused() {
 		t.Fatal("input is not focused after terminal update")
 	}
-	if updated.cancelRun != nil {
+	if updated.run.cancel != nil {
 		t.Fatal("run cancellation function remains after completion")
 	}
 	if len(updated.entries) != 3 {
@@ -107,7 +107,7 @@ func TestModelCollapsesProcessWhenConclusionStartsStreaming(t *testing.T) {
 		current.entries,
 		transcriptEntry{kind: entryUser, text: "inspect"},
 	)
-	current.running = true
+	current.run.kind = runPrompt
 	processID := current.beginProcess()
 
 	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
@@ -480,7 +480,7 @@ func TestModelViewportAcceptsOnlyPublishedKeyboardScrollKeys(t *testing.T) {
 			t.Parallel()
 
 			current := newScrollableModel(t)
-			current.running = true
+			current.run.kind = runPrompt
 			current.input.Blur()
 			initialOffset := current.viewport.YOffset()
 
@@ -504,8 +504,8 @@ func TestModelEscapeCancelsOnlyActiveRun(t *testing.T) {
 
 	cancelled := false
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
-	current.cancelRun = func() { cancelled = true }
+	current.run.kind = runPrompt
+	current.run.cancel = func() { cancelled = true }
 
 	updated, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
 		Code: tea.KeyEscape,
@@ -527,7 +527,7 @@ func TestModelEscapeBeforeRunStartsDefersCancellation(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
+	current.run.kind = runPrompt
 
 	updated, command, handled := current.handleKey(tea.KeyPressMsg(tea.Key{
 		Code: tea.KeyEscape,
@@ -535,7 +535,7 @@ func TestModelEscapeBeforeRunStartsDefersCancellation(t *testing.T) {
 	if !handled || command != nil {
 		t.Fatal("esc should defer cancellation while a run is starting")
 	}
-	if !updated.cancelRequested {
+	if !updated.run.cancelRequested {
 		t.Fatal("model did not remember cancellation requested before run start")
 	}
 
@@ -947,7 +947,7 @@ func TestModelStatusLineShowsZeroCostBeforeConversation(t *testing.T) {
 func TestModelRunningStatusLineKeepsCancellationOnNarrowScreen(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
-	current.running = true
+	current.run.kind = runPrompt
 	line := ansi.Strip(current.statusLine(15))
 	if !strings.Contains(line, "Esc") || !strings.Contains(line, "Ctrl+c") {
 		t.Fatalf("running shortcuts lost cancellation or clear: %q", line)
@@ -1005,7 +1005,7 @@ func TestModelRendersRunActivityInTranscriptInsteadOfFooter(t *testing.T) {
 
 	current := testModel(t, 80, 24)
 	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
-	current.running = true
+	current.run.kind = runPrompt
 	current.status = "Starting response..."
 
 	assertActivityInTranscript(t, current, "Starting response...")
@@ -1129,7 +1129,7 @@ func TestModelToolCallsShowRelevantInput(t *testing.T) {
 				Width:  80,
 				Height: 24,
 			})
-			current.running = true
+			current.run.kind = runPrompt
 			current.applyAgentEvent(interaction.Event{
 				Kind: interaction.EventToolStart,
 				Tool: tt.tool,
@@ -1318,7 +1318,7 @@ func TestModelSpinnerTickRefreshesTranscriptViewport(t *testing.T) {
 
 	current := testModel(t, 80, 24)
 	current.entries = []transcriptEntry{{kind: entryUser, text: "inspect"}}
-	current.running = true
+	current.run.kind = runPrompt
 	current.status = "Thinking..."
 	current.refreshViewport(true)
 
@@ -1466,7 +1466,7 @@ func TestModelSlashCommandMenuCompletesAndRunsApplicationCommand(
 			done:   true,
 		},
 	}})
-	if finished.running {
+	if finished.run.running() {
 		t.Fatal("slash command remains running after terminal update")
 	}
 	if transcript := finished.transcriptView(); !strings.Contains(
@@ -1811,7 +1811,7 @@ func TestModelSlashCommandSelectionMenuRunsSelectedValue(
 	starting, command, handled := selectingModel.handleKey(
 		tea.KeyPressMsg{Code: tea.KeyEnter},
 	)
-	if !handled || command == nil || !starting.running {
+	if !handled || command == nil || !starting.run.running() {
 		t.Fatal("model selection did not run /model")
 	}
 	if message, ok := command().(runStartedMsg); !ok || message.updates == nil {
@@ -1911,7 +1911,7 @@ func TestModelSlashCommandSelectionMenuAcceptsTypedArguments(t *testing.T) {
 	updated, command, handled := current.handleKey(tea.KeyPressMsg{
 		Code: tea.KeyEnter,
 	})
-	if !handled || command == nil || !updated.running {
+	if !handled || command == nil || !updated.run.running() {
 		t.Fatal("typed menu arguments did not run the selected option")
 	}
 	if updated.commandMenuOpen() {
@@ -2048,7 +2048,7 @@ func TestModelCancellationIsRenderedAsNotice(t *testing.T) {
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
+	current.run.kind = runPrompt
 	current.finishRun(context.Canceled)
 
 	transcript := current.transcriptView()
@@ -2194,10 +2194,10 @@ func TestModelControlCClearsThenQuits(t *testing.T) {
 		for _, draft := range []string{"", " ", "first\n第二行"} {
 			t.Run(fmt.Sprintf("running=%v/draft=%q", running, draft), func(t *testing.T) {
 				current := newModel(make(chan runRequest), make(chan struct{}))
-				current.running = running
-				current.acceptsDelivery = running
+				current.run.kind = runKindOf(running)
+				current.run.active = activeOf(running)
 				cancelled := false
-				current.cancelRun = func() { cancelled = true }
+				current.run.cancel = func() { cancelled = true }
 				current.input.SetValue(draft)
 				current.promptHistory = []string{"previous"}
 				current.historyIndex = 0
@@ -2210,7 +2210,7 @@ func TestModelControlCClearsThenQuits(t *testing.T) {
 				}
 				ctrlC := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 				cleared, command, handled := current.handleKey(ctrlC)
-				if !handled || command != nil || cancelled || cleared.cancelRequested {
+				if !handled || command != nil || cancelled || cleared.run.cancelRequested {
 					t.Fatal("first Ctrl+C must only clear, without cancelling or quitting")
 				}
 				if cleared.input.Value() != "" || len(cleared.pastes) != 0 ||
@@ -2275,8 +2275,8 @@ func TestModelControlCDiscardsPendingClipboard(t *testing.T) {
 
 func TestModelRunningFooterShowsEditingHints(t *testing.T) {
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
-	current.acceptsDelivery = true
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{}
 	current.currentModel = interaction.DisplayModel{ID: "deepseek-v4-flash"}
 	footer := ansi.Strip(current.footerView(120))
 	for _, hint := range []string{"Ctrl+c clear", "Esc cancel"} {
@@ -2324,7 +2324,7 @@ func TestModelComposerCursorMatchesRenderedInputAfterClear(t *testing.T) {
 func TestModelFinishRunSettlesToolsWithoutEndEvent(t *testing.T) {
 	t.Parallel()
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
+	current.run.kind = runPrompt
 	current.entries = []transcriptEntry{
 		{kind: entryTool, toolName: "read"},
 		{kind: entryTool, toolName: "write", toolPreparing: true, writePreview: &writePreview{}},

@@ -47,7 +47,7 @@ func TestKeyMapForInputContext(t *testing.T) {
 			t.Parallel()
 
 			current := newModel(nil, nil)
-			current.running, current.acceptsDelivery = tt.running, tt.acceptsDelivery
+			current.run.kind, current.run.active = runKindOf(tt.running), activeOf(tt.acceptsDelivery)
 			keys := current.inputActionKeys()
 			if keys.send.Enabled() != tt.wantSendEnabled {
 				t.Errorf("send enabled = %v, want %v", keys.send.Enabled(), tt.wantSendEnabled)
@@ -86,7 +86,7 @@ func TestKeyMapShortHelpIncludesClearAndInterrupt(t *testing.T) {
 	if len(idleHelp) != 2 || idleHelp[0].Help().Key != "?" || idleHelp[1].Help().Key != "Ctrl+c" {
 		t.Errorf("idle short help = %#v, want question mark and control-c", idleHelp)
 	}
-	current.running = true
+	current.run.kind = runPrompt
 	shortHelp := current.footerKeys().ShortHelp()
 	if len(shortHelp) != 3 ||
 		shortHelp[0].Help().Key != "Esc" ||
@@ -108,7 +108,7 @@ func TestKeyMapHistoryStaysHiddenAndDisablesWhileRunning(t *testing.T) {
 		t.Error("history bindings disabled while idle")
 	}
 	for _, running := range []bool{false, true} {
-		current.running = running
+		current.run.kind = runKindOf(running)
 		keys := current.inputActionKeys()
 		if running && (keys.historyUp.Enabled() || keys.historyDown.Enabled()) {
 			t.Error("history bindings enabled while running")

@@ -390,7 +390,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		p.pointer = nil
 		name := key.String()
-		if name == "f6" && !p.usage && m.running {
+		if name == "f6" && !p.usage && m.run.running() {
 			m.requestRunCancellation()
 			return m, nil
 		}

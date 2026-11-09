@@ -142,7 +142,7 @@ func TestModelUpDownDoesNotRecallWhileRunning(t *testing.T) {
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.promptHistory = []string{"recorded"}
-	current.running = true
+	current.run.kind = runPrompt
 	current.input.Blur()
 
 	up, _, handled := current.handleKey(tea.KeyPressMsg{Code: tea.KeyUp})
@@ -413,10 +413,10 @@ func submitPrompt(t *testing.T, current model, prompt string) model {
 	if !handled {
 		t.Fatalf("enter did not submit %q", prompt)
 	}
-	if updated.running {
+	if updated.run.running() {
 		updated.finishRun(nil)
 	}
-	if updated.running || !updated.input.Focused() {
+	if updated.run.running() || !updated.input.Focused() {
 		t.Fatalf("submit of %q did not leave an idle focused composer", prompt)
 	}
 	updated.currentModel = interaction.DisplayModel{ID: "test"}

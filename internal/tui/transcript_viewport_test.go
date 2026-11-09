@@ -104,7 +104,7 @@ func TestTranscriptViewportPreservesAnchorAndInvalidatesChangedContent(t *testin
 
 func TestLongTranscriptLeavesUnseenThinkingUnrendered(t *testing.T) {
 	m := newModel(nil, nil)
-	m.width, m.height, m.running = 80, 24, true
+	m.width, m.height, m.run.kind = 80, 24, runPrompt
 	m.resizeLayout()
 	id := m.beginProcess()
 	for i := range 1000 {

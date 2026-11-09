@@ -58,7 +58,7 @@ func (m *model) requestSessionReading() tea.Cmd {
 
 func (m model) applySessionReading(result sessionReadingResult) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
-	if p == nil || p.restoring || result.generation != m.sessionPreviewGeneration {
+	if p == nil || m.restoringSession() || result.generation != m.sessionPreviewGeneration {
 		return m, nil
 	}
 	if result.err != nil {

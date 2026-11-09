@@ -28,7 +28,7 @@ func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bo
 	if text == "" && len(m.composerImages()) == 0 {
 		return m, nil, true
 	}
-	if m.activeRun == nil {
+	if m.run.active == nil {
 		m.status = "Current response is finishing; press Enter again when ready"
 		return m, nil, true
 	}
@@ -46,7 +46,7 @@ func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bo
 	if prepare == nil {
 		prepare = deliveryCommand(context.Background())
 	}
-	command, cancel := prepare(m.activeRun, input, draft)
+	command, cancel := prepare(m.run.active, input, draft)
 	m.cancelDelivery = cancel
 	m.deliveryPending = true
 

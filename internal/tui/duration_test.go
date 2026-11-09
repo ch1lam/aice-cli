@@ -60,7 +60,7 @@ func TestModelRunDurationUpdatesAndStops(t *testing.T) {
 
 	startedAt := time.Now().Add(-1500 * time.Millisecond)
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
+	current.run.kind = runPrompt
 	current.activeProcessID = 1
 	current.processGroups = []processGroup{{
 		id:        1,
@@ -92,7 +92,7 @@ func TestModelSpinnerTickRefreshesRunDuration(t *testing.T) {
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.width = 80
 	current.height = 24
-	current.running = true
+	current.run.kind = runPrompt
 	current.activeProcessID = 1
 	current.assistantEntry = 0
 	current.processGroups = []processGroup{{

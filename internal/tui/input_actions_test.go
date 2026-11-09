@@ -16,7 +16,7 @@ func TestInputActionsReserveDisabledShortcuts(t *testing.T) {
 	for _, shortcut := range []rune{'r', 't', 'g'} {
 		t.Run(string(shortcut), func(t *testing.T) {
 			current := newModel(nil, nil)
-			current.running, current.acceptsDelivery = true, true
+			current.run.kind, current.run.active = runPrompt, &activeRunFunc{}
 			current.input.SetValue("draft")
 			message := tea.KeyPressMsg{Code: shortcut, Mod: tea.ModCtrl}
 			match := current.matchInputAction(message)
@@ -52,7 +52,7 @@ func TestInputActionsKeepPrintableHelpAndArrowsInEditor(t *testing.T) {
 func TestInputActionHelpTracksClipboardAndDelivery(t *testing.T) {
 	t.Parallel()
 	current := newModel(nil, nil)
-	current.running, current.acceptsDelivery = true, true
+	current.run.kind, current.run.active = runPrompt, &activeRunFunc{}
 	current.help.ShowAll = true
 	current.clipboard = func() tea.Msg { return nil }
 	current.searchSessions = func(uint64, string) (tea.Cmd, context.CancelFunc) { return nil, nil }

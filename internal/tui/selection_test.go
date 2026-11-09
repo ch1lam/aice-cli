@@ -259,7 +259,7 @@ func TestStreamingBatchDuringSelectionDefersLayout(t *testing.T) {
 		presentation: &assistantPresentation{},
 	})
 	current.assistantEntry = 0
-	current.running = true
+	current.run.kind = runPrompt
 	current.refreshViewport(true)
 
 	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
@@ -372,7 +372,7 @@ func TestCopyNoticePreservesActivityAndExpires(t *testing.T) {
 	for _, state := range []string{"idle", "thinking", "side"} {
 		t.Run(state, func(t *testing.T) {
 			current := testModel(t, 40, 14)
-			current.running = state == "thinking"
+			current.run.kind = runKindOf(state == "thinking")
 			current.side.isVisible = state == "side"
 			current.status = "Thinking..."
 			current.viewport.SetContent("alpha")

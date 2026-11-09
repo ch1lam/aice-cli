@@ -32,7 +32,7 @@ type sessionPicker struct {
 	previewFocused          bool
 	previewVisible          bool
 	modalPointer
-	loading, restoring          bool
+	loading                     bool
 	notice                      string
 	cancelSearch, cancelPreview context.CancelFunc
 }
@@ -204,7 +204,7 @@ func (m model) openSessionPicker() (model, tea.Cmd, bool) {
 	if m.searchSessions == nil {
 		return m, nil, true
 	}
-	if m.running || m.side.anyRunning() {
+	if m.run.running() || m.side.anyRunning() {
 		m.inputNotice = "Stop the current response and BTW responses before switching sessions"
 		return m.settleCommand(false, nil)
 	}
@@ -330,7 +330,7 @@ func (m *model) toggleSessionPreview() tea.Cmd {
 
 func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
-	if p == nil || p.restoring || result.generation != m.sessionQueryGeneration {
+	if p == nil || m.restoringSession() || result.generation != m.sessionQueryGeneration {
 		return m, nil
 	}
 	p.loading = result.next != nil
@@ -351,7 +351,7 @@ func (m model) applySessionSearch(result sessionSearchResult) (tea.Model, tea.Cm
 
 func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
-	if p == nil || !p.previewVisible || p.restoring || result.generation != m.sessionPreviewGeneration {
+	if p == nil || !p.previewVisible || m.restoringSession() || result.generation != m.sessionPreviewGeneration {
 		return m, nil
 	}
 	p.notice = ""
@@ -370,7 +370,7 @@ func (m model) applySessionPreview(result sessionPreviewResult) (tea.Model, tea.
 func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
 	if p.trackClose(message, m.sessionPickerLayout().modalLayout) && m.width >= 16 && m.height >= 8 {
-		if p.restoring {
+		if m.restoringSession() {
 			// Match Escape: restoration owns completion and cancellation.
 			return m.handleSessionAction(inputActionMatch{action: inputActionSessionCancelRestore})
 		}
@@ -387,7 +387,7 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 					if item, ok := p.list.SelectedItem().(sessionListItem); ok {
 						if item.Problem != "" {
 							p.notice = item.Problem
-						} else if m.running || m.side.anyRunning() {
+						} else if m.run.running() || m.side.anyRunning() {
 							p.notice = "Stop responses before switching sessions"
 						}
 					}
@@ -397,7 +397,7 @@ func (m model) handleSessionPicker(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleSessionAction(match)
 		}
 	}
-	if p.restoring {
+	if m.restoringSession() {
 		return m, nil
 	}
 	if command, handled := m.trackSessionPickerCopy(message); handled {
@@ -476,11 +476,10 @@ func (m model) resumeSelectedSession() (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 		return m, command
 	}
-	if m.running || m.side.anyRunning() {
+	if m.run.running() || m.side.anyRunning() {
 		p.notice = "Stop responses before switching sessions"
 		return m, nil
 	}
-	p.restoring = true
 	if p.cancelSearch != nil {
 		p.cancelSearch()
 	}
@@ -492,8 +491,7 @@ func (m model) resumeSelectedSession() (tea.Model, tea.Cmd) {
 	p.loading = false
 	p.notice = "Restoring session…"
 	p.input.Blur()
-	m.running = true
-	m.acceptsDelivery = false
+	m.run = runState{kind: runRestore}
 	m.status = "Restoring session…"
 	return m, startSlashCommand(m.requests, m.controllerDone, interaction.CommandRequest{Name: "history", Arguments: item.Key})
 }

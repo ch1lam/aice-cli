@@ -127,7 +127,7 @@ func (m model) processContentItems(start, end int) []transcriptItem {
 			index = last
 			continue
 		}
-		live := m.running && index == m.assistantEntry && !entry.complete
+		live := m.run.running() && index == m.assistantEntry && !entry.complete
 		if entry.kind == entryAssistant {
 			if strings.TrimSpace(entry.thinking) != "" {
 				target := foldTarget{kind: foldThinking, id: index}

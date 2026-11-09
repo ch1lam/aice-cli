@@ -65,17 +65,17 @@ func (m model) inputActionKeys() keyMap {
 	// Image attachments are represented by non-empty tokens in this value.
 	empty := strings.TrimSpace(m.input.Value()) == ""
 	k.send.SetEnabled(conversation && c.editor)
-	if main && m.running && m.acceptsDelivery {
+	if main && m.run.running() && m.run.acceptsDelivery() {
 		k.send.SetHelp("Enter", "steer")
 	}
 	k.newline.SetEnabled(conversation && c.editor)
-	k.queue.SetEnabled(main && m.running && m.acceptsDelivery)
+	k.queue.SetEnabled(main && m.run.running() && m.run.acceptsDelivery())
 	k.paste.SetEnabled(conversation && c.editor && m.clipboard != nil)
-	k.editor.SetEnabled(conversation && c.editor && (side || !m.running))
-	k.sessions.SetEnabled(main && !m.running && !m.side.anyRunning() && m.searchSessions != nil)
-	k.turns.SetEnabled(main && !m.running && !m.side.anyRunning())
-	k.commands.SetEnabled(main && !m.running && c.editor)
-	history := main && !m.running && !m.slashCommandMenuVisible() && !m.fileCompletionVisible()
+	k.editor.SetEnabled(conversation && c.editor && (side || !m.run.running()))
+	k.sessions.SetEnabled(main && !m.run.running() && !m.side.anyRunning() && m.searchSessions != nil)
+	k.turns.SetEnabled(main && !m.run.running() && !m.side.anyRunning())
+	k.commands.SetEnabled(main && !m.run.running() && c.editor)
+	history := main && !m.run.running() && !m.slashCommandMenuVisible() && !m.fileCompletionVisible()
 	k.historyUp.SetEnabled(history && m.historyBackAllowed())
 	k.historyDown.SetEnabled(history && m.historyForwardAllowed())
 	k.help.SetEnabled(conversation && empty)
@@ -84,8 +84,8 @@ func (m model) inputActionKeys() keyMap {
 	k.process.SetEnabled(main)
 	k.code.SetEnabled(main)
 	k.clear.SetEnabled(conversation)
-	k.interrupt.SetEnabled(main && (m.running || m.slashCommandMenuVisible() || m.fileCompletionVisible()))
-	k.quit.SetEnabled(main && !m.running && empty)
+	k.interrupt.SetEnabled(main && (m.run.running() || m.slashCommandMenuVisible() || m.fileCompletionVisible()))
+	k.quit.SetEnabled(main && !m.run.running() && empty)
 	k.close.SetEnabled(side)
 	k.mode.SetEnabled(main && m.setPermissionMode != nil)
 	if m.permissionMode == permissionModeAuto {

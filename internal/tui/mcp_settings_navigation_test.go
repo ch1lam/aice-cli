@@ -22,7 +22,7 @@ func TestMCPSettingsNavigationAndStaleRedirect(t *testing.T) {
 			return nil
 		}
 		m.closeSettings()
-		m.running = true
+		m.run.kind = runPrompt
 		m.input.SetValue("/mcp add")
 		if m.isInfoCommandInput() {
 			t.Fatal("MCP mutation classified as local navigation")
@@ -35,7 +35,7 @@ func TestMCPSettingsNavigationAndStaleRedirect(t *testing.T) {
 		if !handled || next.settings == nil {
 			t.Fatal("MCP did not open settings")
 		}
-		if !next.running || next.cancelRequested || len(next.entries) != 0 || len(next.promptHistory) != 0 || next.submittedInput != nil {
+		if !next.run.running() || next.run.cancelRequested || len(next.entries) != 0 || len(next.promptHistory) != 0 || next.run.submitted != nil {
 			t.Fatal("MCP navigation changed Run or prompt history")
 		}
 		m = updateModel(t, next, settingsReadResult{generation: next.settings.generation, snapshot: snapshot})

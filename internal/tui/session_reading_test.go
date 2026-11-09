@@ -29,7 +29,7 @@ func TestSessionReadingInspectionLatestDirectoryAndReturn(t *testing.T) {
 	}
 	m = updateModel(t, m, tea.PasteMsg{Content: "never send"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'x', Text: "never send"})
-	if m.input.Value() != "" || m.running {
+	if m.input.Value() != "" || m.run.running() {
 		t.Fatal("reader accepted model input")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnd})

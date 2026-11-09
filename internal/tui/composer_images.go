@@ -57,17 +57,16 @@ func imageInputText(text string, count int) string {
 }
 
 func (m *model) restoreSubmittedInput() {
-	if m.submittedInput == nil {
+	if m.run.submitted == nil {
 		return
 	}
-	input := *m.submittedInput
-	m.submittedInput = nil
-	m.input.SetValue(m.submittedDraft.text)
-	m.input.files = m.submittedDraft.files
-	m.input.skills = m.submittedDraft.skills
-	m.pastes = m.submittedDraft.pastes
+	input, draft := *m.run.submitted, m.run.submittedDraft
+	m.run.submitted, m.run.submittedDraft = nil, composerDraft{}
+	m.input.SetValue(draft.text)
+	m.input.files = draft.files
+	m.input.skills = draft.skills
+	m.pastes = draft.pastes
 	m.input.CursorEnd()
-	m.submittedDraft = composerDraft{}
 	if len(input.Images) > 0 {
 		m.inputNotice = "Input was not accepted; text and images restored"
 	}

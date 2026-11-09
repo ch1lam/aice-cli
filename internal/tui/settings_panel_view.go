@@ -170,9 +170,9 @@ func (m model) settingsPanelView() string {
 func (m model) settingsFooter() string {
 	p := m.settings
 	footer := p.footer()
-	if m.running && !p.usage {
+	if m.run.running() && !p.usage {
 		footer = "[Stop current run] F6 · Esc back"
-		if m.cancelRequested {
+		if m.run.cancelRequested {
 			footer = "Stopping… · Esc back"
 		}
 	}
@@ -372,10 +372,10 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) settingsTarget(mouse tea.Mouse) string {
 	p := m.settings
-	if m.running && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
+	if m.run.running() && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
 		_, footerX := settingsFooterLayout(m.settingsFooter(), p.layout.inner)
 		x := mouse.X - p.layout.x - 2 - footerX
-		if !m.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
+		if !m.run.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
 			return "stop-run"
 		}
 		// The run controls replace, rather than overlay, the editor footer.

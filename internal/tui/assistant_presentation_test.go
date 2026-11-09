@@ -19,7 +19,7 @@ func TestStreamingMarkdownCompletion(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			m := newModel(nil, nil)
-			m.width, m.height, m.running = 80, 24, true
+			m.width, m.height, m.run.kind = 80, 24, runPrompt
 			m.resizeLayout()
 			thread := &sideThreadState{entries: []sideThreadEntry{{}}, assistantEntry: 0, isRunning: true}
 			apply := func(event interaction.Event) {
@@ -81,7 +81,7 @@ func TestLongThinkingPreviewPreservesCompleteMessage(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			m := newModel(nil, nil)
-			m.width, m.height, m.running = 80, 24, true
+			m.width, m.height, m.run.kind = 80, 24, runPrompt
 			thread := &sideThreadState{entries: []sideThreadEntry{{}}, assistantEntry: 0, isRunning: true}
 			apply := func(event interaction.Event) {
 				if side {
@@ -197,7 +197,7 @@ func TestCollapsedProcessSkipsAssistantRendering(t *testing.T) {
 
 func TestLongThinkingStillAllowsInputAndCancellation(t *testing.T) {
 	m := newModel(nil, nil)
-	m.width, m.height, m.running, m.acceptsDelivery = 80, 24, true, true
+	m.width, m.height, m.run.kind, m.run.active = 80, 24, runPrompt, &activeRunFunc{}
 	m.resizeLayout()
 	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantDelta, Delta: interaction.Delta{
@@ -209,7 +209,7 @@ func TestLongThinkingStillAllowsInputAndCancellation(t *testing.T) {
 		t.Fatal("long thinking consumed composer input")
 	}
 	cancelled := false
-	m.cancelRun = func() { cancelled = true }
+	m.run.cancel = func() { cancelled = true }
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !cancelled {
 		t.Fatal("long thinking prevented cancellation")

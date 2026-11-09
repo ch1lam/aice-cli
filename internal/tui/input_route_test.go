@@ -45,7 +45,7 @@ func TestInputComponentRepliesStayWithTheirEditor(t *testing.T) {
 				m = pickerModel(t, 100, 28)
 			}
 			if boundary == "auth step" {
-				m.running = true
+				m.run.kind = runPrompt
 				m.flow = &commandFlow{input: make(chan string, 1)}
 				m.flow.prompt = &interaction.AuthPrompt{AllowInput: true}
 			}

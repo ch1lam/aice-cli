@@ -16,7 +16,7 @@ func (m model) authInputBindings() []inputBinding {
 	if prompt := m.flow.prompt; prompt != nil && prompt.Menu != nil {
 		options := prompt.Menu.Options
 		choose := actionBinding(inputActionAuthChoose, "Enter", "select", m.keys.send.Keys()...)
-		choose.binding.SetEnabled(len(options) > 0 && !m.cancelRequested)
+		choose.binding.SetEnabled(len(options) > 0 && !m.run.cancelRequested)
 		bindings = append(bindings, choose)
 		for _, direction := range []struct {
 			key   string
@@ -24,7 +24,7 @@ func (m model) authInputBindings() []inputBinding {
 		}{{key: "up", delta: -1}, {key: "down", delta: 1}} {
 			binding := actionBinding(inputActionAuthSelect, "", "", direction.key)
 			binding.argument = direction.delta
-			binding.binding.SetEnabled(len(options) > 0 && !m.cancelRequested)
+			binding.binding.SetEnabled(len(options) > 0 && !m.run.cancelRequested)
 			bindings = append(bindings, binding)
 		}
 		return bindings

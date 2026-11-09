@@ -119,8 +119,6 @@ type model struct {
 	prepareDelivery          func(interaction.ActiveRun, interaction.Delivery, composerDraft) (tea.Cmd, context.CancelFunc)
 	deliveryPending          bool
 	cancelDelivery           context.CancelFunc
-	activeRun                interaction.ActiveRun
-	cancelRun                context.CancelFunc
 	side                     sidePanelState
 	guardRequests            <-chan interaction.GuardRequest
 	guard                    guardPanel
@@ -181,9 +179,7 @@ type model struct {
 	// inputNotice is idle feedback shown above the composer; status labels
 	// only an active run's activity row.
 	inputNotice string
-	// Retained only until NewRun accepts the submission, so rejection restores it.
-	submittedInput *interaction.RunInput
-	submittedDraft composerDraft
+	run         runState
 
 	inputGeneration  uint64
 	chrome           chromeMeasurements
@@ -195,9 +191,6 @@ type model struct {
 	nextProcessID    int
 	commandSelection int
 	commandDismissed bool
-	running          bool
-	acceptsDelivery  bool
-	cancelRequested  bool
 	controllerClosed bool
 	status           string
 	copyNotice       bool
@@ -541,7 +534,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
 	case welcomeTickMsg:
-		active := len(m.entries) == 0 && !m.running
+		active := len(m.entries) == 0 && !m.run.running()
 		command := m.welcomeAnimation.Update(message, active)
 		if command != nil && m.welcomeTipsVisible() && m.guard.request == nil {
 			m.welcomeTip.advance(message.at)
@@ -557,14 +550,14 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.running || m.side.anyRunning() {
+		if m.run.running() || m.side.anyRunning() {
 			m.thinkingShimmer++
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
 				m.steerRailFrame = (m.steerRailFrame + 1) % 4
 			}
 			durationChanged := m.updateActiveProcessDuration(message.Time)
-			refreshMain := m.running &&
+			refreshMain := m.run.running() &&
 				(m.showsActivitySpinner() || durationChanged || hasPendingSteer)
 			refreshSide := false
 			if m.side.isVisible {

@@ -29,7 +29,7 @@ func TestSessionRenameEditorSavesWithoutSwitchingAndPreservesSelection(t *testin
 	m.sessionPicker.rename.input.SetValue("新名字")
 	next, command := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
-	if m.running || !m.sessionPicker.rename.saving || m.View().Cursor != nil {
+	if m.run.running() || !m.sessionPicker.rename.saving || m.View().Cursor != nil {
 		t.Fatal("rename dispatched an agent run or exposed save cursor")
 	}
 	m = updateModel(t, m, command())

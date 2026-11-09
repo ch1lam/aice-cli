@@ -193,7 +193,7 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 	case inputActionNewline:
 		return m, m.updateInput(tea.PasteMsg{Content: "\n"}), true
 	case inputActionSend:
-		if m.running {
+		if m.run.running() {
 			if m.isBTWCommandInput() || m.isInfoCommandInput() {
 				return m.submit()
 			}
@@ -209,11 +209,11 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 // Settings and the main composer use the same cancellation chain, including
 // the interval before the controller publishes its cancel function.
 func (m *model) requestRunCancellation() {
-	if !m.running || m.cancelRequested {
+	if !m.run.running() || m.run.cancelRequested {
 		return
 	}
-	m.cancelRequested = true
-	if m.cancelRun != nil {
-		m.cancelRun()
+	m.run.cancelRequested = true
+	if m.run.cancel != nil {
+		m.run.cancel()
 	}
 }

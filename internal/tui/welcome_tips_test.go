@@ -205,7 +205,7 @@ func TestWelcomeTipsLifecycle(t *testing.T) {
 			hidden := current
 			switch state {
 			case "running":
-				hidden.running = true
+				hidden.run.kind = runPrompt
 			case "transcript":
 				hidden.entries = []transcriptEntry{{kind: entryNotice, text: "history"}}
 			case "side":

@@ -87,15 +87,15 @@ func (m model) headerLayout(width int) headerLayout {
 	case m.controllerClosed:
 		state = "OFFLINE"
 		stateColor = errorColor
-	case m.running && m.side.isVisible:
+	case m.run.running() && m.side.isVisible:
 		state = "MAIN WORKING"
 		stateColor = informationColor
 	case m.side.isVisible:
 		state = "MAIN READY"
-	case m.running && sideRunning:
+	case m.run.running() && sideRunning:
 		state = "MAIN + BTW"
 		stateColor = informationColor
-	case m.running:
+	case m.run.running():
 		state = "WORKING"
 		stateColor = informationColor
 	case sideRunning:
@@ -299,7 +299,7 @@ func (m model) slashCommandMenuVisible() bool {
 func (m model) matchingSlashCommands() []interaction.Command {
 	// Existing run-time navigation (e.g. /desktop) must keep Enter dispatch;
 	// a fuzzy skill-description match must never capture those exact commands.
-	if m.running && (m.isInfoCommandInput() || m.isBTWCommandInput()) {
+	if m.run.running() && (m.isInfoCommandInput() || m.isBTWCommandInput()) {
 		return nil
 	}
 	_, _, query, ok := m.slashAtCursor()
@@ -307,7 +307,7 @@ func (m model) matchingSlashCommands() []interaction.Command {
 		return nil
 	}
 	matches := matchingSlashCommands(m.commands, query)
-	if m.running {
+	if m.run.running() {
 		skills := make([]interaction.Command, 0, len(matches))
 		for _, command := range matches {
 			if command.SkillName != "" {
@@ -752,7 +752,7 @@ func (m model) assistantHeader(processID int) string {
 }
 
 func (m model) pendingActivityView() string {
-	if !m.running || m.hasActiveTool() || m.hasActiveAssistant() {
+	if !m.run.running() || m.hasActiveTool() || m.hasActiveAssistant() {
 		return ""
 	}
 	return m.assistantHeaderView(m.activeProcessID) + "\n\n" +
@@ -779,7 +779,7 @@ func (m model) hasActiveTool() bool {
 }
 
 func (m model) showsActivitySpinner() bool {
-	if !m.running {
+	if !m.run.running() {
 		return false
 	}
 	if m.hasActiveTool() || !m.hasActiveAssistant() {
@@ -791,10 +791,10 @@ func (m model) showsActivitySpinner() bool {
 func (m model) activityIndicator() string {
 	status := strings.TrimSpace(m.status)
 	switch {
-	case m.cancelRequested && m.authActive():
+	case m.run.cancelRequested && m.authActive():
 		// Cancellation outlasts later stream updates until the run finishes.
 		status = "Cancelling command..."
-	case m.cancelRequested:
+	case m.run.cancelRequested:
 		status = "Cancelling current response..."
 	case status == "":
 		status = "Working..."

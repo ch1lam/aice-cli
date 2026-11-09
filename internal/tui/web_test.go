@@ -53,7 +53,7 @@ func TestWebCommandPromptsMaskSecretsAndStayOutOfHistory(t *testing.T) {
 		t.Fatal("web input entered prompt history")
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, output: "Added Exa instance exa-main"}}})
-	if m.running || m.authActive() {
+	if m.run.running() || m.authActive() {
 		t.Fatal("web UI retained command state")
 	}
 	if view := m.transcriptView(); strings.Contains(view, "sk-very-secret") || !strings.Contains(view, "Added Exa instance exa-main") {

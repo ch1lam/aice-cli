@@ -89,7 +89,7 @@ func (m model) sessionPickerView() string {
 	p := m.sessionPicker
 	l := m.sessionPickerLayout()
 	listViewModel := p.list
-	listViewModel.SetDelegate(sessionItemDelegate{focused: !p.previewFocused && !p.input.Focused() && p.rename == nil && !p.restoring})
+	listViewModel.SetDelegate(sessionItemDelegate{focused: !p.previewFocused && !p.input.Focused() && p.rename == nil && !m.restoringSession()})
 	listView := listViewModel.View()
 	if len(p.list.Items()) == 0 {
 		listView = "No matching sessions"
@@ -173,7 +173,7 @@ func (m model) sessionPickerPreviewView(l sessionPickerLayout) string {
 		return p.preview.View()
 	}
 	style := bodyStyle
-	if p.previewFocused && p.rename == nil && !p.restoring {
+	if p.previewFocused && p.rename == nil && !m.restoringSession() {
 		style = labelStyle
 	}
 	headerWidth := l.previewWidth
@@ -206,7 +206,7 @@ func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
 		lipgloss.NewLayer(restoreCanvasColors(m.sessionPickerView())).X(l.x).Y(l.y).Z(1),
 	))
 	var cursor *tea.Cursor
-	if (m.sessionPicker.input.Focused() || m.sessionPicker.rename != nil) && !m.sessionPicker.restoring {
+	if (m.sessionPicker.input.Focused() || m.sessionPicker.rename != nil) && !m.restoringSession() {
 		cursor = sessionPickerTextCursor(m.sessionPicker.input)
 		if m.sessionPicker.rename != nil {
 			cursor = sessionPickerTextCursor(m.sessionPicker.rename.input)
