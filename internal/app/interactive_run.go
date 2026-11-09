@@ -197,7 +197,7 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	}
 	input.Compactor = func(compactCtx context.Context, history []llm.AgentMessage) (agent.CompactionResult, error) {
 		var usage llm.Usage
-		compacted, err := r.session.compactHistory(compactCtx, history, &configured, func(value llm.Usage) { usage = llm.AddUsage(usage, value) })
+		compacted, err := r.session.compactHistory(compactCtx, &configured, func(value llm.Usage) { usage = llm.AddUsage(usage, value) })
 		if err == nil {
 			contextHistory = append([]llm.AgentMessage(nil), compacted...)
 		}
@@ -301,27 +301,33 @@ func (s *interactiveSession) beginMainRun(
 
 func (s *interactiveSession) compactHistory(
 	ctx context.Context,
-	currentHistory []llm.AgentMessage,
 	configured *configuredModel,
 	onUsage func(llm.Usage),
 ) ([]llm.AgentMessage, error) {
 	if s == nil || s.application == nil {
 		return nil, fmt.Errorf("app: interactive Session is not initialized")
 	}
-	if s.conversation.store == nil {
+	store := s.conversation.currentStore()
+	if store == nil {
 		return nil, fmt.Errorf("app: interactive Session store is required")
 	}
-
-	// Serialize checkpoints with source-message commits and explicit checkout.
-	// The Loop supplies complete context at a paired model-round boundary.
-	s.conversation.historySyncMu.Lock()
-	defer s.conversation.historySyncMu.Unlock()
-
-	history, err := s.application.compactHistory(ctx, s.conversation.store, currentHistory, configured, onUsage)
+	// The summary model call runs without historySyncMu so side threads and
+	// snapshots stay responsive. The checkpoint's parent pins the Session
+	// leaf; the store rejects it if anything was committed meanwhile.
+	checkpoint, _, err := s.application.generateStoredCompaction(ctx, store, configured, s.application.compactionSettings(configured), onUsage)
 	if err != nil {
 		return nil, err
 	}
-	leaf, err := s.conversation.store.LeafID()
+	s.conversation.historySyncMu.Lock()
+	defer s.conversation.historySyncMu.Unlock()
+	if s.conversation.store != store {
+		return nil, fmt.Errorf("app: Session changed during compaction")
+	}
+	history, err := appendStoredCompaction(ctx, store, checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	leaf, err := store.LeafID()
 	if err != nil {
 		return nil, err
 	}
