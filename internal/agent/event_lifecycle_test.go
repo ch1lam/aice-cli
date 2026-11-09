@@ -113,12 +113,12 @@ func TestLoopEventLifecycleSequences(t *testing.T) {
 			name:    "retries exhausted",
 			model:   &startFailureModel{startErr: transient, failAll: true},
 			retries: 2,
-			want:    "agent_start turn_start#1 message_start#1:user message_end#1:user message_start#1:assistant message_end#1:assistant! turn_end#1! retry_start@1 turn_start#2 message_start#2:assistant message_end#2:assistant! turn_end#2! retry_start@2 turn_start#3 retry_end@2:false message_start#3:assistant message_end#3:assistant! turn_end#3! agent_end!",
+			want:    "agent_start turn_start#1 message_start#1:user message_end#1:user message_start#1:assistant message_end#1:assistant! turn_end#1! retry_start@1 turn_start#2 message_start#2:assistant message_end#2:assistant! turn_end#2! retry_start@2 turn_start#3 message_start#3:assistant message_end#3:assistant! turn_end#3! retry_end@2:false agent_end!",
 		},
 		{
 			name:  "cut stream not retried",
 			model: &scriptedModel{scripts: []*streamScript{{events: []llm.Event{{Type: llm.EventTypeStart}}, nextErr: io.ErrUnexpectedEOF}}},
-			want:  "agent_start turn_start#1 message_start#1:user message_end#1:user message_start#1:assistant turn_end#1! agent_end!",
+			want:  "agent_start turn_start#1 message_start#1:user message_end#1:user message_start#1:assistant message_end#1:assistant! turn_end#1! agent_end!",
 		},
 	}
 	for _, tt := range tests {

@@ -1372,23 +1372,11 @@ func TestLoopRejectsStreamEOFBeforeTerminalEvent(t *testing.T) {
 	if !model.scripts[0].closed {
 		t.Fatal("model stream was not closed")
 	}
-	wantEventTypes := []agent.EventType{
-		agent.EventTypeAgentStart,
-		agent.EventTypeTurnStart,
-		agent.EventTypeMessageStart,
-		agent.EventTypeMessageEnd,
-		agent.EventTypeMessageStart,
-		agent.EventTypeTurnEnd,
-		agent.EventTypeAgentEnd,
-	}
-	if got := eventTypes(events); !reflect.DeepEqual(got, wantEventTypes) {
-		t.Fatalf("event types = %v, want %v", got, wantEventTypes)
-	}
-	if events[5].Message != nil {
-		t.Errorf("failed turn_end message = %#v, want nil", events[5].Message)
-	}
-	if !reflect.DeepEqual(events[6].Messages, result.Messages()) {
-		t.Errorf("agent_end messages = %#v, want %#v", events[6].Messages, result.Messages())
+	// The started assistant message closes with the recorded terminal failure;
+	// TestLoopEventLifecycleSequences pins the event order.
+	assertAgentMessage(t, events[5].Message, result.ModelRounds[0].Assistant)
+	if last := events[len(events)-1]; !reflect.DeepEqual(last.Messages, result.Messages()) {
+		t.Errorf("agent_end messages = %#v, want %#v", last.Messages, result.Messages())
 	}
 }
 

@@ -384,6 +384,10 @@ persistence; the synchronous message recorder does. Inside the Loop, turn and
 retry boundaries are emitted only by `eventLifecycle` (`internal/agent/lifecycle.go`),
 which owns the turn number, the retry attempt and whether the attempt's
 assistant message started; `TestLoopEventLifecycleSequences` pins the order.
+Every `message_start` is paired with a `message_end` before its `turn_end`,
+including a stream cut off without a retry, which ends with the recorded
+terminal failure. A retry sequence closes with `retry_end` after the last
+attempt's `turn_end`.
 
 The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
