@@ -7,8 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func TestInputActionsReserveDisabledShortcuts(t *testing.T) {
@@ -90,7 +88,7 @@ func TestSideInputActionHelpFollowsThreadAvailability(t *testing.T) {
 	current := newModel(nil, nil)
 	current.side.isVisible = true
 	current.side.activeID = 1
-	thread := &sideThreadState{id: 1, status: interaction.SideThreadReadOnly}
+	thread := &sideThreadState{id: 1, readOnlyWindow: true}
 	current.side.threads = map[uint64]*sideThreadState{1: thread}
 	current.help.ShowAll = true
 	current.input.SetValue("preserved draft")
