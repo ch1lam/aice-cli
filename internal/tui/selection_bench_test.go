@@ -63,7 +63,7 @@ func largeSelectionFixture(b *testing.B) model {
 			toolID:     "tool-bench",
 			toolName:   "bash",
 			toolDetail: "go test ./internal/tui/ -run TestSelection -count=1",
-			toolDone:   true,
+			toolState:  toolSucceeded,
 			toolOutput: interaction.ToolOutputDisplay{Available: true, Text: strings.Repeat("ok  \tgithub.com/ch1lam/aice-cli/internal/tui\t1.593s\n", 60)},
 		})
 		current.setFoldExpanded(foldTarget{kind: foldTool, id: len(current.entries) - 1}, true)

@@ -157,7 +157,7 @@ func TestAnchorScrolledOffscreenCrossItemFastScroll(t *testing.T) {
 	m.entries = []transcriptEntry{
 		{kind: entryUser, text: "first question line"},
 		{kind: entryAssistant, text: strings.Repeat("assistant paragraph content. ", 20), complete: true, presentation: &assistantPresentation{}},
-		{kind: entryTool, toolName: "bash", toolDetail: "echo hi", toolDone: true, toolOutput: interaction.ToolOutputDisplay{Available: true, Text: "tool output line\n"}},
+		{kind: entryTool, toolName: "bash", toolDetail: "echo hi", toolState: toolSucceeded, toolOutput: interaction.ToolOutputDisplay{Available: true, Text: "tool output line\n"}},
 		{kind: entryAssistant, text: strings.Repeat("second assistant block with enough text to wrap across rows. ", 30), complete: true, presentation: &assistantPresentation{}},
 	}
 	// Fill with many plain lines to guarantee multiple screens.

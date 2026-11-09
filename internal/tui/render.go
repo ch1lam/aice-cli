@@ -771,7 +771,7 @@ func (m model) hasActiveAssistant() bool {
 func (m model) hasActiveTool() bool {
 	for index := len(m.entries) - 1; index >= 0; index-- {
 		entry := m.entries[index]
-		if entry.kind == entryTool && !entry.toolDone {
+		if entry.kind == entryTool && !entry.toolState.done() {
 			return true
 		}
 	}

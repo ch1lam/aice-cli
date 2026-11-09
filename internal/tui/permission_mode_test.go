@@ -74,7 +74,7 @@ func TestToolRowsShowAutoReview(t *testing.T) {
 	t.Parallel()
 	m := newModel(make(chan runRequest, 1), make(chan struct{}))
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 24})
-	base := transcriptEntry{kind: entryTool, toolName: "bash", toolDetail: "make build", toolDone: true, toolOutput: interaction.ToolOutputDisplay{Text: "ok", Available: true}}
+	base := transcriptEntry{kind: entryTool, toolName: "bash", toolDetail: "make build", toolState: toolSucceeded, toolOutput: interaction.ToolOutputDisplay{Text: "ok", Available: true}}
 
 	allowed := base
 	allowed.toolReview = &interaction.ReviewDisplay{Reason: "user asked\x1b[31m to build"}
@@ -86,7 +86,7 @@ func TestToolRowsShowAutoReview(t *testing.T) {
 	}
 
 	blocked := base
-	blocked.toolError = true
+	blocked.toolState = toolFailed
 	blocked.toolReview = &interaction.ReviewDisplay{Blocked: true, Reason: "not requested"}
 	if header := ansi.Strip(m.toolHeaderView(blocked)); !strings.HasSuffix(header, "auto · blocked") {
 		t.Fatalf("blocked header = %q", header)

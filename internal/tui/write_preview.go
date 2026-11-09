@@ -33,7 +33,7 @@ func (m *model) applyWriteDelta(delta interaction.Delta) bool {
 	index := -1
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		e := &m.entries[i]
-		if e.kind == entryTool && e.toolAssistant == m.assistantEntry && e.toolIndex == delta.ToolIndex && e.toolPreparing {
+		if e.kind == entryTool && e.toolAssistant == m.assistantEntry && e.toolIndex == delta.ToolIndex && e.toolState == toolPreparing {
 			index = i
 			break
 		}
@@ -49,7 +49,7 @@ func (m *model) applyWriteDelta(delta interaction.Delta) bool {
 			toolID:        delta.Tool.ID,
 			toolAssistant: m.assistantEntry,
 			toolIndex:     delta.ToolIndex,
-			toolPreparing: true,
+			toolState:     toolPreparing,
 			writePreview:  &writePreview{},
 		})
 		index = len(m.entries) - 1
@@ -84,8 +84,8 @@ func (m *model) applyWriteDelta(delta interaction.Delta) bool {
 func (m *model) startDisplayedTool(tool interaction.ToolDisplay) {
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		e := &m.entries[i]
-		if e.kind == entryTool && e.toolPreparing && e.toolID == tool.ID {
-			e.toolPreparing = false
+		if e.kind == entryTool && e.toolState == toolPreparing && e.toolID == tool.ID {
+			e.toolState = toolRunning
 			e.toolDetail = sanitizeToolDetail(tool.Detail, false)
 			e.writePreview.setContent(tool)
 			e.toolPreviewRevision = e.writePreview.revision

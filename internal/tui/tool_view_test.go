@@ -24,7 +24,7 @@ func TestToolPathFoldsInHeader(t *testing.T) {
 			t.Run(name+target.path, func(t *testing.T) {
 				m := newModel(nil, nil)
 				m.width = 100
-				entry := transcriptEntry{toolName: name, toolDetail: target.path, toolDone: true}
+				entry := transcriptEntry{toolName: name, toolDetail: target.path, toolState: toolSucceeded}
 				collapsed := ansi.Strip(m.toolHeaderView(entry))
 				if !strings.HasSuffix(collapsed, "  "+target.base) {
 					t.Fatalf("collapsed header = %q", collapsed)
@@ -47,7 +47,7 @@ func TestToolPathFoldsInHeader(t *testing.T) {
 func TestBashDescriptionHeadsCardAndBodyKeepsCommand(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width = 100
-	entry := transcriptEntry{toolName: "bash", toolDetail: "rm -rf build", toolDescription: "Remove the stale build output", toolDone: true}
+	entry := transcriptEntry{toolName: "bash", toolDetail: "rm -rf build", toolDescription: "Remove the stale build output", toolState: toolSucceeded}
 	header := ansi.Strip(m.toolHeaderView(entry))
 	if !strings.HasSuffix(header, "  Remove the stale build output") || strings.Contains(header, "rm -rf") {
 		t.Fatalf("header = %q, want the description only", header)
@@ -66,7 +66,7 @@ func TestReadOutputCodePanel(t *testing.T) {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
 			m := newModel(nil, nil)
 			m.width = width
-			entry := transcriptEntry{toolName: "read", toolDetail: "src/main.go", toolDone: true, toolExpanded: true,
+			entry := transcriptEntry{toolName: "read", toolDetail: "src/main.go", toolState: toolSucceeded, toolExpanded: true,
 				toolOutput: interaction.ToolOutputDisplay{Available: true, Text: "package main\n\nfunc main() {\n\tprintln(\"hello\\n\")\n}\n"}}
 			view := m.toolBodyView(entry)
 			plain := ansi.Strip(view)
@@ -145,7 +145,7 @@ func TestMutationHeaderStatsAndCompletedWriteView(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width = 100
 	for _, name := range []string{"edit", "write"} {
-		entry := transcriptEntry{toolName: name, toolDetail: "src/main.go", toolDone: true,
+		entry := transcriptEntry{toolName: name, toolDetail: "src/main.go", toolState: toolSucceeded,
 			toolDiff: interaction.DiffDisplay{Text: "@@ -1 +1 @@\n-old\n+new\n", Added: 99, Removed: 33, StatsKnown: true, Truncated: true}}
 		if got := ansi.Strip(m.toolHeaderView(entry)); !strings.Contains(got, "main.go  +99 -33") {
 			t.Fatalf("missing full counts: %s", got)
@@ -157,7 +157,7 @@ func TestMutationHeaderStatsAndCompletedWriteView(t *testing.T) {
 		if strings.Contains(body, "UNCOMMITTED_PREVIEW") || !strings.Contains(body, "+new") {
 			t.Fatalf("completed write must show recorded diff: %s", body)
 		}
-		entry.toolError = true
+		entry.toolState = toolFailed
 		if got := ansi.Strip(m.toolHeaderView(entry)); strings.Contains(got, "+99") {
 			t.Fatal("failed mutation claimed successful counts")
 		}
@@ -167,7 +167,7 @@ func TestMutationHeaderStatsAndCompletedWriteView(t *testing.T) {
 func TestToolBodyShowsOutputLimitsAndEscapesControls(t *testing.T) {
 	m := newModel(nil, nil)
 	m.width = 80
-	entry := transcriptEntry{toolDone: true, toolOutput: interaction.ToolOutputDisplay{
+	entry := transcriptEntry{toolState: toolSucceeded, toolOutput: interaction.ToolOutputDisplay{
 		Available: true, Text: "\x1b]52;c;evil\a\u202e\n" + strings.Repeat("row\n", 2100),
 	}}
 	view := ansi.Strip(m.toolBodyView(entry))
@@ -190,7 +190,7 @@ func TestToolBodyShowsOutputLimitsAndEscapesControls(t *testing.T) {
 func TestToolLineCountLivesInHeadingAboveSpacedCopyRow(t *testing.T) {
 	m := testModel(t, 80, 40)
 	source := "first\n\nlast\n"
-	m.entries = []transcriptEntry{{kind: entryTool, toolName: "read", toolDetail: "file.txt", toolDone: true,
+	m.entries = []transcriptEntry{{kind: entryTool, toolName: "read", toolDetail: "file.txt", toolState: toolSucceeded,
 		toolOutput: interaction.ToolOutputDisplay{Available: true, Text: source}}}
 	m.setFoldExpanded(foldTarget{kind: foldTool, id: 0}, true)
 	m.viewport.setItems(m.foldedToolItems(0))

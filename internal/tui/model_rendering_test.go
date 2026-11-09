@@ -26,7 +26,7 @@ func TestModelRendersOneProcessHeadingPerProcess(t *testing.T) {
 			kind:      entryTool,
 			processID: processID,
 			toolName:  "read",
-			toolDone:  true,
+			toolState: toolSucceeded,
 		},
 		{
 			kind:       entryAssistant,
@@ -66,7 +66,7 @@ func TestModelRendersCollapsedSkillNameAsMutedToolDetail(t *testing.T) {
 			processID:  processID,
 			toolName:   "skill",
 			toolDetail: "samber/cc-skills-golang@golang-how-to",
-			toolDone:   true,
+			toolState:  toolSucceeded,
 		},
 	}
 

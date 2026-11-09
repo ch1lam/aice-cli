@@ -47,6 +47,27 @@ const (
 	entryCommand
 )
 
+// toolState is a tool card's lifecycle. Streamed write arguments prepare a
+// card that is not executed; only the Agent's tool start makes it running, and
+// only its end, or finishRun for a lost end, settles it.
+type toolState uint8
+
+const (
+	toolRunning toolState = iota
+	toolPreparing
+	toolSucceeded
+	toolFailed
+)
+
+func (s toolState) done() bool { return s == toolSucceeded || s == toolFailed }
+
+func toolResult(failed bool) toolState {
+	if failed {
+		return toolFailed
+	}
+	return toolSucceeded
+}
+
 type transcriptEntry struct {
 	sourceID            string
 	kind                entryKind
@@ -60,15 +81,13 @@ type transcriptEntry struct {
 	writePreview        *writePreview
 	toolIndex           int
 	toolAssistant       int
-	toolPreparing       bool
 	toolExpanded        bool
 	toolOutput          interaction.ToolOutputDisplay
 	toolID              string
 	toolName            string
 	toolDetail          string
 	toolDescription     string // bash: the agent's stated reason, shown folded
-	toolDone            bool
-	toolError           bool
+	toolState           toolState
 	toolTruncation      interaction.TruncationDisplay
 	toolDiff            interaction.DiffDisplay
 	// toolEvidence is an immutable projection assigned once on completion; the

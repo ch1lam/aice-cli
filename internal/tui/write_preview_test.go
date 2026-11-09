@@ -27,7 +27,7 @@ func TestWritePreviewStreamAndExecution(t *testing.T) {
 	tool := interaction.ToolDisplay{ID: "write-1", Name: "write", Detail: "literal~@.go", Content: "package main\n", HasContent: true}
 	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: tool})
 	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: tool.ID, Failed: true}})
-	if len(m.entries) != 2 || !m.entries[1].toolError || m.entries[1].toolPreparing {
+	if len(m.entries) != 2 || m.entries[1].toolState != toolFailed {
 		t.Fatalf("execution did not reconcile preview: %+v", m.entries)
 	}
 	if !strings.Contains(ansi.Strip(m.transcriptView()), "literal~@.go") {
@@ -134,7 +134,7 @@ func TestWritePreviewCallsRemainIndependent(t *testing.T) {
 		if e.kind != entryTool {
 			continue
 		}
-		if !e.toolPreparing || e.toolDone {
+		if e.toolState != toolPreparing {
 			t.Fatal("preview claimed execution without execution events")
 		}
 		if !strings.Contains(ansi.Strip(e.writePreview.contentView(80, false).view), e.toolID) {

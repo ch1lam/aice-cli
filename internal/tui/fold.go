@@ -170,7 +170,7 @@ func (m *model) foldedToolItems(index int) []transcriptItem {
 	target := foldTarget{kind: foldTool, id: index}
 	entry.toolExpanded = m.foldExpanded(target)
 	animation := ""
-	if !entry.toolDone && !entry.toolPreparing {
+	if entry.toolState == toolRunning {
 		animation = m.spinner.View()
 	}
 	version := struct {
