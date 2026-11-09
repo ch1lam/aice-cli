@@ -85,7 +85,7 @@ func TestToolEvidenceViewEscapesAndClips(t *testing.T) {
 	if toolEvidenceView(interaction.EvidenceDisplay{}, 60) != "" {
 		t.Fatal("empty evidence rendered")
 	}
-	entry := transcriptEntry{kind: entryTool, toolName: "web_search", toolDetail: "query", toolDone: true, toolOutput: interaction.ToolOutputDisplay{Text: "results", Available: true}, toolEvidence: &display}
+	entry := transcriptEntry{kind: entryTool, toolName: "web_search", toolDetail: "query", toolState: toolSucceeded, toolOutput: interaction.ToolOutputDisplay{Text: "results", Available: true}, toolEvidence: &display}
 	m := newModel(nil, nil)
 	m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	if body := m.toolBodyView(entry); !strings.Contains(body, "2 sources") {

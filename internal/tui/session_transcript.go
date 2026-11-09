@@ -37,7 +37,7 @@ func (m *model) replaceTranscript(view *interaction.Transcript) {
 			e := transcriptEntry{
 				kind: entryTool, sourceID: item.ID, processID: m.activeProcessID,
 				toolID: tool.ID, toolName: tool.Name, toolDetail: sanitizeToolDetail(tool.Detail, tool.Name == "bash"), toolDescription: sanitizeSingleLineText(tool.Description),
-				toolDone: true, toolError: tool.Failed, toolOutput: tool.Output, toolDiff: tool.Diff, toolTruncation: tool.Truncation,
+				toolState: toolResult(tool.Failed), toolOutput: tool.Output, toolDiff: tool.Diff, toolTruncation: tool.Truncation,
 				toolEvidence: tool.Evidence, toolReview: tool.Review,
 			}
 			if tool.Name == "write" {

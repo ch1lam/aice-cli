@@ -401,9 +401,8 @@ func (m *model) resetBranchTranscript() {
 func (m *model) completeTool(tool interaction.ToolDisplay) {
 	for index := len(m.entries) - 1; index >= 0; index-- {
 		entry := &m.entries[index]
-		if entry.kind == entryTool && entry.toolID == tool.ID && !entry.toolDone {
-			entry.toolDone = true
-			entry.toolError = tool.Failed
+		if entry.kind == entryTool && entry.toolID == tool.ID && !entry.toolState.done() {
+			entry.toolState = toolResult(tool.Failed)
 			entry.toolTruncation = tool.Truncation
 			entry.toolEvidence = tool.Evidence
 			entry.toolReview = tool.Review
@@ -439,8 +438,8 @@ func (m *model) finishRun(err error) tea.Cmd {
 	m.updateActiveProcessDuration(time.Now())
 	// A tool whose end event never arrived did not complete; stop its spinner.
 	for i := range m.entries {
-		if e := &m.entries[i]; e.kind == entryTool && !e.toolDone && !e.toolPreparing {
-			e.toolDone, e.toolError = true, true
+		if e := &m.entries[i]; e.kind == entryTool && e.toolState == toolRunning {
+			e.toolState = toolFailed
 		}
 	}
 	m.run = runState{}

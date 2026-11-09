@@ -16,14 +16,13 @@ func (m model) toolHeaderView(entry transcriptEntry) string {
 func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 	icon := m.spinner.View()
 	style := infoStyle
-	if entry.toolPreparing {
+	switch entry.toolState {
+	case toolPreparing:
 		icon = "…"
-	}
-	if entry.toolDone {
+	case toolSucceeded:
 		icon, style = "✓", lipgloss.NewStyle().Foreground(successColor)
-		if entry.toolError {
-			icon, style = "✕", errorStyle
-		}
+	case toolFailed:
+		icon, style = "✕", errorStyle
 	}
 	nameStyle, detailStyle := toolNameStyle, mutedStyle
 	if hovered {
@@ -71,7 +70,7 @@ func (m model) toolHeaderStyled(entry transcriptEntry, hovered bool) string {
 		}
 		heading += tagStyle.Render(tag)
 	}
-	if entry.toolPreparing {
+	if entry.toolState == toolPreparing {
 		previewStyle := mutedStyle
 		if hovered {
 			previewStyle = transcriptHoverStyle
@@ -90,7 +89,7 @@ func toolHasPath(name string) bool {
 }
 
 func toolDiffStats(entry transcriptEntry) string {
-	if !entry.toolDone || entry.toolError || (entry.toolName != "edit" && entry.toolName != "write") {
+	if entry.toolState != toolSucceeded || (entry.toolName != "edit" && entry.toolName != "write") {
 		return ""
 	}
 	diff := entry.toolDiff
@@ -139,7 +138,7 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	if entry.toolOutput.Available {
 		body, limited := toolOutputSource(entry)
 		language := "text"
-		if entry.toolName == "read" && !entry.toolError {
+		if entry.toolName == "read" && entry.toolState != toolFailed {
 			language = toolCodeLanguage(entry.toolDetail)
 		}
 		// A mutation's short outcome belongs below its diff, not in a second panel.
@@ -158,13 +157,13 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 		if limited {
 			content.appendText(noticeStyle.Render("… output display limit reached (64 KiB / 2000 lines)"))
 		}
-	} else if entry.toolDone && content.view == "" {
+	} else if entry.toolState.done() && content.view == "" {
 		content.appendText(mutedStyle.Render("(output unavailable)"))
 	}
-	if entry.toolDone && entry.toolTruncation.Reason != "" {
+	if entry.toolState.done() && entry.toolTruncation.Reason != "" {
 		content.appendText(noticeStyle.Render(toolTruncationStatus(entry.toolTruncation)))
 	}
-	if entry.toolDone && entry.toolEvidence != nil {
+	if entry.toolState.done() && entry.toolEvidence != nil {
 		content.appendText(toolEvidenceView(*entry.toolEvidence, width))
 	}
 	if review := entry.toolReview; review != nil && review.Reason != "" && !review.Blocked {
@@ -177,7 +176,7 @@ func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 }
 
 func toolHasDiff(entry transcriptEntry) bool {
-	return entry.toolDone && !entry.toolError && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
+	return entry.toolState == toolSucceeded && (entry.toolDiff.Text != "" || entry.toolDiff.Truncated || entry.toolDiff.StatsKnown)
 }
 
 // renderBashDetail keeps the "$ " prompt muted while highlighting the shell

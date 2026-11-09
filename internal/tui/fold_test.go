@@ -15,9 +15,9 @@ func foldTestModel() model {
 	id := m.beginProcess()
 	m.entries = []transcriptEntry{
 		{kind: entryAssistant, processID: id, thinking: "REASONING_BODY", text: "Inspecting files", complete: true},
-		{kind: entryTool, processID: id, toolName: "skill", toolID: "skill-1", toolDetail: "golang-how-to", toolDone: true,
+		{kind: entryTool, processID: id, toolName: "skill", toolID: "skill-1", toolDetail: "golang-how-to", toolState: toolSucceeded,
 			toolOutput: interaction.ToolOutputDisplay{Text: "SKILL_BODY", Available: true}},
-		{kind: entryTool, processID: id, toolName: "read", toolID: "read-1", toolDetail: "README.md", toolDone: true,
+		{kind: entryTool, processID: id, toolName: "read", toolID: "read-1", toolDetail: "README.md", toolState: toolSucceeded,
 			toolOutput: interaction.ToolOutputDisplay{Text: "README_BODY", Available: true}},
 		{kind: entryAssistant, processID: id, text: "FINAL_ANSWER", complete: true, conclusion: true},
 	}
@@ -92,7 +92,7 @@ func TestManualFoldsSurviveStreamingConclusionAndNewCalls(t *testing.T) {
 
 func TestFoldedResultsUpdateWithoutFormattingHiddenBody(t *testing.T) {
 	m := foldTestModel()
-	m.entries[2].toolDone = false
+	m.entries[2].toolState = toolRunning
 	m.completeTool(interaction.ToolDisplay{ID: "read-1", Output: interaction.ToolOutputDisplay{Text: "LATEST_RESULT", Available: true}})
 	m.refreshViewport(false)
 	if strings.Contains(m.viewport.GetContent(), "LATEST_RESULT") {

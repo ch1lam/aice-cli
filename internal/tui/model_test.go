@@ -244,13 +244,13 @@ func TestModelProcessSpacingKeepsToolsTogether(t *testing.T) {
 			kind:      entryTool,
 			processID: processID,
 			toolName:  "FIRSTTOOL",
-			toolDone:  true,
+			toolState: toolSucceeded,
 		},
 		{
 			kind:      entryTool,
 			processID: processID,
 			toolName:  "SECONDTOOL",
-			toolDone:  true,
+			toolState: toolSucceeded,
 		},
 		{
 			kind:       entryAssistant,
@@ -1194,9 +1194,9 @@ func TestModelToolStatusUsesOnlySpinnerOrEmoji(t *testing.T) {
 		{
 			name: "done",
 			entry: transcriptEntry{
-				kind:     entryTool,
-				toolName: "read",
-				toolDone: true,
+				kind:      entryTool,
+				toolName:  "read",
+				toolState: toolSucceeded,
 			},
 			want:      "✓",
 			notWanted: "done",
@@ -1206,8 +1206,7 @@ func TestModelToolStatusUsesOnlySpinnerOrEmoji(t *testing.T) {
 			entry: transcriptEntry{
 				kind:      entryTool,
 				toolName:  "read",
-				toolDone:  true,
-				toolError: true,
+				toolState: toolFailed,
 			},
 			want:      "✕",
 			notWanted: "failed",
@@ -1260,7 +1259,7 @@ func TestModelCollapsedProcessHidesDetailsUntilExpanded(t *testing.T) {
 			processID:  processID,
 			toolName:   "bash",
 			toolDetail: command,
-			toolDone:   true,
+			toolState:  toolSucceeded,
 		},
 		{
 			kind:       entryAssistant,
@@ -2067,7 +2066,7 @@ func TestModelSessionChangeRebuildsBranchTranscript(t *testing.T) {
 	current.entries = []transcriptEntry{
 		{kind: entryUser, text: "first question"},
 		{kind: entryAssistant, text: "OLD_BRANCH_ANSWER", complete: true},
-		{kind: entryTool, toolName: "read", toolDone: true},
+		{kind: entryTool, toolName: "read", toolState: toolSucceeded},
 		{kind: entryUser, text: "/checkout turn-1"},
 		{kind: entryCommand, text: "Checked out Session entry turn-1. " +
 			"The next turn will branch from this point."},
@@ -2327,13 +2326,13 @@ func TestModelFinishRunSettlesToolsWithoutEndEvent(t *testing.T) {
 	current.run.kind = runPrompt
 	current.entries = []transcriptEntry{
 		{kind: entryTool, toolName: "read"},
-		{kind: entryTool, toolName: "write", toolPreparing: true, writePreview: &writePreview{}},
+		{kind: entryTool, toolName: "write", toolState: toolPreparing, writePreview: &writePreview{}},
 	}
 	current.finishRun(errors.New("recording failed"))
-	if running := current.entries[0]; !running.toolDone || !running.toolError {
+	if running := current.entries[0]; running.toolState != toolFailed {
 		t.Fatalf("unfinished tool = %+v, want settled as failed", running)
 	}
-	if preview := current.entries[1]; preview.toolDone || !preview.toolPreparing {
+	if preview := current.entries[1]; preview.toolState != toolPreparing {
 		t.Fatal("unexecuted write preview was marked as run")
 	}
 }

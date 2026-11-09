@@ -18,7 +18,7 @@ func TestTranscriptAlignmentAcrossFoldsAndWidths(t *testing.T) {
 			m.entries = []transcriptEntry{
 				{kind: entryUser, text: "USER_TEXT"},
 				{kind: entryAssistant, processID: id, thinking: "THINKING_TEXT", text: "PROGRESS_TEXT", complete: true},
-				{kind: entryTool, processID: id, toolName: "bash", toolDetail: "echo done", toolDone: true,
+				{kind: entryTool, processID: id, toolName: "bash", toolDetail: "echo done", toolState: toolSucceeded,
 					toolOutput: interaction.ToolOutputDisplay{Available: true, Text: "done"}},
 				{kind: entryAssistant, processID: id, text: "FINAL_TEXT", complete: true, conclusion: true},
 			}

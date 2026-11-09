@@ -17,7 +17,7 @@ func TestFoldHeadingsReuseReachedRowsAndLazyHover(t *testing.T) {
 	for range 100 {
 		m.entries = append(m.entries,
 			transcriptEntry{kind: entryAssistant, processID: id, thinking: "reasoning", complete: true},
-			transcriptEntry{kind: entryTool, processID: id, toolName: "read", toolDetail: "file.go", toolDone: true},
+			transcriptEntry{kind: entryTool, processID: id, toolName: "read", toolDetail: "file.go", toolState: toolSucceeded},
 		)
 	}
 	calls, hovers := map[int]int{}, map[int]int{}
@@ -98,7 +98,7 @@ func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
 		return got
 	}
 	check()
-	m.entries[2].toolDone = false
+	m.entries[2].toolState = toolRunning
 	m.spinner.Spinner = spinner.Spinner{Frames: []string{"SPIN_A", "SPIN_B"}}
 	before := check()
 	m.spinner, _ = m.spinner.Update(spinner.TickMsg{})
@@ -120,7 +120,7 @@ func TestFoldCachedHeadingsMatchFreshRenderingAfterUpdates(t *testing.T) {
 	check()
 	m.setFoldExpanded(foldTarget{kind: foldCalls, id: 1}, true)
 	check()
-	m.entries[2] = transcriptEntry{kind: entryTool, processID: 1, toolName: "write", toolPreparing: true, writePreview: &writePreview{}}
+	m.entries[2] = transcriptEntry{kind: entryTool, processID: 1, toolName: "write", toolState: toolPreparing, writePreview: &writePreview{}}
 	m.entries[2].writePreview.setContent(interaction.ToolDisplay{Content: "one\n", HasContent: true})
 	m.entries[2].toolPreviewRevision = m.entries[2].writePreview.revision
 	check()

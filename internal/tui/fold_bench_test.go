@@ -21,7 +21,7 @@ func BenchmarkFoldHistoryRefresh(b *testing.B) {
 			for range rounds {
 				m.entries = append(m.entries,
 					transcriptEntry{kind: entryAssistant, processID: id, thinking: "finished reasoning", complete: true},
-					transcriptEntry{kind: entryTool, processID: id, toolName: "read", toolDetail: "/workspace/internal/example.go", toolDone: true,
+					transcriptEntry{kind: entryTool, processID: id, toolName: "read", toolDetail: "/workspace/internal/example.go", toolState: toolSucceeded,
 						toolOutput: interaction.ToolOutputDisplay{Available: true, Text: output}},
 				)
 			}

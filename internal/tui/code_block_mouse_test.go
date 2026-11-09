@@ -74,7 +74,7 @@ func TestCodeButtonCopiesOriginalAcrossPresentations(t *testing.T) {
 				case "process":
 					item = m.transcriptEntryItem(0, e, false, transcriptConclusion)
 				case "tool":
-					e = transcriptEntry{kind: entryTool, toolName: "bash", toolDetail: strings.Repeat("long command ", 10), toolDone: true,
+					e = transcriptEntry{kind: entryTool, toolName: "bash", toolDetail: strings.Repeat("long command ", 10), toolState: toolSucceeded,
 						toolOutput: interaction.ToolOutputDisplay{Text: source, Available: true}}
 					item = m.transcriptEntryItem(0, e, false, transcriptStandalone)
 				case "preview":
