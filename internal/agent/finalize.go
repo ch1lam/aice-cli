@@ -12,9 +12,7 @@ import (
 // failure cleanup. A recorder failure is sticky: never retry it or append
 // later cleanup records.
 func (e *runExecution) finalize(ctx context.Context, runErr error) (Result, error) {
-	if errors.Is(context.Cause(ctx), ErrTimeBudget) && !errors.Is(runErr, ErrTimeBudget) {
-		runErr = errors.Join(runErr, ErrTimeBudget)
-	}
+	runErr = withTimeBudget(ctx, runErr)
 	result, finalizeErr := finalizeFailedResult(e.result, e.input.Model, runErr, e.takePendingInputs())
 	e.result = result
 	runErr = errors.Join(runErr, finalizeErr)
@@ -37,6 +35,14 @@ func (e *runExecution) finalize(ctx context.Context, runErr error) (Result, erro
 		}
 	}
 	return result, runErr
+}
+
+// withTimeBudget attributes a failure caused by the expired run time budget.
+func withTimeBudget(ctx context.Context, runErr error) error {
+	if errors.Is(context.Cause(ctx), ErrTimeBudget) && !errors.Is(runErr, ErrTimeBudget) {
+		return errors.Join(runErr, ErrTimeBudget)
+	}
+	return runErr
 }
 
 func finalizeFailedResult(
@@ -66,14 +72,9 @@ func finalizeFailedResult(
 		return result, fmt.Errorf("agent: validate failed prompt: %w", err)
 	}
 
-	message := llm.NewAssistantMessage(model)
-	message.Content = []llm.ContentPart{
-		llm.NewTextContent(terminalText).Part(),
-	}
-	message.StopReason = stopReason
-	message.ErrorMessage = terminalText
-	if err := message.Validate(); err != nil {
-		return result, fmt.Errorf("agent: construct terminal failure: %w", err)
+	message, err := terminalMessage(model, runErr)
+	if err != nil {
+		return result, err
 	}
 
 	turnNumber := 1
@@ -87,6 +88,21 @@ func finalizeFailedResult(
 		ToolResults: []llm.ToolResultMessage{},
 	})
 	return result, nil
+}
+
+// terminalMessage is the assistant message that records why a run failed.
+func terminalMessage(model llm.Model, runErr error) (llm.AssistantMessage, error) {
+	terminalText, stopReason := terminalFailure(runErr)
+	message := llm.NewAssistantMessage(model)
+	message.Content = []llm.ContentPart{
+		llm.NewTextContent(terminalText).Part(),
+	}
+	message.StopReason = stopReason
+	message.ErrorMessage = terminalText
+	if err := message.Validate(); err != nil {
+		return message, fmt.Errorf("agent: construct terminal failure: %w", err)
+	}
+	return message, nil
 }
 
 func needsAbortedTerminal(result Result, stopReason llm.StopReason) bool {
