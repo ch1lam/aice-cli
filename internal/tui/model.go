@@ -355,7 +355,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.settingsVisible() {
 			return m.handleSettings(message.message)
 		}
-		if m.sessionPicker != nil {
+		if m.sessionPickerVisible() {
 			return m.handleSessionPicker(message.message)
 		}
 		if m.composerInputEnabled() {
@@ -575,7 +575,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Component clocks are routed explicitly. Private paste replies arrive in
 	// inputComponentResult; unrelated messages never rebuild editor layout.
-	if _, ok := message.(cursor.BlinkMsg); ok && m.sessionPicker != nil {
+	if _, ok := message.(cursor.BlinkMsg); ok && m.sessionPickerVisible() {
 		return m.handleSessionPicker(message)
 	}
 	if _, ok := message.(cursor.BlinkMsg); ok && m.settingsVisible() {
@@ -585,7 +585,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() tea.View {
-	if m.guard.request != nil {
+	if m.inputContext().domain == inputGuard {
 		return m.terminalView(m.guardView(max(m.width-2*m.horizontalPadding(), 1)))
 	}
 	width := m.layoutWidth()
@@ -640,7 +640,7 @@ func (m model) terminalView(content string) tea.View {
 	view.ReportFocus = true
 	if m.settingsVisible() {
 		view.Cursor = settingsCursor
-	} else if m.sessionPicker != nil {
+	} else if m.sessionPickerVisible() {
 		view.Cursor = pickerCursor
 	} else if !m.secretEntry() && !m.authActive() && m.guard.request == nil && m.question == nil {
 		// Anchor the real terminal cursor on the composer caret. The IME

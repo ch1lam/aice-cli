@@ -91,9 +91,21 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 	if m.settingsVisible() {
 		return m.settingsPointer(message)
 	}
-	if m.sessionPicker != nil {
+	if m.sessionPickerVisible() {
 		if _, blurred := message.(tea.BlurMsg); !blurred {
 			return m.handleSessionPicker(message)
+		}
+	}
+	// The permission prompt replaces the conversation: only its own scrolling
+	// and focus loss apply; the hidden header, transcript and composer get none.
+	if m.inputContext().domain == inputGuard {
+		if wheel, ok := message.(tea.MouseWheelMsg); ok && (wheel.Button == tea.MouseWheelUp || wheel.Button == tea.MouseWheelDown) {
+			var command tea.Cmd
+			m.guard.viewport, command = m.guard.viewport.Update(wheel)
+			return m, command
+		}
+		if _, blurred := message.(tea.BlurMsg); !blurred {
+			return m, nil
 		}
 	}
 	switch message := message.(type) {
@@ -118,9 +130,6 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.Button == tea.MouseLeft {
 			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
 		}
-		if m.guard.request != nil {
-			return m, nil
-		}
 		if updated, command, handled := m.handleTranscriptMouseClick(message); handled {
 			return updated, command
 		}
@@ -130,9 +139,6 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.workspacePress = nil
 		}
 		m.contextPressed = false
-		if m.guard.request != nil {
-			return m, nil
-		}
 		if updated, command, handled := m.handleTranscriptMouseMotion(message); handled {
 			return updated, command
 		}
@@ -153,9 +159,6 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.contextShowFraction = m.contextFractionVisible()
 				m.contextHoverConfirmed = true
 			}
-			return m, nil
-		}
-		if m.guard.request != nil {
 			return m, nil
 		}
 		if updated, command, handled := m.handleTranscriptMouseRelease(message); handled {
@@ -184,11 +187,6 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		// Scrolling needs fresh items; a deferred gesture may have skipped
 		// their rebuild, so settle before moving the anchor.
 		m.settleDeferredViewport()
-		if m.guard.request != nil {
-			var command tea.Cmd
-			m.guard.viewport, command = m.guard.viewport.Update(message)
-			return m, command
-		}
 		// Scrolling changes only the transcript anchor. Routing wheel events
 		// through the composer also rebuilds its layout and completion state.
 		var command tea.Cmd

@@ -194,7 +194,7 @@ func (m model) sessionPickerPreviewView(l sessionPickerLayout) string {
 }
 
 func (m model) overlaySessionPicker(content string) (string, *tea.Cursor) {
-	if m.sessionPicker == nil {
+	if !m.sessionPickerVisible() {
 		return content, nil
 	}
 	l := m.sessionPickerLayout()
