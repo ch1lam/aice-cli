@@ -354,3 +354,33 @@ func TestMCPOwnerReplacementCancelsQueuedWorkAndClosesLateClient(t *testing.T) {
 		t.Fatal("replacement cleanup was not exactly once", err)
 	}
 }
+
+func TestMCPOwnerStatusFollowsLatestOperation(t *testing.T) {
+	c := ownerTestConfig(t, 1)
+	client := &mcpOwnedFixture{}
+	o, _ := newMCPOwner(c.MCP, ownerTestGuard(t), true, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) { return client, nil }, nil)
+	defer o.Close()
+	connection := o.Connections()["user:service0"]
+	ctx, cancel := context.WithCancel(t.Context())
+	client.list = func(context.Context) { cancel() }
+	if _, err := connection.Tools(ctx); err == nil {
+		t.Fatal("interrupted discovery succeeded")
+	}
+	call := func(err error) mcpState {
+		client.call = func(context.Context) (mcpclient.Result, error) { return mcpclient.Result{State: llm.ExecutionReturned}, err }
+		_, _ = connection.CallChecked(t.Context(), "read", json.RawMessage(`{}`), func(context.Context) error { return nil })
+		return o.Status()[0].State
+	}
+	if state := o.Status()[0].State; state != mcpFailed {
+		t.Fatalf("after failed discovery: %s", state)
+	}
+	if state := call(nil); state != mcpReady {
+		t.Fatalf("successful call left %s", state)
+	}
+	if state := call(mcpclient.ErrTransport); state != mcpFailed {
+		t.Fatalf("lost transport still %s", state)
+	}
+	if state := call(mcpclient.ErrProtocol); state != mcpFailed {
+		t.Fatalf("protocol error changed connection state to %s", state)
+	}
+}

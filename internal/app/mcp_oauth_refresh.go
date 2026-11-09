@@ -124,16 +124,6 @@ func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService
 	return nil
 }
 
-func (o *mcpOwner) recordAuthenticationFailure(s *mcpOwnedService, err error) {
-	if !mcpAuthenticationRejected(err) {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	s.authFailed = s.server.Settings.OAuth != nil
-	s.observe(mcpNeedsAuth, "MCP authentication was rejected; no operation was replayed")
-}
-
 func (b mcpBorrowedConnection) MCPSecrets() []string {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()

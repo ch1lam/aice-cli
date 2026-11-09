@@ -578,8 +578,30 @@ func (b mcpBorrowedConnection) CallChecked(ctx context.Context, name string, arg
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, fmt.Errorf("MCP connection unavailable; discover tools again")
 	}
 	result, err := client.CallChecked(operation, name, args, b.dispatchCheck(s, client, check))
-	b.owner.recordAuthenticationFailure(s, err)
+	b.owner.recordOutcome(s, client, err)
 	return result, err
+}
+
+// recordOutcome keeps the status on the latest operation over client: success
+// shows ready again, and a rejected or lost connection becomes visible. Nothing
+// reconnects; tool and protocol errors leave the connection state unchanged.
+func (o *mcpOwner) recordOutcome(s *mcpOwnedService, client mcpOwnedConnection, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if mcpAuthenticationRejected(err) {
+		s.authFailed = s.server.Settings.OAuth != nil
+		s.observe(mcpNeedsAuth, "MCP authentication was rejected; no operation was replayed")
+		return
+	}
+	if s.client != client {
+		return
+	}
+	switch {
+	case errors.Is(err, mcpclient.ErrTransport) || errors.Is(err, mcpclient.ErrClosed):
+		s.observe(mcpFailed, "MCP connection failed; remote details omitted")
+	case err == nil && s.status.State != mcpReady:
+		s.observe(mcpReady, "")
+	}
 }
 
 // MCPStatus returns only application-owned status text, never remote errors or

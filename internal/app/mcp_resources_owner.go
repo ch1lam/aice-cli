@@ -85,7 +85,7 @@ func (b mcpBorrowedConnection) ReadResourceChecked(ctx context.Context, uri stri
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, mcpclient.ErrUnsupported
 	}
 	result, err := resource.ReadResourceChecked(operation, uri, b.dispatchCheck(s, client, check))
-	b.owner.recordAuthenticationFailure(s, err)
+	b.owner.recordOutcome(s, client, err)
 	return result, err
 }
 
