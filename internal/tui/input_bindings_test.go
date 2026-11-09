@@ -86,7 +86,7 @@ func bindingTestModel(t *testing.T, state string) model {
 		case "side running":
 			thread.isRunning = true
 		case "side read-only":
-			thread.status = interaction.SideThreadReadOnly
+			thread.readOnlyWindow = true
 		case "side menu":
 			m.side.menu = &sideMenuState{}
 		case "side confirm":

@@ -35,12 +35,13 @@ type sideThreadEntry struct {
 }
 
 // sideThreadState is the presentation state for one registry thread. The
-// registry in internal/app owns lifecycle truth; this mirrors enough of it
-// to render the panel and route events.
+// registry in internal/app owns lifecycle truth; this mirrors only whether the
+// follow-up window closed. Running follows this TUI's own run stream
+// (isRunning), never the registry snapshot, which lags it.
 type sideThreadState struct {
 	id              uint64
 	title           string
-	status          interaction.SideThreadStatus
+	readOnlyWindow  bool
 	lastActiveAt    time.Time
 	updates         <-chan runUpdate
 	cancel          context.CancelFunc
@@ -138,7 +139,7 @@ func (t *sideThreadState) activeEntry() *sideThreadEntry {
 }
 
 func (t *sideThreadState) readOnly() bool {
-	return t != nil && t.status == interaction.SideThreadReadOnly
+	return t != nil && t.readOnlyWindow
 }
 
 // sideFriendlyError translates expected registry failures into user-facing
@@ -185,7 +186,7 @@ func (m *model) reconcileSideThreads(snapshot []interaction.SideThread) bool {
 			}
 			continue
 		}
-		thread.status = info.Status
+		thread.readOnlyWindow = info.Status == interaction.SideThreadReadOnly
 		thread.lastActiveAt = info.LastActiveAt
 		thread.title = info.Title
 	}
@@ -315,7 +316,7 @@ func (m model) applyNewSideRunBatch(batch sideRunBatchMsg) (tea.Model, tea.Cmd) 
 			thread = &sideThreadState{
 				id:             info.ID,
 				title:          info.Title,
-				status:         info.Status,
+				readOnlyWindow: info.Status == interaction.SideThreadReadOnly,
 				lastActiveAt:   info.LastActiveAt,
 				updates:        batch.source,
 				entries:        []sideThreadEntry{{question: pending.question}},

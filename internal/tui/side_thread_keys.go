@@ -229,10 +229,10 @@ func (m model) openSideThreadPanel(info interaction.SideThread) (model, tea.Cmd,
 			return m.openNewSideComposer(), nil, true
 		}
 		thread = &sideThreadState{
-			id:           info.ID,
-			title:        info.Title,
-			status:       info.Status,
-			lastActiveAt: info.LastActiveAt,
+			id:             info.ID,
+			title:          info.Title,
+			readOnlyWindow: info.Status == interaction.SideThreadReadOnly,
+			lastActiveAt:   info.LastActiveAt,
 		}
 		m.side.threads[info.ID] = thread
 	}
