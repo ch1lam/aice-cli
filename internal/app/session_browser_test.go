@@ -210,11 +210,11 @@ func TestSessionResumePreservesCurrentOnFailureAndRestoresSources(t *testing.T) 
 	target.Close()
 	s.sideThreads = map[uint64]*sideThread{1: {id: 1}}
 	resume := interaction.CommandRequest{Name: "history", Arguments: "target"}
-	s.conversation.activeMainRun = &mainRunState{}
+	s.lifecycle.mainRunning = true
 	if _, err := s.RunSlashCommand(t.Context(), resume); !errors.Is(err, interaction.ErrSettingsRunning) {
 		t.Fatalf("switched during run: %v", err)
 	}
-	s.conversation.activeMainRun = nil
+	s.lifecycle.mainRunning = false
 	s.lifecycle.sideRunning = 1
 	if _, err := s.RunSlashCommand(t.Context(), resume); !errors.Is(err, interaction.ErrSettingsRunning) {
 		t.Fatalf("switched during side run: %v", err)

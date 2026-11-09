@@ -325,9 +325,6 @@ func (s *interactiveSession) compactHistory(
 	if err != nil {
 		return nil, err
 	}
-	s.conversation.historyLeaf, s.conversation.historyReady = leaf, true
-	s.conversation.historyMu.Lock()
-	s.conversation.history = history
-	s.conversation.historyMu.Unlock()
+	s.conversation.replaceHistory(history, leaf)
 	return llm.CloneAgentMessages(history)
 }

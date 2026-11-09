@@ -549,15 +549,8 @@ func (s *interactiveSession) slashNew(
 	if err := requireNoSlashCommandArguments(request); err != nil {
 		return "", err
 	}
-	s.conversation.historyMu.RLock()
-	active := s.conversation.activeMainRun != nil
-	s.conversation.historyMu.RUnlock()
-	if active {
-		return "", fmt.Errorf("app: cannot start a new Session while a response is running")
-	}
-	// Serialize with message appends the same way reloadHistory does. The
-	// active-run check above makes a concurrent commit impossible through
-	// the TUI, which only submits slash commands while idle.
+	// Serialize with message appends the same way reloadHistory does. /new
+	// runs under an idle settings reservation, so no main run can commit.
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.installStore(nil, nil, "", false)
