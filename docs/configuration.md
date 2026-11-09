@@ -377,6 +377,9 @@ a 128,000-token fallback context and 16,384-token output budget. These are local
 metadata defaults in [custom.go](../internal/provider/custom/custom.go), not
 capability discovery. Unsupported inputs/parameters surface as server errors;
 AICE does not strip them and retry. Missing pricing does not imply free usage.
+Servers that send a streamed tool call's `index` only on its first chunk are
+accepted: an index-less chunk continues the latest call unless it carries a
+different call ID.
 
 Model retries belong to the [Agent Loop](contracts.md#agent-loop); they are not
 an account-wide rate limiter. Subscription eligibility, quota and billing remain

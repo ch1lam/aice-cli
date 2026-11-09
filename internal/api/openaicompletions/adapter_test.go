@@ -1166,3 +1166,42 @@ func assertRequestBody(t *testing.T, body map[string]any) {
 		t.Errorf("tool parameters = %#v", functionDef["parameters"])
 	}
 }
+
+func TestAdapterToolCallChunksWithoutIndexContinueTheLatestCall(t *testing.T) {
+	t.Parallel()
+
+	chunk := func(call string) string {
+		return `{"id":"chatcmpl-5","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{"tool_calls":[` + call + `]},"finish_reason":null}],"usage":null}`
+	}
+	server := apitest.NewSSEServer(t, []string{
+		chunk(`{"id":"call-1","type":"function","function":{"name":"read","arguments":"{\"path\":"}}`),
+		chunk(`{"function":{"arguments":"\"a.go\"}"}}`),
+		chunk(`{"id":"call-2","type":"function","function":{"name":"read","arguments":"{\"path\":\"b.go\"}"}}`),
+		`{"id":"chatcmpl-5","object":"chat.completion.chunk","model":"m","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":null}`,
+		`[DONE]`,
+	})
+	defer server.Close()
+	adapter, err := openaicompletions.New(openaicompletions.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), llm.Request{
+		Model:    llm.Model{ID: "m", API: openaicompletions.API, Provider: "custom", MaxTokens: 4_096},
+		Messages: []llm.Message{llm.UserMessage{Role: llm.RoleUser, Content: []llm.ContentPart{llm.NewTextContent("Read both.").Part()}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer modelStream.Close()
+
+	events := apitest.CollectEvents(t, modelStream)
+	done := events[len(events)-1]
+	if done.Type != llm.EventTypeDone || done.Message == nil || len(done.Message.Content) != 2 {
+		t.Fatalf("done = %#v, want two tool calls", done)
+	}
+	for i, want := range []string{`{"path":"a.go"}`, `{"path":"b.go"}`} {
+		if call := done.Message.Content[i].ToolCall; call == nil || string(call.Arguments) != want {
+			t.Errorf("call %d = %#v, want arguments %s", i, call, want)
+		}
+	}
+}
