@@ -368,20 +368,57 @@ func settingEditText(field interaction.SettingField) string {
 	return field.Value.Text
 }
 
+// settingsMode is what the panel body, keys and wheel currently serve.
+type settingsMode uint8
+
+const (
+	settingsModeBrowse settingsMode = iota
+	settingsModeSearch
+	settingsModeAction     // a multi-step action form
+	settingsModeCollection // a list or contexts editor
+	settingsModeInfo       // read-only details
+	settingsModeConfirmUnset
+	settingsModeChoice // a closed enum
+	settingsModeText
+)
+
+// mode projects the editor fields; like inputContext it is never stored, so
+// every consumer applies the same priority.
+func (p *settingsPanel) mode() settingsMode {
+	switch {
+	case p.action != nil:
+		return settingsModeAction
+	case p.collection != nil:
+		return settingsModeCollection
+	case p.editing == nil && p.search:
+		return settingsModeSearch
+	case p.editing == nil:
+		return settingsModeBrowse
+	case p.editing.Kind == interaction.SettingInfo:
+		return settingsModeInfo
+	case p.confirmUnset:
+		return settingsModeConfirmUnset
+	case p.editing.Kind == interaction.SettingEnum && !p.editing.AllowCustom:
+		return settingsModeChoice
+	}
+	return settingsModeText
+}
+
 // hasDraft reports typed input that closing the panel would discard. Menus,
 // choice cursors and an unchanged editor are not drafts.
 func (p *settingsPanel) hasDraft() bool {
-	switch {
-	case p.saving || p.editing == nil:
-		return false
-	case p.collection != nil:
-		return p.collection.dirty || p.collection.editing
-	case p.action != nil:
-		return p.input.Value() != ""
-	case p.confirmUnset || p.editing.Kind == interaction.SettingInfo || p.editing.Kind == interaction.SettingEnum && !p.editing.AllowCustom:
+	if p.saving {
 		return false
 	}
-	return p.input.Value() != settingEditText(*p.editing)
+	switch p.mode() {
+	case settingsModeCollection:
+		return p.collection.dirty || p.collection.editing
+	case settingsModeAction:
+		return p.input.Value() != ""
+	case settingsModeText:
+		return p.input.Value() != settingEditText(*p.editing)
+	}
+	return false
 }
 
 func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -396,10 +433,11 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.requestRunCancellation()
 			return m, nil
 		}
-		if p.action != nil {
+		mode := p.mode()
+		if mode == settingsModeAction {
 			return m.settingActionKey(key)
 		}
-		if p.collection != nil && !p.saving {
+		if mode == settingsModeCollection && !p.saving {
 			return m.collectionKey(key)
 		}
 		if name == "esc" {
@@ -428,47 +466,45 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 		if p.saving {
 			return m, nil
 		}
-		if p.editing != nil {
-			field := p.editing
-			if field.Kind == interaction.SettingInfo {
-				switch name {
-				case "up":
-					p.detailOffset = max(0, p.detailOffset-1)
-				case "down":
-					p.detailOffset++
-				case "pgdown":
-					p.detailOffset += p.layout.bodyHeight
-				case "pgup":
-					p.detailOffset = max(0, p.detailOffset-p.layout.bodyHeight)
-				}
-				return m, nil
+		field := p.editing
+		switch mode {
+		case settingsModeInfo:
+			switch name {
+			case "up":
+				p.detailOffset = max(0, p.detailOffset-1)
+			case "down":
+				p.detailOffset++
+			case "pgdown":
+				p.detailOffset += p.layout.bodyHeight
+			case "pgup":
+				p.detailOffset = max(0, p.detailOffset-p.layout.bodyHeight)
 			}
-			if p.confirmUnset {
-				if name == "enter" {
-					changes := []interaction.SettingChange{{ID: field.ID, Unset: true}}
-					if len(field.ResetIDs) > 0 {
-						changes = nil
-						for _, id := range field.ResetIDs {
-							changes = append(changes, interaction.SettingChange{ID: id, Unset: true})
-						}
-					}
-					return m, m.submitSettings(changes)
-				}
-				return m, nil
-			}
-			if field.Kind == interaction.SettingEnum && !field.AllowCustom {
-				switch name {
-				case "up":
-					p.choice = clampIndex(p.choice-1, len(field.Choices))
-				case "down":
-					p.choice = clampIndex(p.choice+1, len(field.Choices))
-				case "enter":
-					if len(field.Choices) > 0 {
-						return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: interaction.SettingValue{Kind: field.Kind, Text: field.Choices[p.choice].Value}})
+			return m, nil
+		case settingsModeConfirmUnset:
+			if name == "enter" {
+				changes := []interaction.SettingChange{{ID: field.ID, Unset: true}}
+				if len(field.ResetIDs) > 0 {
+					changes = nil
+					for _, id := range field.ResetIDs {
+						changes = append(changes, interaction.SettingChange{ID: id, Unset: true})
 					}
 				}
-				return m, nil
+				return m, m.submitSettings(changes)
 			}
+			return m, nil
+		case settingsModeChoice:
+			switch name {
+			case "up":
+				p.choice = clampIndex(p.choice-1, len(field.Choices))
+			case "down":
+				p.choice = clampIndex(p.choice+1, len(field.Choices))
+			case "enter":
+				if len(field.Choices) > 0 {
+					return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: interaction.SettingValue{Kind: field.Kind, Text: field.Choices[p.choice].Value}})
+				}
+			}
+			return m, nil
+		case settingsModeText:
 			if name == "enter" {
 				value := interaction.SettingValue{Kind: field.Kind}
 				var err error
@@ -486,7 +522,7 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: value})
 			}
-		} else {
+		case settingsModeBrowse, settingsModeSearch:
 			switch name {
 			case "tab", "shift+tab", "ctrl+right", "ctrl+left":
 				delta := 1
