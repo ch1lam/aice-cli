@@ -55,7 +55,7 @@ func (b mcpBorrowedConnection) Resources(ctx context.Context) (mcpclient.Catalog
 	}
 	if err != nil {
 		if !errors.Is(err, mcpclient.ErrUnsupported) {
-			s.status.State, s.status.Detail = mcpFailureStatus(err)
+			s.observe(mcpFailureStatus(err))
 			s.authFailed = s.server.Settings.OAuth != nil && mcpAuthenticationRejected(err)
 		}
 		return catalog, err
@@ -64,10 +64,11 @@ func (b mcpBorrowedConnection) Resources(ctx context.Context) (mcpclient.Catalog
 		return mcpclient.Catalog[mcpclient.Resource]{}, fmt.Errorf("MCP resources changed during discovery")
 	}
 	catalog.Generation = o.resourceGenerationLocked(s)
-	s.status.State, s.status.Detail = "ready", ""
+	detail := ""
 	if !catalog.Complete {
-		s.status.Detail = "MCP resource catalog is incomplete"
+		detail = "MCP resource catalog is incomplete"
 	}
+	s.observe(mcpReady, detail)
 	return catalog, nil
 }
 func (b mcpBorrowedConnection) ReadResourceChecked(ctx context.Context, uri string, check func(context.Context) error) (mcpclient.Result, error) {

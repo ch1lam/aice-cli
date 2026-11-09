@@ -40,7 +40,8 @@ func (o *mcpOwner) approveIfNeeded(ctx context.Context, s *mcpOwnedService) erro
 	o.approvalMu.Lock()
 	defer o.approvalMu.Unlock()
 	o.mu.Lock()
-	pending := o.policyLocked(s) != nil && s.status.State == "needs_approval"
+	state, _ := o.blockLocked(s)
+	pending := state == mcpNeedsApproval
 	server := s.server
 	o.mu.Unlock()
 	if !pending {
@@ -60,7 +61,6 @@ func (o *mcpOwner) approveIfNeeded(ctx context.Context, s *mcpOwnedService) erro
 		decisions = o.approved
 	}
 	decisions[server.Key] = server.Fingerprint
-	_ = o.policyLocked(s) // publish the resulting status
 	return nil
 }
 

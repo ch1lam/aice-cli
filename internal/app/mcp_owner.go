@@ -32,11 +32,28 @@ func openMCPConnection(ctx context.Context, configuration mcpclient.Config) (mcp
 	return client, err
 }
 
+// mcpState is a service status shown to users and models. Connection states
+// are observed and stored; disabled, needs_approval and policy needs_auth are
+// derived on read by blockLocked, so a policy that passes again stops showing.
+type mcpState string
+
+const (
+	mcpDisconnected  mcpState = "disconnected"
+	mcpConnecting    mcpState = "connecting"
+	mcpReady         mcpState = "ready"
+	mcpFailed        mcpState = "failed"
+	mcpNeedsAuth     mcpState = "needs_auth"
+	mcpNeedsApproval mcpState = "needs_approval"
+	mcpDisabled      mcpState = "disabled"
+)
+
 type mcpServiceStatus struct {
-	Key, State, Detail string
-	ToolCount          int
-	CatalogKnown       bool
-	EligibleTools      int
+	Key           string
+	State         mcpState
+	Detail        string
+	ToolCount     int
+	CatalogKnown  bool
+	EligibleTools int
 }
 
 type mcpOwnedService struct {
@@ -50,7 +67,14 @@ type mcpOwnedService struct {
 	revoked                                      bool
 	authFailed                                   bool
 	secrets                                      []string
-	status                                       mcpServiceStatus
+	// status holds the last observed connection outcome; see observe.
+	status mcpServiceStatus
+}
+
+// observe records a connection outcome. It is the only writer of the stored
+// state; callers hold the owner mutex.
+func (s *mcpOwnedService) observe(state mcpState, detail string) {
+	s.status.State, s.status.Detail = state, detail
 }
 
 // mcpOwner owns transport reuse across runs, not tool selection. Construction,
@@ -95,7 +119,6 @@ func newMCPOwner(configuration config.MCPConfig, gate *guard.Guard, yolo bool, o
 			}
 			return nil, err
 		}
-		o.permissionLocked(service)
 	}
 	return o, nil
 }
@@ -122,7 +145,7 @@ func (o *mcpOwner) snapshot() (config.MCPConfig, map[string]mcpCatalogConnection
 
 func newMCPOwnedService(server config.MCPServer) *mcpOwnedService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &mcpOwnedService{server: server, secrets: mcpConnectionSecrets(server), gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, resourceGeneration: 1, status: mcpServiceStatus{Key: server.Key, State: "disconnected"}}
+	return &mcpOwnedService{server: server, secrets: mcpConnectionSecrets(server), gate: make(chan struct{}, 1), ctx: ctx, cancel: cancel, generation: 1, resourceGeneration: 1, status: mcpServiceStatus{Key: server.Key, State: mcpDisconnected}}
 }
 
 // reconfigure is an idle settings publication. Unchanged services retain their
@@ -174,7 +197,6 @@ func (o *mcpOwner) reconfigure(configuration config.MCPConfig, reconnect ...stri
 			service.cancel()
 			err = errors.Join(err, bindErr)
 		}
-		o.permissionLocked(service)
 	}
 	o.mu.Unlock()
 	for _, client := range clients {
@@ -193,51 +215,67 @@ func (o *mcpOwner) Status() []mcpServiceStatus {
 	for _, key := range o.configuration.ServerKeys() {
 		s := o.services[key]
 		o.generationLocked(s)
-		o.permissionLocked(s)
-		result = append(result, s.status)
+		result = append(result, o.statusLocked(s))
 	}
 	return result
 }
 
-// policyLocked checks connection authorization independently of expiry and tool
-// grants. --yolo skips only Ask, never configuration or explicit user denies.
-func (o *mcpOwner) policyLocked(s *mcpOwnedService) error {
-	state, detail := "", ""
+// statusLocked overlays the current policy and credential blocks on the
+// observed connection state. It never changes the service.
+func (o *mcpOwner) statusLocked(s *mcpOwnedService) mcpServiceStatus {
+	status := s.status
+	if state, detail := o.blockLocked(s); state != "" {
+		status.State, status.Detail, status.CatalogKnown = state, detail, false
+	} else if err := o.expiryLocked(s); err != nil {
+		status.State, status.Detail = mcpNeedsAuth, err.Error()
+	}
+	return status
+}
+
+// blockLocked reports why connection authorization forbids work now,
+// independently of expiry and tool grants. --yolo skips only Ask, never
+// configuration or explicit user denies.
+func (o *mcpOwner) blockLocked(s *mcpOwnedService) (mcpState, string) {
 	switch {
 	case o.closed:
-		state, detail = "disconnected", "MCP owner is closed"
+		return mcpDisconnected, "MCP owner is closed"
 	case s.revoked || !o.configuration.ServerAllowed(s.server.Key):
-		state, detail = "disabled", "MCP service is disabled or revoked"
+		return mcpDisabled, "MCP service is disabled or revoked"
 	case !o.guard.MCPServiceAvailable(s.server.Source.Kind+":"+s.server.Source.Location, s.server.ID, s.server.Fingerprint, mcpPermissionScope(o.configuration, s.server.Key)):
-		state, detail = "disabled", "MCP service policy changed"
+		return mcpDisabled, "MCP service policy changed"
 	case o.configuration.ConnectionDecision(s.server.Key) == config.MCPConnectionDeny:
-		state, detail = "disabled", "MCP connection is denied"
+		return mcpDisabled, "MCP connection is denied"
 	case len(s.server.MissingValues) > 0:
-		state, detail = "needs_auth", "MCP connection values are missing"
+		return mcpNeedsAuth, "MCP connection values are missing"
 	case s.authFailed:
-		state, detail = "needs_auth", "MCP OAuth refresh or authentication failed; inspect credentials and explicitly reconnect or log in"
+		return mcpNeedsAuth, "MCP OAuth refresh or authentication failed; inspect credentials and explicitly reconnect or log in"
 	case o.declined[s.server.Key] == s.server.Fingerprint:
-		state, detail = "disabled", "MCP connection was declined while AICE is running"
+		return mcpDisabled, "MCP connection was declined while AICE is running"
 	case !o.yolo && o.configuration.ConnectionDecision(s.server.Key) != config.MCPConnectionAllow && o.approved[s.server.Key] != s.server.Fingerprint:
-		state, detail = "needs_approval", "MCP connection needs approval; interactive runs ask on first use"
+		return mcpNeedsApproval, "MCP connection needs approval; interactive runs ask on first use"
 	}
-	if state == "" {
-		return nil
+	return "", ""
+}
+
+func (o *mcpOwner) policyLocked(s *mcpOwnedService) error {
+	if state, detail := o.blockLocked(s); state != "" {
+		return errors.New(detail)
 	}
-	s.status.State, s.status.Detail = state, detail
-	s.status.CatalogKnown = false
-	return errors.New(detail)
+	return nil
+}
+
+func (o *mcpOwner) expiryLocked(s *mcpOwnedService) error {
+	if s.server.OAuthTokenExpired(time.Now()) {
+		return errors.New("MCP OAuth token has expired; refresh is checked before authorized work")
+	}
+	return nil
 }
 
 func (o *mcpOwner) permissionLocked(s *mcpOwnedService) error {
 	if err := o.policyLocked(s); err != nil {
 		return err
 	}
-	if s.server.OAuthTokenExpired(time.Now()) {
-		s.status.State, s.status.Detail = "needs_auth", "MCP OAuth token has expired; refresh is checked before authorized work"
-		return errors.New(s.status.Detail)
-	}
-	return nil
+	return o.expiryLocked(s)
 }
 
 func (o *mcpOwner) begin(ctx context.Context, s *mcpOwnedService) (*mcpOwnedService, context.Context, func(), error) {
@@ -297,12 +335,12 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 		return client, nil
 	}
 	if o.slots >= 8 {
-		s.status.State, s.status.Detail = "disconnected", "MCP connection limit reached (8); disconnect another service"
+		s.observe(mcpDisconnected, "MCP connection limit reached (8); disconnect another service")
 		o.mu.Unlock()
 		return nil, fmt.Errorf("MCP connection limit reached")
 	}
 	o.slots++
-	s.status.State, s.status.Detail = "connecting", ""
+	s.observe(mcpConnecting, "")
 	o.mu.Unlock()
 	_, headers := s.server.ConnectionValues()
 	configuration := mcpclient.Config{ConnectTimeout: s.server.ConnectTimeout, CallTimeout: s.server.CallTimeout, Elicit: mcpElicit(s.server.Key)}
@@ -337,7 +375,7 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	}
 	if err != nil {
 		if o.permissionLocked(s) == nil {
-			s.status.State, s.status.Detail = mcpFailureStatus(err)
+			s.observe(mcpFailureStatus(err))
 			s.authFailed = s.server.Settings.OAuth != nil && mcpAuthenticationRejected(err)
 		}
 		o.mu.Unlock()
@@ -356,7 +394,7 @@ func (o *mcpOwner) ensure(ctx context.Context, s *mcpOwnedService) (mcpOwnedConn
 	if resource, ok := client.(mcpResourceConnection); ok {
 		s.clientResourceGeneration = resource.ResourceGeneration()
 	}
-	s.status.State, s.status.Detail = "ready", ""
+	s.observe(mcpReady, "")
 	o.mu.Unlock()
 	return client, nil
 }
@@ -379,16 +417,15 @@ func mcpLaunchReady(server config.MCPServer) error {
 	return nil
 }
 
-func mcpFailureStatus(err error) (string, string) {
+func mcpFailureStatus(err error) (mcpState, string) {
 	var launch mcpLaunchError
 	if errors.As(err, &launch) {
-		return "failed", launch.reason
+		return mcpFailed, launch.reason
 	}
-	var httpError *mcpclient.HTTPError
-	if errors.As(err, &httpError) && (httpError.StatusCode == 401 || httpError.StatusCode == 403) {
-		return "needs_auth", "MCP authentication is required or was rejected"
+	if mcpAuthenticationRejected(err) {
+		return mcpNeedsAuth, "MCP authentication is required or was rejected"
 	}
-	return "failed", "MCP connection or discovery failed; remote details omitted"
+	return mcpFailed, "MCP connection or discovery failed; remote details omitted"
 }
 
 func (o *mcpOwner) generationLocked(s *mcpOwnedService) uint64 {
@@ -435,8 +472,7 @@ func (o *mcpOwner) retireLocked(s *mcpOwnedService) mcpOwnedConnection {
 	o.guard.RevokeMCPService(s.server.Source.Kind+":"+s.server.Source.Location, s.server.ID)
 	client := s.client
 	s.client = nil
-	s.status.State, s.status.Detail, s.status.ToolCount = "disabled", "MCP service was revoked", 0
-	s.status.CatalogKnown, s.status.EligibleTools = false, 0
+	s.status.ToolCount, s.status.CatalogKnown, s.status.EligibleTools = 0, false, 0
 	return client
 }
 
@@ -501,12 +537,12 @@ func (b mcpBorrowedConnection) Tools(ctx context.Context) (mcpclient.Catalog[mcp
 		return mcpclient.Catalog[mcpclient.Tool]{}, policyErr
 	}
 	if errors.Is(err, mcpclient.ErrUnsupported) {
-		s.status.State, s.status.Detail = "ready", "MCP service does not advertise tools"
+		s.observe(mcpReady, "MCP service does not advertise tools")
 		s.status.CatalogKnown, s.status.ToolCount, s.status.EligibleTools = true, 0, 0
 		return catalog, err
 	}
 	if err != nil {
-		s.status.State, s.status.Detail = mcpFailureStatus(err)
+		s.observe(mcpFailureStatus(err))
 		s.authFailed = s.server.Settings.OAuth != nil && mcpAuthenticationRejected(err)
 		s.status.CatalogKnown = false
 		return catalog, err
@@ -515,15 +551,16 @@ func (b mcpBorrowedConnection) Tools(ctx context.Context) (mcpclient.Catalog[mcp
 		return mcpclient.Catalog[mcpclient.Tool]{}, fmt.Errorf("MCP connection changed during discovery")
 	}
 	catalog.Generation = o.generationLocked(s)
-	s.status.State, s.status.Detail, s.status.ToolCount = "ready", "", len(catalog.Items)
-	s.status.CatalogKnown, s.status.EligibleTools = catalog.Complete, 0
+	detail := ""
+	if !catalog.Complete {
+		detail = "MCP catalog is incomplete"
+	}
+	s.observe(mcpReady, detail)
+	s.status.ToolCount, s.status.CatalogKnown, s.status.EligibleTools = len(catalog.Items), catalog.Complete, 0
 	for _, remote := range catalog.Items {
 		if o.configuration.ToolAllowed(s.server.Key, remote.Name) {
 			s.status.EligibleTools++
 		}
-	}
-	if !catalog.Complete {
-		s.status.Detail = "MCP catalog is incomplete"
 	}
 	return catalog, nil
 }
@@ -550,9 +587,8 @@ func (b mcpBorrowedConnection) CallChecked(ctx context.Context, name string, arg
 func (b mcpBorrowedConnection) MCPStatus() string {
 	b.owner.mu.Lock()
 	defer b.owner.mu.Unlock()
-	s := b.service
-	b.owner.permissionLocked(s)
-	return s.status.State + ": " + s.status.Detail
+	status := b.owner.statusLocked(b.service)
+	return string(status.State) + ": " + status.Detail
 }
 
 // A required connection need not expose tools (resource-only services are valid).
