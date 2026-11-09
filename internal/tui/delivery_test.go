@@ -18,10 +18,10 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	t.Parallel()
 
 	current := testModel(t, 80, 24)
-	current.running = true
-	current.acceptsDelivery = true
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{}
 	var delivered []interaction.Delivery
-	current.activeRun = &activeRunFunc{deliver: func(delivery interaction.Delivery) error {
+	current.run.active = &activeRunFunc{deliver: func(delivery interaction.Delivery) error {
 		delivered = append(delivered, delivery)
 		return nil
 	}}
@@ -127,8 +127,8 @@ func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 	t.Parallel()
 
 	current := testModel(t, 80, 24)
-	current.running = true
-	current.acceptsDelivery = true
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{}
 	current.pendingDeliveries = []pendingDelivery{{
 		id:   "steer-1",
 		text: "focus on tests",
@@ -156,8 +156,8 @@ func TestModelFollowUpEventStartsNextInteractionWithoutStartingAnotherRun(t *tes
 	t.Parallel()
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
-	current.running = true
-	current.activeRun = &activeRunFunc{}
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{}
 	current.pendingDeliveries = []pendingDelivery{
 		{id: "steer-1", text: "late steer", mode: interaction.DeliveryKindSteer},
 		{id: "follow-up-1", text: "continue", mode: interaction.DeliveryKindFollowUp},
@@ -173,7 +173,7 @@ func TestModelFollowUpEventStartsNextInteractionWithoutStartingAnotherRun(t *tes
 	if !changed {
 		t.Fatal("follow-up event did not change presentation state")
 	}
-	if current.activeRun == nil {
+	if current.run.active == nil {
 		t.Fatal("follow-up event discarded the active run")
 	}
 	if len(current.pendingDeliveries) != 1 ||

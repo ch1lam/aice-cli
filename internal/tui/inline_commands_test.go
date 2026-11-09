@@ -44,7 +44,7 @@ func TestInlineSkillKeepsSurroundingDraftAndAttachments(t *testing.T) {
 		t.Fatal("cursor moved away from insertion point")
 	}
 	m, _, _ = m.submit()
-	if len(m.submittedInput.Skills) != 1 || !strings.Contains(m.submittedInput.Prompt, "literal @missing /help") {
+	if len(m.run.submitted.Skills) != 1 || !strings.Contains(m.run.submitted.Prompt, "literal @missing /help") {
 		t.Fatal("submission lost attachment or literal paste")
 	}
 	m.restoreSubmittedInput()
@@ -114,7 +114,7 @@ func TestInlineCommandsRestoreDraftAfterExecutionAndCancellation(t *testing.T) {
 			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 		} else {
 			m, _, _ = m.selectCommandMenuOption()
-			if !m.running {
+			if !m.run.running() {
 				t.Fatal("selected command did not execute")
 			}
 			m.finishRun(errors.New("simulated command failure"))
@@ -162,7 +162,7 @@ func TestSlashCompletionIgnoresLiteralTokensAndUsesCursor(t *testing.T) {
 func TestSkillCompletionWhileRunningAndDeliveryRollback(t *testing.T) {
 	t.Parallel()
 	m := skillComposer()
-	m.running, m.acceptsDelivery = true, true
+	m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
 	m.input.SetValue("follow up /review")
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if len(m.composerSkills()) != 1 {
@@ -183,7 +183,7 @@ func TestRunningNavigationWinsOverSkillDescriptionMatch(t *testing.T) {
 	m.commands = append(append(m.commands, panelCommands()...), btwSlashCommand(), interaction.Command{
 		Name: "skill:desktop-guide", SkillName: "desktop-guide", Description: "desktop settings btw",
 	})
-	m.running, m.acceptsDelivery = true, true
+	m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
 	m.readSettings = func(uint64) (tea.Cmd, context.CancelFunc) { return nil, func() {} }
 	for _, command := range []string{"/desktop", "/settings", "/btw"} {
 		m.input.SetValue(command)

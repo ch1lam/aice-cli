@@ -121,7 +121,7 @@ func TestCustomLoginShortcutDoesNotSkipMenus(t *testing.T) {
 			m := newModel(make(chan runRequest, 1), make(chan struct{}), customLoginCommand())
 			m = updateModel(t, m, tea.PasteMsg{Content: draft})
 			m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-			if cmd != nil || m.secretEntry() || m.running || !m.commandMenuOpen() ||
+			if cmd != nil || m.secretEntry() || m.run.running() || !m.commandMenuOpen() ||
 				len(m.flow.menus) != 1 || len(m.matchingCommandOptions()) != 0 {
 				t.Fatal("inline login bypassed the authentication menu")
 			}
@@ -145,7 +145,7 @@ func TestTypedSkillShortcutPreservesTaskAndAttachments(t *testing.T) {
 		len(request.files) != 1 || request.files[0] != "main.go" {
 		t.Fatalf("shortcut lost task or attachment: %+v", request)
 	}
-	if m.submittedDraft.text != "[skill:review] inspect @main.go\nand explain" {
+	if m.run.submittedDraft.text != "[skill:review] inspect @main.go\nand explain" {
 		t.Fatal("lost retry draft")
 	}
 }

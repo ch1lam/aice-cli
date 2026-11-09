@@ -31,7 +31,7 @@ func (m model) transcriptItems() []transcriptItem {
 	}
 	for index := 0; index < len(m.entries); {
 		e := m.entries[index]
-		active := m.running && index == m.assistantEntry && !e.complete
+		active := m.run.running() && index == m.assistantEntry && !e.complete
 		if e.processID == 0 {
 			if e.kind != entryAssistant || assistantHasContent(e, active, true, true) {
 				add(m.transcriptEntryItem(index, e, active, transcriptStandalone), 1)
@@ -48,7 +48,7 @@ func (m model) transcriptItems() []transcriptItem {
 		conclusion := -1
 		for i := start; i < end; i++ {
 			entry := m.entries[i]
-			live := m.running && i == m.assistantEntry && !entry.complete
+			live := m.run.running() && i == m.assistantEntry && !entry.complete
 			if entry.kind == entryAssistant && entry.conclusion {
 				conclusion = i
 				hasProcess = hasProcess || strings.TrimSpace(entry.thinking) != ""
@@ -71,7 +71,7 @@ func (m model) transcriptItems() []transcriptItem {
 		}
 		if conclusion >= 0 {
 			entry := m.entries[conclusion]
-			live := m.running && conclusion == m.assistantEntry && !entry.complete
+			live := m.run.running() && conclusion == m.assistantEntry && !entry.complete
 			if assistantHasContent(entry, live, false, true) {
 				if !hasProcess {
 					add(transcriptItem{key: start*16 + 4, version: g, render: func() string {

@@ -138,20 +138,18 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	finished := false
 	for _, update := range batch.updates {
 		if update.active != nil {
-			m.submittedInput = nil
-			m.submittedDraft = composerDraft{}
-			m.activeRun = update.active
-			m.acceptsDelivery = true
+			m.run.submitted, m.run.submittedDraft = nil, composerDraft{}
+			m.run.active = update.active
 		}
 		if update.cancel != nil {
-			m.cancelRun = update.cancel
-			if m.cancelRequested {
-				m.cancelRun()
+			m.run.cancel = update.cancel
+			if m.run.cancelRequested {
+				m.run.cancel()
 			} else {
 				m.status = "Thinking..."
 			}
 		}
-		if update.auth != nil && m.authActive() && !m.cancelRequested {
+		if update.auth != nil && m.authActive() && !m.run.cancelRequested {
 			prompt := *update.auth
 			m.flow.showPrompt(prompt)
 			m.input.Placeholder = prompt.Title
@@ -211,8 +209,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.commands = slashCommandCatalog(commands)
 		}
 		if update.done {
-			if p := m.sessionPicker; p != nil && p.restoring {
-				p.restoring = false
+			if p := m.sessionPicker; p != nil && m.restoringSession() {
 				if update.err != nil {
 					p.notice = update.err.Error()
 					p.previewFocused = false
@@ -241,7 +238,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	}
 	if batch.closed {
 		m.updates = nil
-		if m.running {
+		if m.run.running() {
 			m.restoreSubmittedInput()
 			commands = append(commands, m.finishRun(
 				errors.New("agent run ended without a terminal update"),
@@ -446,13 +443,9 @@ func (m *model) finishRun(err error) tea.Cmd {
 			e.toolDone, e.toolError = true, true
 		}
 	}
-	m.running = false
+	m.run = runState{}
 	m.restoreCommandDraftIfIdle()
-	m.acceptsDelivery = false
-	m.activeRun = nil
 	m.pendingDeliveries = nil
-	m.cancelRun = nil
-	m.cancelRequested = false
 	m.assistantEntry = -1
 	m.activeProcessID = 0
 	var focus tea.Cmd

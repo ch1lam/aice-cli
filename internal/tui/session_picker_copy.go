@@ -9,7 +9,7 @@ const sessionPickerCopyLabel = " ⧉ "
 
 func (m model) sessionPickerCopyVisible() bool {
 	p := m.sessionPicker
-	if p.previewID == "" || !p.previewVisible || p.rename != nil || p.restoring || m.width < 16 || m.height < 8 {
+	if p.previewID == "" || !p.previewVisible || p.rename != nil || m.restoringSession() || m.width < 16 || m.height < 8 {
 		return false
 	}
 	header, _ := sessionPreviewParts(p.previewText)

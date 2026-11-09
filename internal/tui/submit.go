@@ -51,26 +51,23 @@ func (m model) submit() (model, tea.Cmd, bool) {
 	}
 
 	input := interaction.RunInput{Prompt: prompt, Files: m.composerFiles(), Skills: m.composerSkills(), Images: interaction.CloneImages(m.composerImages())}
-	m.submittedDraft = m.captureComposerDraft()
+	draft := m.captureComposerDraft()
 	m.input.Reset()
 	m.pastes = nil
 	m.inputNotice = ""
 	m.commandSelection = 0
 	m.commandDismissed = false
-	return m.beginSubmittedRun(input)
+	return m.beginSubmittedRun(input, draft)
 }
 
-// Composer submission starts a run through this shared path.
-// Their callers own whether the current composer draft is consumed.
-func (m model) beginSubmittedRun(input interaction.RunInput) (model, tea.Cmd, bool) {
-	m.submittedInput = &input
+// beginSubmittedRun starts a prompt run; draft restores the composer if the
+// controller rejects it.
+func (m model) beginSubmittedRun(input interaction.RunInput, draft composerDraft) (model, tea.Cmd, bool) {
+	m.run = runState{kind: runPrompt, submitted: &input, submittedDraft: draft}
 	m.entries = append(m.entries, transcriptEntry{kind: entryUser, text: imageInputText(input.Prompt, len(input.Images))})
 	m.beginProcess()
 	m.pendingDeliveries = nil
-	m.activeRun = nil
-	m.acceptsDelivery = false
 	m.input.Focus()
-	m.running = true
 	m.assistantEntry = -1
 	m.status = "Starting response..."
 	return m.settleCommand(
@@ -175,9 +172,7 @@ func (m model) runCommandFlow(flow *commandFlow) (model, tea.Cmd, bool) {
 		return m.settleCommand(true, m.input.Focus())
 	}
 	m.input.Blur()
-	m.activeRun = nil
-	m.acceptsDelivery = false
-	m.running = true
+	m.run = runState{kind: runCommand}
 	m.assistantEntry = -1
 	request, name := flow.request, flow.command.Name
 	switch {
@@ -209,8 +204,6 @@ func (m model) openCommandMenu(
 	m.input.CursorEnd()
 	m.input.Focus()
 	m.commandDismissed = false
-	m.activeRun = nil
-	m.acceptsDelivery = false
 	return m.settleCommand(false, nil)
 }
 
@@ -298,7 +291,7 @@ func (m model) submitSecretInput() (model, tea.Cmd, bool) {
 	}
 	m.resetCommandInput()
 	m.input.Blur()
-	m.running = true
+	m.run = runState{kind: runCommand}
 	m.assistantEntry = -1
 	m.status = "Saving credential..."
 	if flow.customLogin() {

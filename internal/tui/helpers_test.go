@@ -86,3 +86,18 @@ func panelCommands() []interaction.Command {
 		{Name: "history", Panel: &interaction.Panel{View: interaction.PanelHistory}},
 	}
 }
+
+// runKindOf and activeOf build table-driven run states.
+func runKindOf(running bool) runKind {
+	if running {
+		return runPrompt
+	}
+	return runIdle
+}
+
+func activeOf(accepts bool) interaction.ActiveRun {
+	if accepts {
+		return &activeRunFunc{}
+	}
+	return nil
+}

@@ -76,7 +76,7 @@ func TestImageDraftRestoredWhenModelRejectsInput(t *testing.T) {
 	m, _, _ = m.submit()
 	updated, _ := m.applyRunBatch(runBatchMsg{closed: true, updates: []runUpdate{{done: true, err: errors.New("model does not support images")}}})
 	m = updated.(model)
-	if m.running || m.input.Value() != "[Image 1]keep this draft" || len(m.composerImages()) != 1 {
+	if m.run.running() || m.input.Value() != "[Image 1]keep this draft" || len(m.composerImages()) != 1 {
 		t.Fatal("rejection lost image draft")
 	}
 	if strings.Contains(m.transcriptView(), "keep this draft") {
@@ -92,9 +92,9 @@ func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 	for _, kind := range []interaction.DeliveryKind{interaction.DeliveryKindSteer, interaction.DeliveryKindFollowUp} {
 		t.Run(deliveryID(uint64(kind)), func(t *testing.T) {
 			m := newModel(make(chan runRequest), make(chan struct{}))
-			m.running, m.acceptsDelivery = true, true
+			m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
 			m.insertImagePlaceholder(composerTestImage(t))
-			m.activeRun = &activeRunFunc{deliver: func(input interaction.Delivery) error {
+			m.run.active = &activeRunFunc{deliver: func(input interaction.Delivery) error {
 				if len(input.Images) != 1 || input.Text != "" || input.Kind != kind {
 					t.Fatal("image-only delivery changed")
 				}
@@ -106,7 +106,7 @@ func TestImageSteeringAndFollowUpPreserveDraftOnRejection(t *testing.T) {
 			if len(m.composerImages()) != 1 || len(m.pendingDeliveries) != 0 || !strings.Contains(m.composerView(80), "images unsupported") {
 				t.Fatal("rejected image delivery was lost")
 			}
-			m.activeRun = &activeRunFunc{}
+			m.run.active = &activeRunFunc{}
 			m, command, _ = m.submitDelivery(kind)
 			m = updateModel(t, m, command())
 			if len(m.composerImages()) != 0 || len(m.pendingDeliveries) != 1 || !strings.Contains(m.pendingDeliveries[0].text, "[Image 1]") {
@@ -166,7 +166,7 @@ func TestTypingDuringClipboardReadIsNotDropped(t *testing.T) {
 		t.Fatal("clipboard read dropped typed caption")
 	}
 	m, command, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if command != nil || m.running || m.input.Value() != "x" {
+	if command != nil || m.run.running() || m.input.Value() != "x" {
 		t.Fatal("submitted before clipboard completed")
 	}
 	m = updateModel(t, m, clipboardResult{image: new(composerTestImage(t))})
@@ -177,7 +177,7 @@ func TestTypingDuringClipboardReadIsNotDropped(t *testing.T) {
 
 func TestImagePlaceholderEditingDuringRun(t *testing.T) {
 	m := newModel(make(chan runRequest), make(chan struct{}))
-	m.running, m.acceptsDelivery = true, true
+	m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
 	m.input.SetValue("before after")
 	m.input.SetCursorColumn(7)
 	m.insertImagePlaceholder(composerTestImage(t))

@@ -16,7 +16,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 			m := newModel(requests, make(chan struct{}))
 			m = updateModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 			m, command, _ := m.startApplicationSlashCommand("/login", interaction.CommandRequest{Name: "login", Arguments: "openai-codex", LoginMethod: method}, interaction.Command{Name: "login", SecretPrompt: "API key"})
-			if m.secretEntry() || !m.authActive() || !m.running {
+			if m.secretEntry() || !m.authActive() || !m.run.running() {
 				t.Fatal("account login fell into API key input")
 			}
 			command()
@@ -55,7 +55,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 				t.Fatal("login not cancelled")
 			}
 			m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{err: context.Canceled, done: true}}})
-			if m.authActive() || m.authPrompt() != nil || m.running || m.input.Value() != "" || !m.input.Focused() {
+			if m.authActive() || m.authPrompt() != nil || m.run.running() || m.input.Value() != "" || !m.input.Focused() {
 				t.Fatal("login state survived cancellation")
 			}
 			if strings.Contains(m.transcriptView(), prompt.Code) || m.entries[len(m.entries)-1].text != "Login cancelled" {
@@ -68,7 +68,7 @@ func TestAccountLoginInputIsTransientAndCancelled(t *testing.T) {
 func TestAccountLoginCancelBeforeControllerStarts(t *testing.T) {
 	m := newModel(make(chan runRequest, 1), make(chan struct{}))
 	m.flow = &commandFlow{input: make(chan string, 1)}
-	m.running = true
+	m.run.kind = runPrompt
 	m, _, _ = m.handleKey(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	cancelled := false
 	prompt := interaction.AuthPrompt{AllowInput: true}
@@ -150,7 +150,7 @@ func TestBrowserCommandPromptsAndTabMenu(t *testing.T) {
 		t.Fatal("browser input entered model history")
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true}}})
-	if m.running || m.authActive() {
+	if m.run.running() || m.authActive() {
 		t.Fatal("browser UI retained command state")
 	}
 }
@@ -160,7 +160,7 @@ func TestAuthMenuShortcutsRespectModifiersAndCancellation(t *testing.T) {
 
 	m := newModel(nil, nil)
 	m.flow = &commandFlow{input: make(chan string, 1)}
-	m.running = true
+	m.run.kind = runPrompt
 	m.flow.prompt = &interaction.AuthPrompt{Menu: &interaction.CommandMenu{
 		Options: []interaction.CommandOption{{Label: "First", Arguments: "first"}, {Label: "Second", Arguments: "second"}},
 	}}
@@ -185,7 +185,7 @@ func TestAuthInputHelpTracksPromptMode(t *testing.T) {
 
 	m := newModel(nil, nil)
 	m.flow = &commandFlow{input: make(chan string, 1)}
-	m.running = true
+	m.run.kind = runPrompt
 	if help := m.inputHelp(1000, true); strings.Contains(help, "submit") || strings.Contains(help, "newline") {
 		t.Fatalf("waiting command advertises text submission: %q", help)
 	}

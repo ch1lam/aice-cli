@@ -161,7 +161,7 @@ func TestHoverDoesNotFormatOffscreenOrCollapsedBodies(t *testing.T) {
 
 func TestFoldReadingPositionSurvivesRunCompletion(t *testing.T) {
 	m := foldTestModel()
-	m.running = true
+	m.run.kind = runPrompt
 	m.entries[2].toolOutput.Text = strings.Repeat("long output line\n", 100)
 	m = clickPainted(t, m, "✓ read")
 	before := paintedMouse(t, m, "✓ read")

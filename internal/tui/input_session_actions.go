@@ -31,7 +31,7 @@ func (m model) sessionInputBindings() []inputBinding {
 			save,
 		}
 	}
-	if p.restoring {
+	if m.restoringSession() {
 		return []inputBinding{actionBinding(inputActionSessionCancelRestore, "Esc", "cancel restore", "esc", "ctrl+c")}
 	}
 
@@ -49,7 +49,7 @@ func (m model) sessionInputBindings() []inputBinding {
 		bindings = append(bindings, sessionGroupInputBinding(group))
 	} else {
 		resume := actionBinding(inputActionSessionResume, "Enter", "resume", "enter")
-		resume.binding.SetEnabled(selected && item.Problem == "" && (item.current || (!m.running && !m.side.anyRunning())))
+		resume.binding.SetEnabled(selected && item.Problem == "" && (item.current || (!m.run.running() && !m.side.anyRunning())))
 		bindings = append(bindings, resume)
 	}
 	if m.inputContext().focus != inputFocusSearch {

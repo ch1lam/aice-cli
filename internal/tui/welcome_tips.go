@@ -122,7 +122,7 @@ func (tip *welcomeTip) advance(now time.Time) {
 }
 
 func (m model) welcomeTipsVisible() bool {
-	return len(m.entries) == 0 && !m.running && !m.side.isVisible && m.height >= 16
+	return len(m.entries) == 0 && !m.run.running() && !m.side.isVisible && m.height >= 16
 }
 
 func (m model) welcomeTipsView() string {

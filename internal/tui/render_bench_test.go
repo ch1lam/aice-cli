@@ -15,7 +15,7 @@ func BenchmarkThinkingRefresh(b *testing.B) {
 				m := newModel(nil, nil)
 				m.width = 120
 				m.height = 40
-				m.running = true
+				m.run.kind = runPrompt
 				m.resizeLayout()
 				id := m.beginProcess()
 				m.processGroups[0].collapsed = collapsed
@@ -35,7 +35,7 @@ func BenchmarkThinkingRefresh(b *testing.B) {
 
 func BenchmarkGuardWithLongTranscript(b *testing.B) {
 	m := newModel(nil, nil)
-	m.width, m.height, m.running = 190, 40, true
+	m.width, m.height, m.run.kind = 190, 40, runPrompt
 	m.resizeLayout()
 	id := m.beginProcess()
 	for range 50 {
@@ -66,7 +66,7 @@ func BenchmarkLongConversation(b *testing.B) {
 	for _, count := range []int{10, 100, 1000} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			m := newModel(nil, nil)
-			m.width, m.height, m.running = 120, 40, true
+			m.width, m.height, m.run.kind = 120, 40, runPrompt
 			m.resizeLayout()
 			id := m.beginProcess()
 			for range count {

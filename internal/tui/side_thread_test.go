@@ -409,10 +409,10 @@ func TestSideMenuWorksWhileMainRunActive(t *testing.T) {
 	manager := newFakeSideManager()
 	info := manager.fakeCreate("background thread")
 	current := sideTestModel(t, manager)
-	current.running = true
-	current.acceptsDelivery = true
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{}
 	mainDeliveries := 0
-	current.activeRun = &activeRunFunc{deliver: func(interaction.Delivery) error {
+	current.run.active = &activeRunFunc{deliver: func(interaction.Delivery) error {
 		mainDeliveries++
 		return errors.New("menu reached the main mailbox")
 	}}
@@ -439,7 +439,7 @@ func TestSideMenuWorksWhileMainRunActive(t *testing.T) {
 	if !updated.side.isVisible || updated.side.activeID != info.ID {
 		t.Fatalf("panel state = %#v, want thread %d", updated.side, info.ID)
 	}
-	if !updated.running {
+	if !updated.run.running() {
 		t.Fatal("opening the menu stopped the main run")
 	}
 }
@@ -1183,9 +1183,9 @@ func TestModelSideControlCClearsWithoutCancelling(t *testing.T) {
 	current, _, info, _ := createSideThread(t, current, "question", runUpdate{done: true})
 	current.input.SetValue("unsent follow-up")
 	current.side.activeThread().draft = "unsent follow-up"
-	current.running = true
+	current.run.kind = runPrompt
 	mainCancelled, sideCancelled := false, false
-	current.cancelRun = func() { mainCancelled = true }
+	current.run.cancel = func() { mainCancelled = true }
 	current.side.activeThread().cancel = func() { sideCancelled = true }
 	current, cmd, _ := current.handleKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if cmd != nil || mainCancelled || sideCancelled || !current.side.isVisible ||

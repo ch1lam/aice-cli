@@ -43,8 +43,8 @@ func TestCommandCompletionChangesLevelsWhileTyping(t *testing.T) {
 		t.Fatal("placeholder remains over an entered argument")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != "/thinking low" || m.running {
-		t.Fatalf("Tab should fill without execution: %q, running %v", m.input.Value(), m.running)
+	if m.input.Value() != "/thinking low" || m.run.running() {
+		t.Fatalf("Tab should fill without execution: %q, running %v", m.input.Value(), m.run.running())
 	}
 	for range len("low ") {
 		m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
@@ -99,13 +99,13 @@ func TestCommandCompletionExactValueWinsAndNoMatchDoesNotRun(t *testing.T) {
 			m = updateModel(t, m, tea.PasteMsg{Content: "/thinking " + tc.query})
 			m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 			if tc.want == "" {
-				if cmd != nil || m.running || m.input.Value() != "/thinking "+tc.query ||
+				if cmd != nil || m.run.running() || m.input.Value() != "/thinking "+tc.query ||
 					!strings.Contains(ansi.Strip(m.commandMenuView(80)), "No matching options") {
 					t.Fatal("unknown argument executed, lost the draft, or hid the empty result")
 				}
 				return
 			}
-			if cmd == nil || !m.running || !strings.Contains(m.status, "/thinking") {
+			if cmd == nil || !m.run.running() || !strings.Contains(m.status, "/thinking") {
 				t.Fatal("matching argument did not execute")
 			}
 
@@ -146,7 +146,7 @@ func TestCommandCompletionNestedFilterPreservesAction(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updateModel(t, m, tea.PasteMsg{Content: "rsk"})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
-	if m.input.Value() != "/login example" || m.running || m.secretEntry() {
+	if m.input.Value() != "/login example" || m.run.running() || m.secretEntry() {
 		t.Fatal("Tab unexpectedly executed the nested action")
 	}
 	m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -241,12 +241,12 @@ func TestSkillShortcutSelectionLeavesEditableDraft(t *testing.T) {
 				t.Fatal("skill absent from slash search")
 			}
 			m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tc.key})
-			if cmd != nil || m.running || len(requests) != 0 || m.input.Value() != prompt {
+			if cmd != nil || m.run.running() || len(requests) != 0 || m.input.Value() != prompt {
 				t.Fatalf("selection did not leave editable draft: %q", m.input.Value())
 			}
 			m = updateModel(t, m, tea.PasteMsg{Content: "检查本次改动"})
 			m, cmd, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-			if cmd == nil || !m.running {
+			if cmd == nil || !m.run.running() {
 				t.Fatal("explicit send did not start run")
 			}
 			cmd()
@@ -267,7 +267,7 @@ func TestSkillSelectionWinsOverExactManagementCommand(t *testing.T) {
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	m, cmd, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || m.running || m.input.Value() != "[skill:browser] " {
+	if cmd != nil || m.run.running() || m.input.Value() != "[skill:browser] " {
 		t.Fatal("Enter executed management command instead of selecting Skill")
 	}
 }

@@ -61,7 +61,7 @@ func TestSessionPickerCommandCannotBecomeSteering(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
 	m.closeSessionPicker()
-	m.running = true
+	m.run.kind = runPrompt
 	m.input.SetValue("/history")
 	m, command, _ := m.submitDelivery(interaction.DeliveryKindSteer)
 	if command != nil || m.input.Value() != "/history" || !strings.Contains(m.inputNotice, "Stop") || len(m.pendingDeliveries) != 0 {
@@ -157,11 +157,11 @@ func TestSessionPickerFailedRestoreKeepsConversation(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyRight})
 	next, _ := m.resumeSelectedSession()
 	m = next.(model)
-	if !m.running || !m.sessionPicker.restoring {
+	if !m.run.running() || !m.restoringSession() {
 		t.Fatal("resume did not dispatch")
 	}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, err: errors.New("session disappeared")}}})
-	if m.sessionPicker == nil || m.sessionPicker.restoring || m.running {
+	if m.sessionPicker == nil || m.restoringSession() || m.run.running() {
 		t.Fatal("failed restore left UI busy")
 	}
 	if m.input.Value() != "keep my draft" || len(m.entries) != 1 || m.entries[0].text != "original question" {
@@ -182,8 +182,7 @@ func TestSessionPickerFailedRestoreKeepsConversation(t *testing.T) {
 func TestSessionPickerRestoreInstallsHistoryAndClearsTransientState(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
-	m.sessionPicker.restoring = true
-	m.running = true
+	m.run.kind = runRestore
 	m.entries = []transcriptEntry{{kind: entryUser, text: "old question"}}
 	m.side.threads[1] = &sideThreadState{id: 1}
 	view := &interaction.Transcript{SessionID: "two", ResetSideThreads: true, Entries: []interaction.TranscriptEntry{
@@ -191,7 +190,7 @@ func TestSessionPickerRestoreInstallsHistoryAndClearsTransientState(t *testing.T
 		{Kind: interaction.TranscriptAssistant, ID: "assistant", Assistant: interaction.AssistantDisplay{Text: "restored answer", Concludes: true}},
 	}}
 	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{done: true, output: "Cleanup warning: fixture", state: &interaction.RuntimeState{SessionID: "two", Transcript: view}}}})
-	if m.sessionPicker != nil || m.running || m.input.Value() != "" || len(m.side.threads) != 0 {
+	if m.sessionPicker != nil || m.run.running() || m.input.Value() != "" || len(m.side.threads) != 0 {
 		t.Fatal("transient state survived switch")
 	}
 	if len(m.entries) != 3 || m.entries[0].sourceID != "user" || m.sessionID != "two" || m.entries[2].text != "Cleanup warning: fixture" {
@@ -253,7 +252,7 @@ func TestSessionPickerMovementKeepsPreviewAndCancelsOldWork(t *testing.T) {
 	// Pending search and preview must never gate Enter or Escape.
 	m.sessionPicker.loading = true
 	next, _ = m.resumeSelectedSession()
-	if !next.(model).sessionPicker.restoring {
+	if !next.(model).restoringSession() {
 		t.Fatal("loading blocked restore")
 	}
 }
@@ -389,9 +388,9 @@ func TestSessionPickerCloseButton(t *testing.T) {
 func TestSessionPickerCloseButtonCancelsRestore(t *testing.T) {
 	t.Parallel()
 	m := pickerModel(t, 100, 28)
-	m.sessionPicker.restoring, m.running = true, true
+	m.run.kind = runRestore
 	cancelled := false
-	m.cancelRun = func() { cancelled = true }
+	m.run.cancel = func() { cancelled = true }
 	mouse := findPainted(t, m, "✘")
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	m = updateModel(t, m, tea.MouseReleaseMsg(mouse))

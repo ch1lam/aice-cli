@@ -56,7 +56,7 @@ func bindingTestModel(t *testing.T, state string) model {
 	case "draft":
 		m.input.SetValue("question?")
 	case "running":
-		m.running, m.acceptsDelivery = true, true
+		m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
 	case "clipboard":
 		m.clipboardRead.pending = true
 	case "delivery":
@@ -115,7 +115,7 @@ func bindingTestModel(t *testing.T, state string) model {
 			m.openSessionTitleEditor()
 			m.sessionPicker.rename.saving = state == "saving"
 		case "restoring":
-			m.sessionPicker.restoring = true
+			m.run.kind = runRestore
 		}
 	case "reading", "directory":
 		previous := m
@@ -131,7 +131,7 @@ func TestCompletionHelpAndDispatchReplaceSendTogether(t *testing.T) {
 		t.Fatalf("completion help: %s", help)
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.running || len(m.input.files) != 1 {
+	if m.run.running() || len(m.input.files) != 1 {
 		t.Fatal("completion Enter sent instead of attaching")
 	}
 	if help := m.inputHelp(1000, true); strings.Contains(help, "attach") || !strings.Contains(help, "Enter send") {
@@ -140,7 +140,7 @@ func TestCompletionHelpAndDispatchReplaceSendTogether(t *testing.T) {
 	m = bindingTestModel(t, "pending file")
 	before := m.input.Value()
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if m.input.Value() != before || m.running {
+	if m.input.Value() != before || m.run.running() {
 		t.Fatal("pending completion Enter escaped to send")
 	}
 	if help := m.inputHelp(1000, true); strings.Contains(help, "attach") || strings.Contains(help, "Enter send") {

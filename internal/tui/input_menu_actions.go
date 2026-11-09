@@ -79,7 +79,7 @@ func (m model) commandInputBindings() []inputBinding {
 	bindings = append(bindings, menuMoveBindings(inputActionMenuMove)...)
 	for i := range bindings {
 		if bindings[i].action != inputActionMenuCancel {
-			bindings[i].binding.SetEnabled(!m.running && !m.deliveryPending && len(m.matchingCommandOptions()) > 0)
+			bindings[i].binding.SetEnabled(!m.run.running() && !m.deliveryPending && len(m.matchingCommandOptions()) > 0)
 		}
 	}
 	return bindings

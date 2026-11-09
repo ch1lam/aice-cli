@@ -38,7 +38,7 @@ func TestSessionGroupNavigationAndToggle(t *testing.T) {
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	group := m.sessionPicker.list.SelectedItem().(sessionGroupItem)
-	if group.name != "Today" || !group.collapsed || group.count != 2 || len(m.sessionPicker.list.Items()) != 5 || m.running {
+	if group.name != "Today" || !group.collapsed || group.count != 2 || len(m.sessionPicker.list.Items()) != 5 || m.run.running() {
 		t.Fatal("Enter did not collapse only the selected group")
 	}
 	if !strings.Contains(ansi.Strip(m.sessionPickerView()), "▸ Today 2") ||
@@ -113,7 +113,7 @@ func TestSessionGroupDoesNotLoadOrRestoreSession(t *testing.T) {
 	for _, key := range []rune{tea.KeyF2, tea.KeyF4, tea.KeyEnter} {
 		next, command = m.Update(tea.KeyPressMsg{Code: key})
 		m = next.(model)
-		if command != nil || m.running || m.sessionPicker.rename != nil || m.reading != nil {
+		if command != nil || m.run.running() || m.sessionPicker.rename != nil || m.reading != nil {
 			t.Fatal("group dispatched a session operation")
 		}
 	}

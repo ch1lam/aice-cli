@@ -58,7 +58,7 @@ func (m model) inputContext() inputContext {
 		p := m.sessionPicker
 		focus := inputFocusList
 		switch {
-		case p.restoring || p.rename != nil && p.rename.saving:
+		case m.restoringSession() || p.rename != nil && p.rename.saving:
 			focus = inputFocusWaiting
 		case p.rename != nil:
 			focus = inputFocusRename
@@ -78,7 +78,7 @@ func (m model) inputContext() inputContext {
 		return inputContext{domain: inputQuestion, focus: inputFocusEditor}
 	case m.authActive():
 		c := inputContext{domain: inputAuth, focus: inputFocusWaiting}
-		if prompt := m.flow.prompt; prompt != nil && !m.cancelRequested && !m.deliveryPending {
+		if prompt := m.flow.prompt; prompt != nil && !m.run.cancelRequested && !m.deliveryPending {
 			if prompt.Menu != nil {
 				c.focus = inputFocusList
 			} else if prompt.AllowInput {
@@ -99,11 +99,11 @@ func (m model) inputContext() inputContext {
 	case m.side.isVisible:
 		return inputContext{domain: inputSide, editor: !m.deliveryPending && m.sideComposerEditable()}
 	case m.secretEntry():
-		return inputContext{domain: inputSecret, editor: !m.deliveryPending && !m.running}
+		return inputContext{domain: inputSecret, editor: !m.deliveryPending && !m.run.running()}
 	case m.commandMenuOpen():
-		return inputContext{domain: inputCommand, focus: inputFocusList, editor: !m.deliveryPending && !m.running}
+		return inputContext{domain: inputCommand, focus: inputFocusList, editor: !m.deliveryPending && !m.run.running()}
 	default:
-		return inputContext{domain: inputMain, editor: !m.deliveryPending && (!m.running || m.acceptsDelivery)}
+		return inputContext{domain: inputMain, editor: !m.deliveryPending && (!m.run.running() || m.run.acceptsDelivery())}
 	}
 }
 

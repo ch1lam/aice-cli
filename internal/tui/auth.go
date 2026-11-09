@@ -11,10 +11,7 @@ import (
 func (m model) handleAuthAction(match inputActionMatch) (model, tea.Cmd, bool) {
 	switch match.action {
 	case inputActionAuthCancel:
-		m.cancelRequested = true
-		if m.cancelRun != nil {
-			m.cancelRun()
-		}
+		m.requestRunCancellation()
 		m.input.Reset()
 		m.input.Blur()
 		return m.settleCommand(false, nil)

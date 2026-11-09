@@ -237,7 +237,7 @@ func (m model) conversationInputBindings() []inputBinding {
 	}
 	if k.help.Enabled() || m.deliveryPending {
 		help := inputBinding{action: inputActionHelp, binding: k.help, short: true}
-		if side || m.running {
+		if side || m.run.running() {
 			bindings = append(bindings, help)
 		} else {
 			bindings = append([]inputBinding{help}, bindings...)

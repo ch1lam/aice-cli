@@ -71,7 +71,7 @@ func TestManualFoldsSurviveStreamingConclusionAndNewCalls(t *testing.T) {
 	for _, expanded := range []bool{false, true} {
 		t.Run(map[bool]string{false: "closed", true: "open"}[expanded], func(t *testing.T) {
 			m := foldTestModel()
-			m.running, m.assistantEntry = true, 3
+			m.run.kind, m.assistantEntry = runPrompt, 3
 			target := foldTarget{kind: foldProcess, id: 1}
 			m.setFoldExpanded(target, expanded)
 			m.markConclusion()
@@ -114,7 +114,7 @@ func TestThinkingActivityStaysOnSeparateRow(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := foldTestModel()
 			m.entries = m.entries[:3]
-			m.running = true
+			m.run.kind = runPrompt
 			m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 			check := func(status string) {
 				t.Helper()

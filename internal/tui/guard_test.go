@@ -455,8 +455,8 @@ func assertNoGuardReply(t *testing.T, replies <-chan interaction.GuardReply) {
 func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 	current := newModel(nil, nil)
 	current = updateModel(t, current, tea.WindowSizeMsg{Width: 80, Height: 24})
-	current.running = true
-	current.acceptsDelivery = true // This fixture represents an active agent run.
+	current.run.kind = runPrompt
+	current.run.active = &activeRunFunc{} // This fixture represents an active agent run.
 	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 	current.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Thinking: "earlier reasoning"}})
 	current.setFoldExpanded(foldTarget{kind: foldThinking, id: 0}, true)
@@ -483,7 +483,7 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 		t.Fatal("deny unexpectedly returned a command with no guard request channel")
 	}
 	assertGuardReply(t, reply, interaction.GuardReply{OptionID: "deny"})
-	if !current.running || !current.input.Focused() || current.guard.request != nil {
+	if !current.run.running() || !current.input.Focused() || current.guard.request != nil {
 		t.Fatal("deny did not restore the active conversation")
 	}
 	if !strings.Contains(ansi.Strip(current.viewport.GetContent()), "latest reasoning") {

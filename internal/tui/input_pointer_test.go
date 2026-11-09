@@ -98,7 +98,7 @@ func TestPointerCaptureCancelsOnComposerReflow(t *testing.T) {
 func TestAsyncActionsReflowExpandedHelp(t *testing.T) {
 	for _, width := range []int{24, 40, 80, 120} {
 		m := newModel(nil, nil)
-		m.help.ShowAll, m.running = true, true
+		m.help.ShowAll, m.run.kind = true, runPrompt
 		m = updateModel(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
 		m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{active: &activeRunFunc{}}}})
 		if actual := lipgloss.Height(m.footerView(m.layoutWidth())); actual != m.chrome.footer {

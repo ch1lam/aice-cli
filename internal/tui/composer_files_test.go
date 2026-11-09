@@ -92,8 +92,8 @@ func TestComposerFileSubmissionAndRejectionPreservePathsAndSpans(t *testing.T) {
 		t.Fatalf("file paths = %#v", m.composerFiles())
 	}
 	m, _, _ = m.submit()
-	if !reflect.DeepEqual(m.submittedInput.Files, want) || !strings.Contains(m.submittedInput.Prompt, interaction.QuoteFileReference(path)) {
-		t.Fatalf("submitted input = %#v", m.submittedInput)
+	if !reflect.DeepEqual(m.run.submitted.Files, want) || !strings.Contains(m.run.submitted.Prompt, interaction.QuoteFileReference(path)) {
+		t.Fatalf("submitted input = %#v", m.run.submitted)
 	}
 	if len(m.input.files) != 0 {
 		t.Fatal("submitted span survived in fresh composer")
@@ -108,8 +108,8 @@ func TestComposerFileDeliveryRejectionRestoresAttachment(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []interaction.DeliveryKind{interaction.DeliveryKindSteer, interaction.DeliveryKindFollowUp} {
 		m := attachTestFile(t, completionTestModel(), "my folder/main.go")
-		m.running, m.acceptsDelivery = true, true
-		m.activeRun = &activeRunFunc{deliver: func(input interaction.Delivery) error {
+		m.run.kind, m.run.active = runPrompt, &activeRunFunc{}
+		m.run.active = &activeRunFunc{deliver: func(input interaction.Delivery) error {
 			if !reflect.DeepEqual(input.Files, []string{"my folder/main.go"}) {
 				t.Fatalf("delivery paths = %#v", input.Files)
 			}

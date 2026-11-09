@@ -23,7 +23,7 @@ func BenchmarkMarkdownRefresh(b *testing.B) {
 				}
 				sources := [2]string{prefix + "next", prefix + "next."}
 				m := newModel(nil, nil)
-				m.width, m.height, m.running = 120, 40, true
+				m.width, m.height, m.run.kind = 120, 40, runPrompt
 				m.resizeLayout()
 				m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
 				m.applyAssistantDelta(interaction.Event{Delta: interaction.Delta{Kind: interaction.DeltaText, Delta: sources[0]}})

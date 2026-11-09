@@ -343,7 +343,7 @@ func TestStreamingWheelKeepsFrozenVersion(t *testing.T) {
 	seed := strings.Repeat("streaming seed line with enough text to wrap. ", 40)
 	m.entries = append(m.entries, transcriptEntry{kind: entryAssistant, text: seed, presentation: &assistantPresentation{}})
 	m.assistantEntry = 0
-	m.running = true
+	m.run.kind = runPrompt
 	m.refreshViewport(true)
 	press := wheelMouse(m, top, 0, 0, tea.MouseLeft)
 	m = updateModel(t, m, tea.MouseClickMsg(press))
@@ -413,7 +413,7 @@ func TestManualScrollReleaseStaysButNoScrollFollows(t *testing.T) {
 	m2, top2 := wheelTestModel(t, 80, 24)
 	m2.entries = append(m2.entries, transcriptEntry{kind: entryAssistant, text: strings.Repeat("follow seed. ", 50), presentation: &assistantPresentation{}})
 	m2.assistantEntry = 0
-	m2.running = true
+	m2.run.kind = runPrompt
 	m2.refreshViewport(true)
 	m2.viewport.GotoBottom()
 	press2 := wheelMouse(m2, top2, 0, 0, tea.MouseLeft)
@@ -498,7 +498,7 @@ func TestStreamingUnlaidHistoryKeepsFrozenVersion(t *testing.T) {
 	}
 	m.entries = append(m.entries, transcriptEntry{kind: entryAssistant, text: strings.Repeat("live seed. ", 30), presentation: &assistantPresentation{}})
 	m.assistantEntry = len(m.entries) - 1
-	m.running = true
+	m.run.kind = runPrompt
 	m.refreshViewport(true)
 	m.viewport.GotoBottom()
 	height := m.viewport.Height()
