@@ -68,25 +68,25 @@ type MCPPermit struct {
 // schema/filter changes clear just that tool. Reverting a change never revives
 // an earlier grant. An explicit revocation survives subsequent publications.
 func (g *Guard) SetMCPService(input MCPService) error {
-	return g.setMCPService(input, "replace")
+	return g.setMCPService(input, mcpReplace)
 }
 
 // BindMCPService initializes a policy only if absent. A run with an older
 // configuration must not overwrite the current application-owned identity.
 func (g *Guard) BindMCPService(input MCPService) error {
-	return g.setMCPService(input, "bind")
+	return g.setMCPService(input, mcpBind)
 }
 
 // RefreshMCPTools publishes discovery only while the expected configuration is
 // still current. It cannot undo a disable, removal, revocation or config edit.
 func (g *Guard) RefreshMCPTools(input MCPService) error {
-	return g.setMCPService(input, "refresh")
+	return g.setMCPService(input, mcpRefreshTools)
 }
 
 // RefreshMCPResources replaces the resource-read policy without changing the
 // independently discovered ordinary tool catalog.
 func (g *Guard) RefreshMCPResources(input MCPService) error {
-	return g.setMCPService(input, "refresh-resources")
+	return g.setMCPService(input, mcpRefreshResources)
 }
 
 // MCPServiceAvailable checks the current upper bound before discovery. It is
@@ -101,7 +101,17 @@ func (g *Guard) MCPServiceAvailable(source, id, connection, scope string) bool {
 	return state != nil && state.enabled && !state.revoked && state.connection == connection && state.scope == scope
 }
 
-func (g *Guard) setMCPService(input MCPService, operation string) error {
+// mcpPublication is how setMCPService treats an existing binding.
+type mcpPublication int
+
+const (
+	mcpReplace          mcpPublication = iota // install unconditionally
+	mcpBind                                   // keep a matching binding unchanged
+	mcpRefreshTools                           // replace ordinary tools, keep resource grants
+	mcpRefreshResources                       // replace resource reads, keep tools
+)
+
+func (g *Guard) setMCPService(input MCPService, publication mcpPublication) error {
 	if g == nil {
 		return fmt.Errorf("MCP execution gate is unavailable")
 	}
@@ -115,7 +125,7 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 	}
 	next := make(map[string]mcpToolState, len(input.Tools))
 	ordinary, resources := 0, 0
-	refreshing := operation == "refresh" || operation == "refresh-resources"
+	refreshing := publication == mcpRefreshTools || publication == mcpRefreshResources
 	for _, tool := range input.Tools {
 		if tool.Operation != "" && tool.Operation != llm.OperationResourceRead {
 			return fmt.Errorf("MCP operation is invalid")
@@ -128,7 +138,7 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 		if ordinary > 2000 || resources > 1 {
 			return fmt.Errorf("MCP operation catalog exceeds its bound")
 		}
-		if refreshing && ((operation == "refresh") != (tool.Operation == "")) {
+		if refreshing && ((publication == mcpRefreshTools) != (tool.Operation == "")) {
 			return fmt.Errorf("MCP refresh contains a different operation kind")
 		}
 		if tool.UserDecision != "" && tool.UserDecision != DecisionAsk && tool.UserDecision != DecisionAllow && tool.UserDecision != DecisionDeny {
@@ -147,12 +157,12 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 	defer g.mu.Unlock()
 	key := mcpServiceKey{input.Source, input.ServiceID}
 	previous := g.mcpServices[key]
-	if operation != "replace" && previous != nil {
+	if publication != mcpReplace && previous != nil {
 		if previous.connection != input.ConnectionFingerprint || previous.scope != input.PermissionScope ||
 			previous.enabled != input.Enabled || previous.revoked {
 			return fmt.Errorf("MCP policy changed before catalog publication")
 		}
-		if operation == "bind" {
+		if publication == mcpBind {
 			return nil
 		}
 	}
@@ -163,7 +173,7 @@ func (g *Guard) setMCPService(input MCPService, operation string) error {
 		// Preserve the other operation domain under the same lock. A tool refresh
 		// must not remove resource grants, or let a same-name tool inherit them.
 		for name, tool := range previous.tools {
-			if (operation == "refresh") != (tool.Operation == "") {
+			if (publication == mcpRefreshTools) != (tool.Operation == "") {
 				next[name] = tool
 			}
 		}
