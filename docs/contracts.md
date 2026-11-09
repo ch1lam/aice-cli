@@ -463,8 +463,11 @@ The runtime boundary preserves these ownership rules:
   Context occupancy arrives as immutable application snapshots, separately
   from cumulative Session usage.
 - [input_context.go](../internal/tui/input_context.go) projects the active input
-  domain from existing component state; Settings renders only while it owns
-  that domain. [input_bindings.go](../internal/tui/input_bindings.go)
+  domain from existing component state. Its order is the only overlay
+  priority: keys, rendering, the terminal cursor and pointer routing all follow
+  the domain, and a permission prompt outranks every panel because it blocks a
+  running response. Settings and the session picker render only while they own
+  the domain; under a permission prompt only its scrolling applies. [input_bindings.go](../internal/tui/input_bindings.go)
   gives dispatch and help the same actions, modifiers, availability and aliases.
   Dialog input is exclusive; disabled reserved keys cannot fall through. Async
   editor replies carry input identity/generation and are rejected after domain,

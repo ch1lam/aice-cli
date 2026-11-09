@@ -46,6 +46,9 @@ type inputContext struct {
 	editor bool // the shared composer may receive remaining text/editing input
 }
 
+// inputContext is the single overlay priority: keys, rendering, the terminal
+// cursor and pointer routing all follow its domain. A permission prompt
+// outranks every panel because it blocks a running response.
 func (m model) inputContext() inputContext {
 	switch {
 	case m.reading != nil:
@@ -54,6 +57,12 @@ func (m model) inputContext() inputContext {
 			focus = inputFocusDirectory
 		}
 		return inputContext{domain: inputReading, focus: focus}
+	case m.guard.request != nil:
+		focus := inputFocusList
+		if m.guard.feedback {
+			focus = inputFocusFeedback
+		}
+		return inputContext{domain: inputGuard, focus: focus}
 	case m.sessionPicker != nil:
 		p := m.sessionPicker
 		focus := inputFocusList
@@ -68,12 +77,6 @@ func (m model) inputContext() inputContext {
 			focus = inputFocusPreview
 		}
 		return inputContext{domain: inputSessions, focus: focus}
-	case m.guard.request != nil:
-		focus := inputFocusList
-		if m.guard.feedback {
-			focus = inputFocusFeedback
-		}
-		return inputContext{domain: inputGuard, focus: focus}
 	case m.question != nil:
 		return inputContext{domain: inputQuestion, focus: inputFocusEditor}
 	case m.authActive():

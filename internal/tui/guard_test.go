@@ -493,3 +493,23 @@ func TestGuardDefersHiddenTranscriptRendering(t *testing.T) {
 		t.Fatal("closing the prompt lost the terminal resize")
 	}
 }
+
+func TestGuardOutranksOpenSessionPicker(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t, 100, 28)
+	replies := make(chan interaction.GuardReply, 1)
+	request := interaction.GuardRequest{ID: "g", Title: "Run command?", ToolName: "bash", Options: guardTestOptions(), Reply: replies}
+	m = updateModel(t, m, guardRequestMsg{req: &request})
+	if m.sessionPicker == nil {
+		t.Fatal("picker state was dropped")
+	}
+	view := guardViewText(m)
+	if !strings.Contains(view, "Run command?") || strings.Contains(view, "Resume") {
+		t.Fatalf("permission prompt is not the visible overlay:\n%s", view)
+	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	assertGuardReply(t, replies, interaction.GuardReply{OptionID: guardTestOptions()[0].ID})
+	if !m.sessionPickerVisible() {
+		t.Fatal("picker did not return after the reply")
+	}
+}

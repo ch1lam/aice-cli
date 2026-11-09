@@ -44,6 +44,8 @@ type settingsPanel struct {
 // overlay priority: dialogs that preempt Settings also hide it.
 func (m model) settingsVisible() bool { return m.inputContext().domain == inputSettings }
 
+func (m model) sessionPickerVisible() bool { return m.inputContext().domain == inputSessions }
+
 func (m model) openSettings() (model, tea.Cmd, bool) {
 	if m.readSettings == nil {
 		return m, nil, true
