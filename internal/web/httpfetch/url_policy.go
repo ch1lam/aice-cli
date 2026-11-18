@@ -16,7 +16,6 @@ import (
 type target struct {
 	url    *url.URL
 	host   string // hostname without brackets, lowercase
-	port   int
 	origin string // scheme://host[:port]
 }
 
@@ -30,7 +29,7 @@ func validateURL(raw string) (target, error) {
 	if err != nil {
 		return target{}, web.NewError(web.CodeInvalidArgument, "parse url: %v", err)
 	}
-	return target{url: parsed, host: validated.Host, port: validated.Port, origin: validated.Origin}, nil
+	return target{url: parsed, host: validated.Host, origin: validated.Origin}, nil
 }
 
 // literalAddr returns the IP when the host is an address literal.

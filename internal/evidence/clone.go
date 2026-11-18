@@ -20,16 +20,3 @@ func (b *Bundle) Clone() *Bundle {
 	}
 	return cloned
 }
-
-// Source returns the source with the given ID.
-func (b *Bundle) Source(id string) (Source, bool) {
-	if b == nil {
-		return Source{}, false
-	}
-	for _, source := range b.Sources {
-		if source.ID == id {
-			return source, true
-		}
-	}
-	return Source{}, false
-}

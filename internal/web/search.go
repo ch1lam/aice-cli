@@ -59,7 +59,6 @@ func (r SearchRequest) Validate() error {
 type SearchCapabilities struct {
 	AllowedDomains  bool
 	ExcludedDomains bool
-	MaxResults      int
 }
 
 // SearchBackend is the consumer contract implemented by concrete adapters.

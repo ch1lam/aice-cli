@@ -53,7 +53,6 @@ func (r FetchRequest) Validate() error {
 type FetchTarget struct {
 	URL    string
 	Host   string
-	Port   int
 	Origin string
 }
 
@@ -94,7 +93,7 @@ func ValidateFetchURL(raw string) (FetchTarget, error) {
 	if strings.Contains(host, ":") {
 		displayHost = "[" + host + "]"
 	}
-	return FetchTarget{URL: normalized, Host: host, Port: port, Origin: parsed.Scheme + "://" + displayHost}, nil
+	return FetchTarget{URL: normalized, Host: host, Origin: parsed.Scheme + "://" + displayHost}, nil
 }
 
 // FetchBackend is the consumer contract implemented by the HTTP fetcher.

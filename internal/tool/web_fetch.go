@@ -63,7 +63,7 @@ func (f *WebFetch) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResu
 		return llm.ToolResult{}, err
 	}
 	// The URL-shape policy is shared with the execution gate; the backend
-	// still validates every hop and the resolved addresses.
+	// revalidates every redirect hop. Hostnames are not resolved here.
 	if _, err := web.ValidateFetchURL(request.URL); err != nil {
 		return llm.ToolResult{}, err
 	}

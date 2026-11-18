@@ -82,7 +82,7 @@ func (c *Client) Origin() string { return Origin(c.base) }
 
 // Capabilities reports the constraints Exa enforces server-side.
 func (c *Client) Capabilities() web.SearchCapabilities {
-	return web.SearchCapabilities{AllowedDomains: true, ExcludedDomains: true, MaxResults: maxUpstreamResults}
+	return web.SearchCapabilities{AllowedDomains: true, ExcludedDomains: true}
 }
 
 // Close releases idle connections.

@@ -87,7 +87,6 @@ func New(cfg Config) (*Fetcher, error) {
 	// Redirects are handled by Fetch so every hop is revalidated under the
 	// same permission and address policy.
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	cfg.Client = client
 	return &Fetcher{cfg: cfg, client: client}, nil
 }
 
