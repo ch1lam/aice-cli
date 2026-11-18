@@ -50,8 +50,7 @@ type Request struct {
 
 // UserTurn is text the user typed, before attachments were inlined.
 type UserTurn struct {
-	Text string `json:"text"`
-	Kind string `json:"kind,omitempty"` // prompt, steer or follow-up
+	Text string
 }
 
 // PastAction is an earlier tool call on the active branch, without output.
@@ -98,9 +97,7 @@ type Verdict struct {
 	// Reason explains a block to the agent and the user, or why no
 	// judgement was made.
 	Reason string
-	// Rule is the block rule ID the classifier cited, if any.
-	Rule  string
-	Stage int
+	Stage  int
 	// Classifier is "<model>@<prompt version>".
 	Classifier string
 	Usage      llm.Usage
@@ -207,7 +204,7 @@ func (c *Classifier) Classify(ctx context.Context, req Request) (Verdict, error)
 		verdict.Decision, verdict.Reason = Unavailable, "classifier unavailable: "+err.Error()
 		return finish()
 	}
-	verdict.Decision, verdict.Rule, verdict.Reason = parseReasoned(text)
+	verdict.Decision, verdict.Reason = parseReasoned(text)
 	return finish()
 }
 

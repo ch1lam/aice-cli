@@ -53,7 +53,7 @@ func (c Case) Request() Request {
 		req.Environment = *c.Environment
 	}
 	for _, text := range c.Intent {
-		req.Intent = append(req.Intent, UserTurn{Text: text, Kind: "prompt"})
+		req.Intent = append(req.Intent, UserTurn{Text: text})
 	}
 	return req
 }
