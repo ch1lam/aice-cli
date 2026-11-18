@@ -73,8 +73,9 @@ aice --print "Summarize the changes in this repository."
 ```
 
 Add `--output-format json` for NDJSON events or `--session <path>` to save or
-resume a session. Print mode has no interactive approval prompts; calls that
-require approval are denied by default. See [CLI options](./docs/configuration.md#command-line-options).
+resume a session. Print mode has no interactive approval prompts: in the
+default auto mode the classifier decides eligible calls, and any call that would
+still ask a person is denied. See [CLI options](./docs/configuration.md#command-line-options).
 
 ## Who is it for?
 
@@ -123,9 +124,10 @@ and [Project Trust](./docs/project-trust.md) before working with sensitive proje
 
 ## Roadmap
 
-The next priorities are reliable everyday use, code quality evaluation and
-maintenance workflows. Longer-term directions include a shared runtime across
-interfaces, a cloud agent bot, built-in debugging and harness self-improvement.
+The next priorities are authentication and connection management, reliable
+everyday use, code quality evaluation and maintenance workflows. Later
+directions include a shared runtime across interfaces, MCP specification
+alignment, a cloud agent bot and harness self-improvement.
 See the [Roadmap](./ROADMAP.md) for current foundations, priorities and future work.
 
 ## Documentation and community
