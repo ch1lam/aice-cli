@@ -18,8 +18,8 @@
   `internal/classify/eval/results/`. Run it at least three times with
   `AICE_CLASSIFY_EVAL_RUNS=3`; verdicts vary between runs and the summary lists
   flaky cases. A set whose mean error rate exceeds its threshold in
-  `classify.Thresholds` blocks the change; an allowed `injection` case in any
-  run does.
+  `classify.Thresholds` blocks the change; so does an allowed `injection` case
+  in any run, although the checked-in sets do not contain injection cases yet.
 - Changes meant to improve agent behavior (system prompt, tool definitions or
   results, Agent Loop control, context or compaction) attach an experiment
   report from [Evaluation](evaluation.md#comparing-builds): the hypothesis
@@ -53,7 +53,8 @@ lines as production lines.
 
 The [CI](../.github/workflows/ci.yml) and [release](../.github/workflows/release.yml)
 workflows share [verify.yml](../.github/workflows/verify.yml): Linux/macOS/Windows,
-the Go version from `go.mod`, ripgrep, race tests, vet and offline installer tests.
+the Go version from `go.mod`, ripgrep, race tests, vet, offline installer tests
+and, on Linux, the offline evaluation-tool tests.
 CI runs on `main` pushes and pull requests. Release publication requires both
 verification and builds, and occurs only on `v*` tag pushes; manual dispatch
 builds bundles without publishing. Only the publishing job receives write access.
@@ -118,8 +119,14 @@ go test ./internal/app -run '200ModelRounds|CompactionFailureBoundaries' -v
 ```
 
 The [maintenance tasks](evaluation.md#maintenance-tasks) have their own
-offline self-checks outside the root Go suite. Scripted models prove harness
-behavior; references and seeds prove task and fault detection; actual model
+offline self-checks outside the root Go suite; CI runs them with the Harbor
+comparison tests:
+
+```sh
+python3 -m unittest evals.harbor.test_compare evals.tasks.test_tasks
+```
+
+Scripted models prove harness behavior; references and seeds prove task and fault detection; actual model
 runs measure generated-code quality. Keep these claims separate. For model
 comparisons retain settings, interventions, each step's source and the
 refactor-only diff; agree on models and cost before paid evaluation.
