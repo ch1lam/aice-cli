@@ -19,7 +19,8 @@ aice acp --workspace . --approve --session /logs/agent/aice-session.jsonl
 `/logs/agent` is the trial's `agent/` directory, so the Session returns to the
 host beside Harbor's `acp-events.jsonl` and `trajectory.json`. Harbor's `-m
 provider/model` sets `AICE_PROVIDER` and `AICE_MODEL`; the runner then selects
-the same value through the ACP model option. Everything else, including the
+the same value through the ACP model option. The agent always sets
+`AICE_NO_UPDATE_CHECK=1`. Everything else, including the
 ACP client and ATIF generation, is Harbor's.
 
 Harbor runs its ACP client inside each task container. The subclass installs
@@ -92,6 +93,9 @@ done)
 python3 evals/harbor/compare.py --baseline jobs/<baseline-job> \
   --candidate jobs/<candidate-job> [--exclude <trial> ...] [--json report.json]
 ```
+
+`compare.py` runs `aice session stats` through `--aice` (default
+`go run ./cmd/aice`).
 
 A trial scores its verifier reward. Without a reward it scores 0 when the
 agent ran and then timed out or exited with an error, and is otherwise an

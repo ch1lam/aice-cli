@@ -69,11 +69,14 @@ option. The unattended `allow` mode of a client therefore lifts asks only, as
 - `request_user_input` is not offered: ACP has no question request, so the
   model states missing information in its reply.
 - Branches, `/btw`, Settings and slash commands have no ACP mapping.
+- AICE advertises no authentication methods, so `authenticate` succeeds without
+  effect; `logout`, `session/close` and `session/list` return method-not-found.
 
 ## Verification
 
 `TestACPServesSessionsThroughInteractionContracts` drives `aice acp` with the
-SDK's client over pipes, including a second process that loads the Session.
+SDK's client over in-process pipes, including a second server instance that
+loads the Session.
 Its messages can be checked against the ACP schema pinned by `go.mod`:
 
 ```sh
