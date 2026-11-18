@@ -270,9 +270,8 @@ func (m model) handleTranscriptMouseRelease(
 		pressed := m.selection.fold
 		frozen := m.selection.frozen
 		follow := m.selection.follow
-		scrolled := m.selection.wheeled
 		m.selection.clear()
-		m.restoreAfterSelection(frozen, follow, scrolled)
+		m.restoreAfterSelection(frozen, follow, false)
 		if hit := m.foldHitAt(message.Mouse()); hit == pressed {
 			m.toggleFoldAt(hit)
 		}
@@ -282,9 +281,8 @@ func (m model) handleTranscriptMouseRelease(
 		pressed := m.selection.code
 		frozen := m.selection.frozen
 		follow := m.selection.follow
-		scrolled := m.selection.wheeled
 		m.selection.clear()
-		m.restoreAfterSelection(frozen, follow, scrolled)
+		m.restoreAfterSelection(frozen, follow, false)
 		if hit := m.codeHitAt(message.Mouse()); hit == pressed {
 			if hit.expansion != nil {
 				m.toggleCode(hit)

@@ -46,12 +46,9 @@ var (
 	pathStyle          = lipgloss.NewStyle().Foreground(secondaryColor)
 	assistantBodyStyle = lipgloss.NewStyle().
 				PaddingLeft(transcriptContentIndent - 1)
-	mutedStyle             = lipgloss.NewStyle().Foreground(mutedTextColor)
-	skillStyle             = lipgloss.NewStyle().Foreground(successColor)
-	infoStyle              = lipgloss.NewStyle().Foreground(informationColor)
-	pendingSteerLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(informationColor)
+	mutedStyle        = lipgloss.NewStyle().Foreground(mutedTextColor)
+	skillStyle        = lipgloss.NewStyle().Foreground(successColor)
+	infoStyle         = lipgloss.NewStyle().Foreground(informationColor)
 	pendingSteerStyle = lipgloss.NewStyle().
 				BorderLeft(true).
 				BorderStyle(lipgloss.NormalBorder()).

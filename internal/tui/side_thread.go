@@ -601,7 +601,7 @@ func (m *model) finishSideRun(thread *sideThreadState, err error) {
 		m.pastes = nil
 		m.input.SetValue(thread.draft)
 		m.input.CursorEnd()
-		if thread.readOnly() || thread.isRunning {
+		if thread.readOnly() {
 			m.input.Blur()
 		} else {
 			m.input.Focus()
