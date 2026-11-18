@@ -18,7 +18,7 @@ func TestToolKindComesFromNormalizedActions(t *testing.T) {
 		want    ToolKind
 	}{
 		{"read", []llm.ToolAction{read}, ToolKindRead},
-		{"grep", []llm.ToolAction{read}, ToolKindSearch},
+		{"grep", []llm.ToolAction{read}, ToolKindRead},
 		{"edit", []llm.ToolAction{write}, ToolKindEdit},
 		{"bash", []llm.ToolAction{{Kind: "command", Command: "cat a.go > b.go"}, write, read}, ToolKindExecute},
 		{"web_fetch", []llm.ToolAction{{Kind: "network", Target: "https://example.com"}}, ToolKindFetch},
@@ -26,7 +26,7 @@ func TestToolKindComesFromNormalizedActions(t *testing.T) {
 		// A self-described name never upgrades a call without actions.
 		{"read", nil, ToolKindOther},
 	} {
-		if got := ToolKindOf(tc.name, tc.actions); got != tc.want {
+		if got := ToolKindOf(tc.actions); got != tc.want {
 			t.Errorf("ToolKindOf(%s, %v) = %q, want %q", tc.name, tc.actions, got, tc.want)
 		}
 	}

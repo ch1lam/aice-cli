@@ -414,8 +414,8 @@ func TestApplicationPrintEmitsJSONToolEvents(t *testing.T) {
 		t.Errorf("tool start name = %v, want ls", got)
 	}
 	for _, event := range events[2:4] {
-		if event["kind"] != "search" || event["locations"] == nil {
-			t.Errorf("%v kind/locations = %v/%v, want search of the workspace", event["type"], event["kind"], event["locations"])
+		if event["kind"] != "read" || event["locations"] == nil {
+			t.Errorf("%v kind/locations = %v/%v, want read of the workspace", event["type"], event["kind"], event["locations"])
 		}
 	}
 	if got := events[3]["status"]; got != "completed" {

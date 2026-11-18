@@ -13,7 +13,6 @@ type ToolKind string
 const (
 	ToolKindRead    ToolKind = "read"
 	ToolKindEdit    ToolKind = "edit"
-	ToolKindSearch  ToolKind = "search"
 	ToolKindExecute ToolKind = "execute"
 	ToolKindFetch   ToolKind = "fetch"
 	ToolKindOther   ToolKind = "other"
@@ -34,9 +33,10 @@ type ToolLocation struct {
 }
 
 // ToolKindOf derives a call's kind from the Guard's normalized actions, the
-// only authoritative description of what a call does. Tool-reported metadata
-// never decides it. A command dominates the file actions extracted from it.
-func ToolKindOf(name string, actions []llm.ToolAction) ToolKind {
+// only authoritative description of what a call does. Tool names and
+// tool-reported metadata never decide it. A command dominates the file actions
+// extracted from it.
+func ToolKindOf(actions []llm.ToolAction) ToolKind {
 	kind := ToolKindOther
 	for _, action := range actions {
 		switch action.Kind {
@@ -45,13 +45,9 @@ func ToolKindOf(name string, actions []llm.ToolAction) ToolKind {
 		case "network":
 			kind = ToolKindFetch
 		case "file":
-			switch {
-			case action.Op == "write":
+			if action.Op == "write" {
 				kind = ToolKindEdit
-			case kind == ToolKindEdit:
-			case name == "grep" || name == "find" || name == "ls":
-				kind = ToolKindSearch
-			default:
+			} else if kind != ToolKindEdit {
 				kind = ToolKindRead
 			}
 		}

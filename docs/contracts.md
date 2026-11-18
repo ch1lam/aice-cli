@@ -413,7 +413,7 @@ assistant text and thinking are emitted once at `message_end`.
 
 Tool events use the vocabulary shared with the ACP frontend
 (`interaction.ToolKindOf`, `interaction.ToolLocations`): `kind` is one of
-`read`, `edit`, `search`, `execute`, `fetch` or `other`; `status` is
+`read`, `edit`, `execute`, `fetch` or `other`; `status` is
 `in_progress` at start and `completed` or `failed` at end; `locations` lists
 absolute file paths. Both derive only from the Guard's normalized actions: at
 start from the extraction `Check` uses, at end from the actions recorded on the
