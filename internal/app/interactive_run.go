@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -137,7 +136,7 @@ func (r *interactiveRun) Deliver(ctx context.Context, delivery interaction.Deliv
 	return r.mailbox.Deliver(delivery)
 }
 
-func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
+func (r *interactiveRun) Run(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -173,11 +172,11 @@ func (r *interactiveRun) Run(ctx context.Context) (returnErr error) {
 	ctx = withMCPConnectionApprover(ctx, r.session.approveMCPConnection(snapshot.configuration.Paths))
 	ctx = withMCPElicitor(ctx, r.session.elicitMCP)
 	ctx = withRunClassifier(ctx, r.session.application.autoClassifier(configured))
-	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, snapshot.mcp, snapshot.configuration, snapshot.model, nil)
+	ctx, scope, err := bindRunScope(ctx, r.session.conversation.store, snapshot.mcp, snapshot.model, nil)
 	if err != nil {
 		return err
 	}
-	defer func() { returnErr = errors.Join(returnErr, scope.close()) }()
+	defer scope.close()
 	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()
 

@@ -86,8 +86,8 @@ func (o *mcpOwner) bindRun(ctx context.Context, model llm.Model) (runContext con
 		}
 	}()
 	run = mcpRunBinding{catalog: catalog}
-	// A shared preparation deadline bounds all required services and pins. Normal
-	// optional services remain entirely inert until the model searches for them.
+	// A shared preparation deadline bounds all required services and pins.
+	// Unapproved optional services remain inert until the model searches for them.
 	prepare, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for _, key := range configuration.ServerKeys() {

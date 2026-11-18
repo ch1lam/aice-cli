@@ -126,10 +126,7 @@ func (c *conversationState) recordMessage(ctx context.Context, state *mainRunSta
 	if errors.Is(err, session.ErrIncompleteGroup) {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // sideSnapshot returns a deep clone of the committed parent history plus

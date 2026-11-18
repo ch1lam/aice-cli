@@ -632,9 +632,6 @@ func (a *application) newConfiguredMCPOwner(c config.Config, gate *guard.Guard, 
 }
 
 func mcpStdioConfiguration(server config.MCPServer) *mcpclient.StdioConfig {
-	if server.Settings.Transport != "stdio" {
-		return nil
-	}
 	env, _ := server.ConnectionValues()
 	return &mcpclient.StdioConfig{Executable: server.Executable, Args: slices.Clone(server.Settings.Args), Dir: server.WorkingDir, Env: env}
 }
