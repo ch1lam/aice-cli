@@ -170,6 +170,11 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) {
 		if len(cmd.words) > 0 {
 			a.commands = append(a.commands, commandWords(cmd))
 		}
+		if script, ok := envSplitString(cmd); ok {
+			// env -S splits its value into a command line, like eval.
+			a.eval(shellCommand{words: append([]shellWord{{text: "eval"}}, script...), base: cmd.base}, depth)
+			return
+		}
 		inner, privileged, ok := unwrap(cmd)
 		if privileged != "" {
 			a.findings = append(a.findings, finding{rule: RuleBashPrivileged, desc: privileged, pattern: cmd.display(), words: commandWords(cmd)})
@@ -190,7 +195,12 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) {
 		return
 	}
 	if script, ok := shellScript(cmd); ok {
-		if depth < maxShellDepth && !script.unresolved {
+		switch {
+		case script.unresolved:
+			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "shell script from a variable or substitution", pattern: cmd.display()})
+		case depth >= maxShellDepth:
+			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "shell scripts nested too deeply to inspect", pattern: cmd.display()})
+		default:
 			a.script(script.text, cmd.base, depth+1)
 		}
 		return
@@ -214,9 +224,11 @@ func (a *bashAnalyzer) eval(cmd shellCommand, depth int) {
 		}
 		parts = append(parts, w.text)
 	}
-	if depth < maxShellDepth {
-		a.script(strings.Join(parts, " "), cmd.base, depth+1)
+	if depth >= maxShellDepth {
+		a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "shell scripts nested too deeply to inspect", pattern: cmd.display()})
+		return
 	}
+	a.script(strings.Join(parts, " "), cmd.base, depth+1)
 }
 
 // path records one candidate. Non-forced words must look like paths.

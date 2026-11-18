@@ -60,27 +60,31 @@ var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true
 
 // launcher describes a command that runs its remaining words as a command.
 type launcher struct {
-	valueFlags string // short flags that take a separate value
-	privileged string // non-empty when the launcher elevates privileges
-	positional int    // leading operands before the command (timeout DURATION)
-	assigns    bool   // NAME=value words precede the command (env)
-	extraArgs  bool   // appends unseen arguments (xargs)
+	valueFlags string   // short flags that take a separate value
+	longValues []string // long options that may take a separate value
+	privileged string   // non-empty when the launcher elevates privileges
+	positional int      // leading operands before the command (timeout DURATION)
+	assigns    bool     // NAME=value words precede the command (env)
+	extraArgs  bool     // appends unseen arguments (xargs)
 }
 
 var launchers = map[string]launcher{
-	"env":     {valueFlags: "uSC", assigns: true},
+	"env":     {valueFlags: "uSC", longValues: []string{"--unset", "--chdir"}, assigns: true},
 	"time":    {},
-	"nice":    {valueFlags: "n"},
+	"nice":    {valueFlags: "n", longValues: []string{"--adjustment"}},
 	"nohup":   {},
 	"command": {},
 	"exec":    {valueFlags: "a"},
-	"timeout": {valueFlags: "sk", positional: 1},
-	"stdbuf":  {valueFlags: "ioe"},
-	"xargs":   {valueFlags: "IinPLsdEa", extraArgs: true},
-	"sudo":    {valueFlags: "ugpChDTUrt", privileged: "superuser command"},
-	"doas":    {valueFlags: "uC", privileged: "privileged command execution"},
-	"pkexec":  {valueFlags: "u", privileged: "privileged command execution"},
-	"run0":    {valueFlags: "uD", privileged: "privileged command execution"},
+	"timeout": {valueFlags: "sk", longValues: []string{"--signal", "--kill-after"}, positional: 1},
+	"stdbuf":  {valueFlags: "ioe", longValues: []string{"--input", "--output", "--error"}},
+	// GNU -i, -e and -l take only attached optional values; -J, -R and -S are BSD.
+	"xargs": {valueFlags: "InPLsdEaJRS", longValues: []string{"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars", "--process-slot-var"}, extraArgs: true},
+	"sudo": {valueFlags: "ugpChDTUrt", longValues: []string{"--user", "--group", "--prompt", "--close-from", "--chdir", "--host", "--role", "--type", "--other-user", "--command-timeout"},
+		privileged: "superuser command"},
+	"doas":   {valueFlags: "uC", privileged: "privileged command execution"},
+	"pkexec": {valueFlags: "u", longValues: []string{"--user"}, privileged: "privileged command execution"},
+	"run0": {valueFlags: "uD", longValues: []string{"--user", "--group", "--chdir", "--unit", "--property", "--description", "--slice", "--nice", "--setenv", "--machine", "--background"},
+		privileged: "privileged command execution"},
 }
 
 // unwrap strips one launcher. It returns the privilege description even when
@@ -106,6 +110,9 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 			words = words[1:]
 		case strings.HasPrefix(text, "--"):
 			words = words[1:]
+			if slices.Contains(spec.longValues, text) && len(words) > 0 {
+				words = words[1:]
+			}
 			continue
 		case strings.HasPrefix(text, "-") && len(text) > 1:
 			words = words[1:]
@@ -127,6 +134,27 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 		return cmd, spec.privileged, false
 	}
 	return shellCommand{words: words, base: cmd.base, extraArgs: cmd.extraArgs || spec.extraArgs}, spec.privileged, true
+}
+
+// envSplitString returns the words env -S/--split-string runs as a script.
+func envSplitString(cmd shellCommand) ([]shellWord, bool) {
+	if cmd.name() != "env" {
+		return nil, false
+	}
+	words := cmd.words[1:]
+	for i, w := range words {
+		switch {
+		case w.text == "-S" || w.text == "--split-string":
+			return words[i+1:], true
+		case strings.HasPrefix(w.text, "--split-string="):
+			return append([]shellWord{{text: strings.TrimPrefix(w.text, "--split-string="), unresolved: w.unresolved}}, words[i+1:]...), true
+		case strings.HasPrefix(w.text, "-S"):
+			return append([]shellWord{{text: w.text[2:], unresolved: w.unresolved}}, words[i+1:]...), true
+		case !strings.HasPrefix(w.text, "-") && !strings.Contains(w.text, "="):
+			return nil, false
+		}
+	}
+	return nil, false
 }
 
 // shellScript returns the -c script of a shell invocation.
@@ -435,6 +463,9 @@ var gitReadSubcommands = map[string]bool{
 	"rev-parse": true, "describe": true, "shortlog": true, "reflog": true, "remote": true, "config": true, "fetch": true,
 }
 
+// gitValueOptions are global options whose value may be the next word.
+var gitValueOptions = []string{"-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
+
 // gitInvocation splits global options from the subcommand.
 func gitInvocation(cmd shellCommand) (dir *shellWord, sub string, args []shellWord) {
 	words := cmd.words[1:]
@@ -445,7 +476,7 @@ func gitInvocation(cmd shellCommand) (dir *shellWord, sub string, args []shellWo
 			w := words[1]
 			dir = &w
 			words = words[2:]
-		case text == "-c" && len(words) > 1:
+		case slices.Contains(gitValueOptions, text) && len(words) > 1:
 			words = words[2:]
 		case strings.HasPrefix(text, "-"):
 			words = words[1:]
@@ -730,7 +761,7 @@ func curlUploads(words []string) bool {
 // runsAICE reports an invocation of the AICE binary, directly or through
 // `go run` of its main package.
 func runsAICE(words []string) bool {
-	if filepath.Base(words[0]) == "aice" {
+	if strings.TrimSuffix(filepath.Base(words[0]), ".exe") == "aice" {
 		return true
 	}
 	return filepath.Base(words[0]) == "go" && len(words) > 2 && words[1] == "run" &&
@@ -746,7 +777,12 @@ func aiceReadOnly(words []string) bool {
 	if filepath.Base(words[0]) == "go" {
 		args = words[3:]
 	}
-	if slices.ContainsFunc(args, func(w string) bool { return w == "--help" || w == "-h" }) {
+	// Help flags count only before "--"; later words are positional.
+	options := args
+	if end := slices.Index(args, "--"); end >= 0 {
+		options = args[:end]
+	}
+	if slices.ContainsFunc(options, func(w string) bool { return w == "--help" || w == "-h" }) {
 		return true
 	}
 	switch strings.Join(args, " ") {

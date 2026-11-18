@@ -190,7 +190,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` of a computed script, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` or `bash -c` of a computed script, scripts nested too deeply to inspect, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
@@ -215,8 +215,8 @@ Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
 **Control files** — rule `controlFile.write` asks for every write to
 `~/.aice/settings.json`, `~/.aice/trust.json` and the workspace's
 `.aice/settings.json`, `.aice/SYSTEM.md`, `.aice/APPEND_SYSTEM.md` and
-`.mcp.json`, and for every bash invocation of the AICE binary (`aice`, or
-`go run ./cmd/aice`) except `--version`/`-v`, `--help`/`-h`, `help`,
+`.mcp.json`, and for every bash invocation of the AICE binary (`aice` or `aice.exe`, or
+`go run ./cmd/aice`) except `--version`/`-v`, `--help`/`-h` before any `--`, `help`,
 `mcp status [name]` and `session tree` (whose `--workspace` and `--session`
 operands still get the ordinary workspace-boundary check): its subcommands approve MCP connections, save permissions and
 credentials, or start another agent. Path grants, exact command grants and
