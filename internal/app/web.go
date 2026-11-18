@@ -113,14 +113,16 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 				candidate.APIID = exa.APIID
 			}
 			services[id] = constructed
-			switch {
-			case !service.Enabled:
-				candidate.Availability, candidate.Detail = web.AvailabilityDisabled, "instance disabled (enabled=false)"
-			case !service.SecretPresent:
-				candidate.Availability, candidate.Detail = web.AvailabilityMissingCredentials, "credential from "+service.CredentialDescription()+" is not set"
-			default:
+			if service.SecretPresent {
 				candidate.Availability = web.AvailabilityReady
+			} else {
+				candidate.Availability, candidate.Detail = web.AvailabilityMissingCredentials, "credential from "+service.CredentialDescription()+" is not set"
 			}
+		}
+		// A disabled instance is skipped even when its definition is invalid,
+		// so disabling a broken account lets later sources be considered.
+		if !service.Enabled {
+			candidate.Availability, candidate.Detail = web.AvailabilityDisabled, "instance disabled (enabled=false)"
 		}
 		candidates[candidate.Entry] = candidate
 		state.candidates = append(state.candidates, candidate)
