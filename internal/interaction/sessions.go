@@ -17,20 +17,16 @@ type SessionSummary struct {
 // SessionBrowser reads project history independently of the active-run
 // controller. Implementations must honor cancellation and never repair files.
 type SessionBrowser interface {
-	SearchSessions(context.Context, string) ([]SessionSummary, error)
-	PreviewSession(context.Context, string, string) (string, error)
-}
-
-// SessionScanner optionally publishes independently owned partial catalogs.
-// The callback runs synchronously on the scanning goroutine and may cancel
-// scanning by returning an error. The final return contains the full catalog.
-type SessionScanner interface {
+	// ScanSessions returns the full catalog. When publish is non-nil it
+	// receives independently owned partial catalogs synchronously on the
+	// scanning goroutine and may cancel scanning by returning an error.
 	ScanSessions(context.Context, string, func([]SessionSummary) error) ([]SessionSummary, error)
-}
-
-// SessionRenamer optionally appends title metadata to an existing session.
-// It must preserve the live conversation, active branch and all source records.
-type SessionRenamer interface {
+	PreviewSession(context.Context, string, string) (string, error)
+	// ReadSession projects a branch for inspection without changing the saved
+	// active leaf, acquiring writer ownership, or recovering interrupted tools.
+	ReadSession(context.Context, string, string) (*SessionReading, error)
+	// RenameSession appends title metadata to an existing session. It must
+	// preserve the live conversation, active branch and all source records.
 	RenameSession(context.Context, string, string) (SessionSummary, error)
 }
 
@@ -44,12 +40,6 @@ type SessionTitle struct {
 // title still appears wherever the Session catalog is read.
 type SessionTitleSource interface {
 	SessionTitles() <-chan SessionTitle
-}
-
-// SessionReader projects a branch for inspection without changing the saved
-// active leaf, acquiring writer ownership, or recovering interrupted tools.
-type SessionReader interface {
-	ReadSession(context.Context, string, string) (*SessionReading, error)
 }
 
 // SessionReading contains read-only display projections, with the saved active

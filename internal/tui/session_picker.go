@@ -93,11 +93,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 				return sessionReadingResult{generation: generation, err: context.Canceled}
 			}
 			defer owner.done()
-			reader, ok := browser.(interaction.SessionReader)
-			if !ok {
-				return sessionReadingResult{generation: generation, err: fmt.Errorf("history reading unavailable")}
-			}
-			view, err := reader.ReadSession(readCtx, key, focus)
+			view, err := browser.ReadSession(readCtx, key, focus)
 			return sessionReadingResult{generation: generation, view: view, err: err}
 		}, cancel
 	}
@@ -109,11 +105,7 @@ func sessionBrowserCommands(ctx context.Context, browser interaction.SessionBrow
 				return sessionRenameResult{generation: generation, err: context.Canceled}
 			}
 			defer owner.done()
-			renamer, ok := browser.(interaction.SessionRenamer)
-			if !ok {
-				return sessionRenameResult{generation: generation, err: fmt.Errorf("session renaming unavailable")}
-			}
-			item, err := renamer.RenameSession(renameCtx, key, title)
+			item, err := browser.RenameSession(renameCtx, key, title)
 			return sessionRenameResult{generation: generation, item: item, err: err}
 		}, cancel
 	}
