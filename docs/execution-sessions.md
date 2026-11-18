@@ -213,8 +213,9 @@ Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
 `~/.aice/settings.json`, `~/.aice/trust.json` and the workspace's
 `.aice/settings.json`, `.aice/SYSTEM.md`, `.aice/APPEND_SYSTEM.md` and
 `.mcp.json`, and for every bash invocation of the AICE binary (`aice`, or
-`go run ./cmd/aice`) except `--version`, `--help`, `help`, `mcp status` and
-`session tree`: its subcommands approve MCP connections, save permissions and
+`go run ./cmd/aice`) except `--version`/`-v`, `--help`/`-h`, `help`,
+`mcp status [name]` and `session tree` (whose `--workspace` and `--session`
+operands still get the ordinary workspace-boundary check): its subcommands approve MCP connections, save permissions and
 credentials, or start another agent. Path grants, exact command grants and
 allow rules never cover it, so the model cannot change AICE's own
 configuration without a confirmation. Reading the files is ordinary access.
