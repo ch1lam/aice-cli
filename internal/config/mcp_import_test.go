@@ -133,4 +133,15 @@ func TestProjectMCPFileLoadsOnlyWhenTrusted(t *testing.T) {
 	if len(untrusted.MCP.Servers) != 0 {
 		t.Fatalf("untrusted project supplied servers: %#v", untrusted.MCP.Servers)
 	}
+	// An unparseable project settings file does not hide the separate .mcp.json.
+	if err := os.MkdirAll(filepath.Dir(paths.ProjectSettings), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.ProjectSettings, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	broken := loadMCP(t, paths, config.LoadOptions{TrustProject: func(config.Paths, trust.Default) (bool, error) { return true, nil }})
+	if len(broken.MCP.Servers) != 1 {
+		t.Fatalf("servers with unparseable project settings = %#v", broken.MCP.Servers)
+	}
 }
