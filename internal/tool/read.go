@@ -127,7 +127,7 @@ func (r *Read) content(ctx context.Context, args ReadRequest, truncation *llm.To
 	originalArgs := args
 	userLimit := args.Limit
 	if args.Offset < 0 || args.Limit < 0 {
-		return nil, fmt.Errorf("tool \"read\": offset and limit cannot be negative")
+		return nil, fmt.Errorf("offset and limit cannot be negative")
 	}
 	if args.Offset == 0 {
 		args.Offset = 1
@@ -143,23 +143,23 @@ func (r *Read) content(ctx context.Context, args ReadRequest, truncation *llm.To
 
 	path, err := r.ResolvePath(args.Path)
 	if err != nil {
-		return nil, fmt.Errorf("tool \"read\": %w", err)
+		return nil, err
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("tool \"read\": open %q: %w", args.Path, err)
+		return nil, fmt.Errorf("open %q: %w", args.Path, err)
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("tool \"read\": stat %q: %w", args.Path, err)
+		return nil, fmt.Errorf("stat %q: %w", args.Path, err)
 	}
 	if info.IsDir() {
 		return readDirectory(ctx, file, originalArgs)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("tool \"read\": %q is not a regular file", args.Path)
+		return nil, fmt.Errorf("%q is not a regular file", args.Path)
 	}
 
 	sample := make([]byte, 512)
@@ -189,14 +189,14 @@ func (r *Read) content(ctx context.Context, args ReadRequest, truncation *llm.To
 	if err != nil {
 		if errors.Is(err, errBinaryContent) {
 			return nil, fmt.Errorf(
-				"tool \"read\": %q appears to be a binary file",
+				"%q appears to be a binary file",
 				args.Path,
 			)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("tool \"read\": read %q: %w", args.Path, err)
+		return nil, fmt.Errorf("read %q: %w", args.Path, err)
 	}
 	if truncation != nil {
 		*truncation = details
