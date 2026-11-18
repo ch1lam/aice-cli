@@ -159,8 +159,8 @@ separately from the offline suite.
 
 ## Real MCP interoperability
 
-[MCP verification](mcp.md#verification-evidence) owns the external service commands
-and platform limits. Run its offline driver before opt-in interoperability:
+[MCP verification](mcp.md#verification-evidence) owns the verified service scope
+and platform limits. Run the offline driver before opt-in interoperability:
 
 ```sh
 go test -race -tags=integration ./internal/app -run '^TestMCP(PrintInteropHarness|InteropModelSelection)$' -v
@@ -168,7 +168,23 @@ go test -race -tags=integration ./internal/app -run '^TestMCP(PrintInteropHarnes
 
 Filesystem, DeepWiki and account OAuth gates need their explicit switches;
 an integration build alone must not launch third-party services, read normal
-credentials or contact them. Use isolated settings and temporary data, preserve
+credentials or contact them:
+
+```sh
+# Local filesystem server through Print (Node and the server entry are supplied).
+AICE_MCP_FILESYSTEM_TEST=1 AICE_MCP_TEST_NODE=/path/to/node \
+  AICE_MCP_FILESYSTEM_ENTRY=/path/to/server-filesystem/dist/index.js \
+  go test -tags=integration ./internal/app -run '^TestMCPFilesystemPrintInterop$' -v
+# Public DeepWiki service.
+AICE_MCP_DEEPWIKI_TEST=1 go test -tags=integration ./internal/app \
+  -run '^TestMCP(DeepWikiPrintInterop|ManagementDeepWikiDiscovery)$' -v
+AICE_MCP_DEEPWIKI_TEST=1 go test -tags=integration ./internal/mcpclient -run '^TestDeepWikiRemoteReadOnly$' -v
+# Account OAuth: reads the user's configured user:linear-readonly-validation login.
+AICE_MCP_LINEAR_OAUTH_TEST=inspect AICE_MCP_LINEAR_ARTIFACT_DIR=/absolute/empty/dir \
+  go test -tags=integration ./internal/app -run '^TestLinearOAuthReadRefresh$' -v
+```
+
+`AICE_MCP_LINEAR_OAUTH_TEST=read-refresh` additionally exercises token refresh. Use isolated settings and temporary data, preserve
 schema-bound grants, and distinguish scripted interoperability from real-model
 task completion. Account access requires explicit authorization.
 
