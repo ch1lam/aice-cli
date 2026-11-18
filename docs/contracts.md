@@ -276,7 +276,9 @@ retain the short content summary; Session keeps the additive metadata.
   configurations. After budget checks and before each model call, the Loop
   passes a deep copy of the effective `llm.RequestConfig` and stamps the
   returned ID on the resulting assistant message, including a recorded failed
-  attempt; a recording error stops the run before the call. Requests are
+  attempt that started streaming or was retried; a failure that run
+  finalization records carries none. A recording error stops the run before
+  the call. Requests are
   derived only by `llm.BuildRequest` followed by `llm.FitOutputTokens`, so the
   input of every recorded assistant message equals that derivation over its
   configuration and Session context. Failed attempts are projected out exactly

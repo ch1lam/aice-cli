@@ -25,6 +25,7 @@ func (e *runExecution) recordTerminalAttempt(ctx context.Context, runErr error) 
 	if err != nil {
 		return err
 	}
+	message.RequestConfig = e.requestConfigID
 	return e.closeFailedAttempt(ctx, message, runErr)
 }
 
