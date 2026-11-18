@@ -380,9 +380,7 @@ func startupResult(current, latest string) StartupResult {
 // cacheStartupCheck is best-effort: a valid network result remains useful even
 // when a read-only home directory prevents caching it for the next launch.
 func cacheStartupCheck(path, latest string, now func() time.Time) {
-	if err := markChecked(path, latest, now); err != nil {
-		return
-	}
+	_ = markChecked(path, latest, now)
 }
 
 func markChecked(path, latest string, now func() time.Time) error {

@@ -78,12 +78,11 @@ const (
 )
 
 const (
-	settingsKeyProvider            = "provider"
-	settingsKeyModel               = "model"
-	smallModelKey                  = "small_model"
-	settingsKeyThinking            = "thinking"
-	settingsKeyDefaultProjectTrust = "default_project_trust"
-	settingsKeyCustomBaseURL       = "custom_base_url"
+	settingsKeyProvider      = "provider"
+	settingsKeyModel         = "model"
+	smallModelKey            = "small_model"
+	settingsKeyThinking      = "thinking"
+	settingsKeyCustomBaseURL = "custom_base_url"
 )
 
 // Setting identifies one setting that can be persisted by a command.
