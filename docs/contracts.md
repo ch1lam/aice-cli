@@ -97,7 +97,6 @@ service-bound definitions through the same complete-pair selection, Guard,
 recording and request-budget boundaries. A same-name remote tool cannot alias
 the resource operation's authorization.
 
-
 Structured JSON is retained without decoding numbers into floating point and
 is bounded to 1 MiB of valid UTF-8 JSON. A loss notice describes missing source
 data, not model-only clipping, and must not promise recovery of unsaved bytes.

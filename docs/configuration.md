@@ -91,7 +91,7 @@ peak billing is twice the estimate.
 | --- | --- | --- |
 | Provider | `AICE_PROVIDER` | `deepseek`, `opencode-go`, `kimi-coding`, `moonshot`, `zhipu`, `zhipu-coding`, `openai`, `anthropic`, `anthropic-subscription`, `openai-codex`, `aihubmix`, `custom` |
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
-| Small model | `AICE_SMALL_MODEL` | Fast model of the same provider for side calls: the auto mode classifier and Session titles (it receives each new Session's first message and reply once, see [Sessions](execution-sessions.md#sessions)); empty uses Model; user settings only |
+| Small model | `AICE_SMALL_MODEL` | Fast model of the same provider for side calls: the auto mode classifier and Session titles (it receives each new Session's first message and reply once, see [Sessions](execution-sessions.md#sessions)); empty uses Model; project settings cannot set it |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
@@ -730,7 +730,7 @@ AICE loads skills from three sources when preparing the process's run environmen
 
 When two skills share a name, project wins over user over builtin. `/skills`
 lists the process startup catalog; grouping indicates the source, not a
-separate permission scope. Settings → Project → Skills shows the same startup
+separate permission scope. Settings → Project & Trust → Skills shows the same startup
 catalog grouped by source, with each skill name, full description and location
 on separate lines.
 The TUI highlights names and source headings, separates diagnostics and restart

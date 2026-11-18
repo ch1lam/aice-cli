@@ -229,7 +229,7 @@ and resume through the CLI with generated history and isolated settings.
 - Modify and stage only explicit files owned by the current task. Never use `git add .`, `git add -A`, `git stash`, `git reset --hard`, `git checkout .`, or force push.
 - Never commit unless the user asks. Before committing, inspect `git status` and the exact staged diff.
 - When the user asks for incremental commits, make one independently verified commit after each completed small step.
-- When asked to commit, follow the repository's existing short gitmoji/conventional subject style and keep each commit to one intent. Do not use Pi package scopes or release conventions.
+- When asked to commit, follow the repository's existing short gitmoji/conventional subject style and keep each commit to one intent.
 - If a conflict touches a file not modified for the current task, stop and ask the user instead of resolving it speculatively.
 
 ## Computer Use checks

@@ -414,7 +414,9 @@ correct `expect` where the classifier was wrong, and add the case to
 ```json
 {
   "permission_mode": "auto",
-  "small_model": "deepseek-v4.1-flash",
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro",
+  "small_model": "deepseek-flash",
   "auto_mode": {
     "environment": ["docs.acme.internal is our documentation host"],
     "block": ["Never run migrations against databases other than localhost"],
