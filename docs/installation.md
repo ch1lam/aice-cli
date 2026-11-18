@@ -75,7 +75,7 @@ default distribution's tools and Linux paths; native file tools still use
 Windows paths. See [execution and cancellation](execution-sessions.md#tool-execution-boundary).
 
 On macOS and Linux, AICE also provisions a private, checksum-pinned native
-`agent-browser` helper (no longer its CLI skill documents). Startup download
+`agent-browser` helper. Startup download
 progress goes to stderr. AICE does not download a browser automatically; see
 [Browser automation](browser.md) for supported platforms and connection setup.
 
@@ -111,7 +111,7 @@ not prove input support. See [Computer Use](desktop.md).
 ```sh
 aice update            # install the latest release
 aice update --check    # check without installing
-aice update --force    # replace an unversioned/dev build
+aice update --force    # replace a dev build or reinstall the current release
 ```
 
 The welcome screen checks asynchronously and caches successful results for one
@@ -127,7 +127,7 @@ verification after three minutes. Ctrl+C cancels network work.
 
 An unversioned build requires `--force` to update; `--check` still works.
 An equal or newer installed version is retained unless forced. Detected Homebrew
-paths are refused; write-permission failures report reinstall/package-manager
+paths are refused, even with `--force`; write-permission failures report reinstall/package-manager
 guidance. Other package managers are not detected automatically, so use their
 own upgrade command for those installs.
 
@@ -150,7 +150,9 @@ go build -o ./aice ./cmd/aice
 ```
 
 Source builds without a version stamp report `dev` and send `aice/dev` in model
-requests. Release builds stamp `internal/buildinfo.Version`; the same value is
+requests. Session run records and ACP identify such a build more precisely as
+`dev+<12-character revision>`, with `-dirty` when the checkout had uncommitted
+changes. Release builds stamp `internal/buildinfo.Version`; the same value is
 used by the CLI, TUI, update checks, and User-Agent. For a versioned source build,
 set the actual source version through the release workflow's linker target:
 

@@ -32,7 +32,7 @@ to lowest priority:
 
 This order covers provider, model, reasoning, endpoints, API keys, context
 windows, default trust policy, and operational switches. Flags currently expose
-`--provider`, `--model`, `--thinking`, `--no-dep-install`,
+`--provider`, `--model`, `--thinking`, `--permission-mode`, `--no-dep-install`,
 `--no-update-check`, `--run-token-budget`, `--run-timeout`,
 `--run-no-progress-limit`, and `--max-turns`; an omitted flag does not override
 another source.
@@ -159,7 +159,8 @@ can override the saved preference again, and interactive commands report this.
 Writers lock, reread, patch changed keys and atomically replace the target.
 Independent peer changes survive; the last successful write to the same key wins.
 Preference locks and Windows replacement retries have a cancellable five-second
-bound. A crashed writer's lock is not automatically stolen. Malformed target
+bound. The lock is an operating-system file lock, so a crashed writer's lock is
+released with its process. Malformed target
 files are preserved and must be repaired before saving. Failed preference saves
 leave the active selection unchanged. Credential and preference saves are separate
 commits; errors distinguish credential-only success and post-commit cleanup
@@ -173,8 +174,8 @@ creates no Session or Agent run.
 
 | Area | Preferences or actions | Takes effect |
 | --- | --- | --- |
-| Models & Accounts | Provider/model/thinking, endpoints, context windows, API keys and OAuth | Next Agent run |
-| Tools & Network | MCP services, Browser, Computer Use, Web search sources and fetch | See the owning [browser](browser.md), [desktop](desktop.md), [Web](web.md), and [MCP](mcp.md) guides |
+| Models & Accounts | Provider/model/thinking, small model, endpoints, context windows, API keys and OAuth | Next Agent run |
+| Tools & Network | Permission mode (next tool call), MCP services, Browser, Computer Use, Web search sources and fetch | See the owning [browser](browser.md), [desktop](desktop.md), [Web](web.md), and [MCP](mcp.md) guides |
 | Run Limits | Turns, tokens, timeout and repeated-tool limit | Next Agent run |
 | Project & Trust | Default policy and saved project decision | Next startup |
 | System | Helper downloads, update checks, paths and diagnostics | Next startup |
@@ -241,7 +242,9 @@ Timing is not recorded, so `/new` and resuming start the measurement empty.
 
 The status bar summarizes the same values on the right of the footer:
 `42 tok/s · cache 94% (1.8M) · $0.123`, where the parenthesized total is
-Session cache reads. Missing measurements are omitted. As width drops it sheds
+Session cache reads. Missing speed and cache measurements are omitted; cost is
+always shown, so unpriced usage reads `$0.000` (see Usage for its coverage).
+As width drops it sheds
 the cache total, then cost, then hit rate; output speed stays longest. Totals
 refresh when a run or command completes.
 
@@ -330,10 +333,10 @@ rather than sent silently.
 
 DeepSeek has three distinct enabled efforts: `low`, `high`, and `max`.
 `medium` and `xhigh` are not separate choices because the upstream API folds
-both into `high`. Its OpenAI-compatible shape sends `thinking.type` plus
-`reasoning_effort`; the Anthropic shape sends `thinking` plus
-`output_config.effort`; the Responses shape sends `reasoning.effort`, using
-`none` for `off`.
+both into `high`. The `deepseek` provider uses the Anthropic shape, which sends
+`thinking` plus `output_config.effort`, and the Responses shape, which sends
+`reasoning.effort` using `none` for `off`. Gateways that serve DeepSeek models
+over Chat Completions send `thinking.type` plus `reasoning_effort`.
 
 ### Model catalog metadata
 
@@ -389,8 +392,9 @@ controlled by the provider; client headers alone do not establish approval.
 
 API keys are stored by provider in `~/.aice/auth.json` with file mode
 `0600`. Keys and endpoints follow the same precedence as other settings.
-The auth file normally holds credentials, but both JSON files share the full
-schema. For each row below, the file endpoint key replaces `_api_key` in the
+The auth file normally holds credentials, but both JSON files share the same
+schema except `permissions` and `auto_mode`, which only settings files supply;
+the auth file ignores them with a diagnostic. For each row below, the file endpoint key replaces `_api_key` in the
 auth key with `_base_url`, for example `openai_base_url`. Codex and Claude subscription OAuth
 credentials each use a separate file as described below.
 
@@ -1097,7 +1101,7 @@ Dragged file paths and separate print-mode image flags are not implemented;
 
 | Variable | Effect |
 | --- | --- |
-| `AICE_NO_DEP_INSTALL=1` | Disable ripgrep, Windows Git Bash and agent-browser downloads |
+| `AICE_NO_DEP_INSTALL=1` | Disable ripgrep, Windows Git Bash, agent-browser and Cua Driver downloads |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | Not inherited: add it to the `user:browser` service `env` to choose a browser executable; see [Browser automation](browser.md#installation) |
 | `AICE_NO_UPDATE_CHECK=1` | Disable the interactive update check |
 

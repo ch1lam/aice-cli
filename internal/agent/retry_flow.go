@@ -25,6 +25,7 @@ func (e *runExecution) recordTerminalAttempt(ctx context.Context, runErr error) 
 	if err != nil {
 		return err
 	}
+	message.RequestConfig = e.requestConfigID
 	return e.closeFailedAttempt(ctx, message, runErr)
 }
 
@@ -67,8 +68,8 @@ func (e *runExecution) closeFailedAttempt(ctx context.Context, message llm.Assis
 // turn. record, when non-nil, marks a turn still open after an incomplete
 // stream: it records the failed attempt before a retry or after the last
 // retry. A first attempt that is not retried records the terminal failure
-// when its message started and otherwise only closes the turn. A final
-// retry_end follows the last attempt's turn_end. force
+// when its message started and otherwise only closes the turn. An exhausted
+// sequence's retry_end follows the last attempt's turn_end. force
 // retries irrespective of the retry policy with no backoff; the loop uses it
 // exactly once after arming reasoning degradation, when the retried request
 // differs from the rejected one. stepContinue means a retry turn has started.

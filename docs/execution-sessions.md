@@ -91,6 +91,9 @@ unless `--yolo` is set.
 The `skill` tool is a known tool: it has no path argument and returns
 content already parsed at startup, so Check allows it after the known-tool
 gate. File policies and path access do not apply to it.
+`tool_result_read` is a known tool that reads retained tool results on the
+active ancestry (see [MCP readback](mcp.md#model-views-and-result-readback));
+Check allows it without path policy.
 `tool_search`, `mcp_resource_list` and `mcp_server_info` are known discovery tools.
 Their application catalog uses only explicitly supplied service bindings and
 checks current eligibility. The lazy connection owner requires a separate saved
@@ -213,8 +216,9 @@ Two denylists apply to `read`/`write`/`edit`/`bash`/`grep`/`find`/`ls`:
 `~/.aice/settings.json`, `~/.aice/trust.json` and the workspace's
 `.aice/settings.json`, `.aice/SYSTEM.md`, `.aice/APPEND_SYSTEM.md` and
 `.mcp.json`, and for every bash invocation of the AICE binary (`aice`, or
-`go run ./cmd/aice`) except `--version`, `--help`, `help`, `mcp status` and
-`session tree`: its subcommands approve MCP connections, save permissions and
+`go run ./cmd/aice`) except `--version`/`-v`, `--help`/`-h`, `help`,
+`mcp status [name]` and `session tree` (whose `--workspace` and `--session`
+operands still get the ordinary workspace-boundary check): its subcommands approve MCP connections, save permissions and
 credentials, or start another agent. Path grants, exact command grants and
 allow rules never cover it, so the model cannot change AICE's own
 configuration without a confirmation. Reading the files is ordinary access.
@@ -250,7 +254,7 @@ replies, and canceled approval waits fail closed.
 | `bash.*` | Allow once; Allow this exact command for this session; Always allow `` `<prefix> …` `` commands (`bash.outbound` and `bash.loseWork` only, when one prefix covers every finding); Deny |
 | `rule.ask` | Allow once; Allow this exact command for this session (commands only); Deny |
 | `unknownTool` | Allow once; Allow tool `"X"` for this session; Deny |
-| `mcp.tool` (bound integration) | Allow once; Allow current tool version for this Session; Allow current service tool versions for this Session; Deny |
+| `mcp.tool` (bound integration) | Allow once; Allow this MCP tool version for this session; Allow this service's current tool versions for this session; Deny |
 | `controlFile.write` and other `ask` rules | Allow once; Deny |
 
 The directory options are omitted when the parent is `/` or `$HOME`.
@@ -310,7 +314,8 @@ access of the process it runs as.
 
 Deny rules deny (rule `rule.deny`), and `--yolo` does not lift them. Ask rules
 add a `rule.ask` confirmation even for workspace access or commands without a
-finding; Session grants do not cover them. Allow rules cover outside-workspace
+finding. An exact Session command grant covers a command ask rule; path grants
+do not cover path ask rules. Allow rules cover outside-workspace
 access (a `write` rule also covers reads) and `bash.*` findings of the
 matching command. No rule covers the `secret-files` and `credentials` denials
 or `controlFile.write`. Pipeline findings such as `bash.fetchExec` have no
@@ -369,7 +374,7 @@ calls with their outcome but without output, and the pending call with the
 effects the gate resolved. It
 never sees tool output, web or MCP content, assistant text or reasoning,
 compaction summaries, project instructions or MCP tool descriptions. Agent data
-is JSON-encoded inside blocks framed by a per-process random marker. The
+is JSON-encoded inside blocks framed by a random marker chosen per classifier. The
 environment names the workspace, its current git branch and remotes. A fast
 single-word stage allows clear cases; anything else is reasoned over the same
 prompt prefix.
@@ -385,7 +390,8 @@ twentieth after the latest prompt, becomes a confirmation (`auto.block`)
 instead of a denial; answering it restarts the streak, and so does any new
 message. In `--print` the Loop's
 `GuardDenials` run limit stops the run after three consecutive or twenty total
-denied calls. Block counts come from `review` records on the active branch, so
+denied calls in the run; unlike the interactive fuse it counts every Guard deny,
+not only classifier blocks. Block counts come from `review` records on the active branch, so
 a restored Session or another branch carries its own history. The fuse
 confirmation offers Allow once, Deny, and Deny and switch to default mode.
 

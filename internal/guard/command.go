@@ -750,10 +750,15 @@ func aiceReadOnly(words []string) bool {
 		return true
 	}
 	switch strings.Join(args, " ") {
-	case "--version", "-v", "help", "mcp status", "session tree":
+	case "--version", "-v", "help", "mcp status":
 		return true
 	}
-	return len(args) == 3 && args[0] == "mcp" && args[1] == "status"
+	if len(args) == 3 && args[0] == "mcp" && args[1] == "status" {
+		return true
+	}
+	// session tree only reads; its --workspace and --session operands are
+	// checked against the workspace boundary like any other path.
+	return len(args) >= 2 && args[0] == "session" && args[1] == "tree"
 }
 
 // isRemoteSpec reports rsync/scp style host:path or rsync:// operands.

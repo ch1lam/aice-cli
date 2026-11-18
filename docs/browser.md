@@ -27,10 +27,10 @@ inherits only a small base environment, so options such as
 
 ## Set up and change
 
-Use `/browser`, or the Browser rows in Settings → Tools & Network. Each choice
-rewrites the `user:browser` definition and saves its connection approval,
-because the user just chose it; tool calls still ask through Guard. Each choice
-then tests the connection as `/mcp connect` does and reports Ready or Not
+Use `/browser`, or the Browser rows in Settings → Tools & Network. Each setup or
+connection choice rewrites the `user:browser` definition and saves its
+connection approval, because the user just chose it; tool calls still ask
+through Guard. It then tests the connection as `/mcp connect` does and reports Ready or Not
 ready, as [Computer Use setup](desktop.md#set-up-and-disable) does.
 
 Settings shows **Browser automation** with the service state and, once set up,

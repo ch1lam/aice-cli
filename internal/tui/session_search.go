@@ -54,15 +54,9 @@ func sessionSearchCommand(ctx context.Context, cancel context.CancelFunc, owner 
 				case <-timer.C:
 				}
 			}
-			var items []interaction.SessionSummary
-			var err error
-			if scanner, ok := browser.(interaction.SessionScanner); ok {
-				items, err = scanner.ScanSessions(ctx, query, func(items []interaction.SessionSummary) error {
-					return send(items, nil, receive)
-				})
-			} else {
-				items, err = browser.SearchSessions(ctx, query)
-			}
+			items, err := browser.ScanSessions(ctx, query, func(items []interaction.SessionSummary) error {
+				return send(items, nil, receive)
+			})
 			_ = send(items, err, nil)
 		}()
 		return receive()

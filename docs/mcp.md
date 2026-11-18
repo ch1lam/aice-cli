@@ -77,13 +77,14 @@ The run catalog and connection owner both apply the relevant restrictions.
 whole `{"mcpServers": {...}}` (`.mcp.json`, Claude Desktop, Cursor) or VS Code
 `{"servers": {...}}` document from stdin. A definition containing `transport` is
 an AICE definition and is decoded strictly. Portable entries map `type`
-(`stdio`, `http`, `streamable-http`; inferred from `command`/`url` when absent),
+(`stdio`, `http`, `streamable-http` or `streamablehttp`; inferred from
+`command`/`url` when absent; other values are rejected),
 `command`, `args`, `cwd`, `env`, `url`, `headers` and `disabled`; other
 host-specific fields are ignored. A value that is exactly `${NAME}`, or ends in
 one such reference like `Bearer ${TOKEN}`, becomes an environment reference
-with that prefix. Literal env values are kept; literal headers, other `${}`
-uses, `${}` in command/args/url and the deprecated SSE transport are skipped
-with a reason that never quotes the value. Names are lowercased into IDs
+with that prefix. Literal env values are kept. A server entry with literal
+headers, other `${}` uses, `${}` in command/args/cwd/url or the deprecated SSE
+transport is skipped as a whole, with a reason that never quotes the value. Names are lowercased into IDs
 (`.`, space, `/`, `:` and `@` become `-`) with the original kept as `name`.
 Import adds only new user IDs and never replaces an existing entry.
 
@@ -468,8 +469,9 @@ as untrusted, server-supplied usage data comparable to tool descriptions; it
 cannot change Guard decisions, approvals or project trust.
 
 Search includes source-tagged instruction previews only from already initialized
-services represented by its candidates: at most 512 UTF-8 bytes each/five services,
-within the whole 32 KiB search result. Previewing performs no additional RPC.
+services represented by its candidates: at most 512 UTF-8 bytes each/five services
+and 8 KiB together, within the whole 32 KiB search result; a notice marks a
+reached preview budget. Previewing performs no additional RPC.
 
 `mcp_server_info` accepts an exact source-qualified `service`, plus optional
 `offset`, `length` and `revision`. It initializes only that approved service and

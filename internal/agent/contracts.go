@@ -298,8 +298,9 @@ const (
 	InputKindFollowUp
 )
 
-// RetryEvent describes one model-call retry. Attempt is one-based and never
-// exceeds MaxRetries. Success is meaningful only on retry_end.
+// RetryEvent describes one model-call retry. Attempt is one-based and exceeds
+// MaxRetries only for the forced reasoning-replay retry. Success is meaningful
+// only on retry_end.
 type RetryEvent struct {
 	Attempt    int
 	MaxRetries int

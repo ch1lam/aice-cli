@@ -20,7 +20,7 @@ func (d toolDescriber) describe(call llm.ToolCall, result *llm.ToolResultMessage
 	if result != nil {
 		actions = result.Actions
 	}
-	return interaction.ToolKindOf(call.Name, actions), interaction.ToolLocations(actions, d.workspace)
+	return interaction.ToolKindOf(actions), interaction.ToolLocations(actions, d.workspace)
 }
 
 // annotate fills the vocabulary of a translated tool event.

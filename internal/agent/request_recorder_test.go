@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -60,5 +61,24 @@ func TestRequestRecorderFailureStopsBeforeTheCall(t *testing.T) {
 	}
 	if len(model.requests) != 0 {
 		t.Fatalf("model called %d times after recording failed", len(model.requests))
+	}
+}
+
+func TestRequestRecorderNamesAStartedFailedAttempt(t *testing.T) {
+	t.Parallel()
+	info := testModel()
+	model := &scriptedModel{scripts: []*streamScript{{events: []llm.Event{{Type: llm.EventTypeStart}}, nextErr: io.ErrUnexpectedEOF}}}
+	loop, err := agent.NewLoop(model, nil, agent.WithRetryPolicy(agent.RetryPolicy{MaxRetries: 0}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := testInput(info, mustPrompt(t, "inspect"))
+	input.RequestRecorder = func(context.Context, llm.RequestConfig) (string, error) { return "config-1", nil }
+	result, err := loop.Run(t.Context(), input, nil)
+	if err == nil || len(result.ModelRounds) != 1 {
+		t.Fatalf("Run() = %d rounds, %v; want one failed round", len(result.ModelRounds), err)
+	}
+	if got := result.ModelRounds[0].Assistant.RequestConfig; got != "config-1" {
+		t.Fatalf("failed attempt config = %q, want config-1", got)
 	}
 }

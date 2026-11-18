@@ -117,6 +117,10 @@ func TestBindWebRoutingTable(t *testing.T) {
 	service = badAPI.Services["fake-main"]
 	service.API = "other"
 	badAPI.Services["fake-main"] = service
+	disabledBroken := readyWebConfig("service:fake-main", "native")
+	service = disabledBroken.Services["fake-main"]
+	service.Provider, service.Enabled = "nobody", false
+	disabledBroken.Services["fake-main"] = service
 	disabledFetch := readyWebConfig("service:fake-main")
 	disabledFetch.FetchEnabled = false
 	searchOff := readyWebConfig("service:fake-main")
@@ -138,6 +142,7 @@ func TestBindWebRoutingTable(t *testing.T) {
 		{"missing credential", missing, []string{"web_fetch"}, false, "FAKE_KEY"},
 		{"unknown provider", unknownProvider, []string{"web_fetch"}, true, "not supported"},
 		{"unknown api", badAPI, []string{"web_fetch"}, true, "not supported"},
+		{"disabled instance skips its invalid config", disabledBroken, []string{"web_fetch"}, false, "instance disabled"},
 		{"unknown instance", func() config.WebConfig { c := readyWebConfig("service:ghost"); return c }(), []string{"web_fetch"}, true, "ghost"},
 		{"fetch disabled", disabledFetch, []string{"web_search"}, false, ""},
 	}

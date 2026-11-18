@@ -177,6 +177,9 @@ func TestGuardEscapeCorpus(t *testing.T) {
 		{"bash", `go run ./cmd/aice mcp add x`, RuleControlFile},
 		{"bash", `aice --version`, ""},
 		{"bash", `aice mcp status`, ""},
+		{"bash", `aice session tree --workspace . --session .aice/sessions/a.jsonl`, ""},
+		{"bash", `aice session tree --session out/a.jsonl`, RuleOutsideWrite},
+		{"bash", `aice session checkout --session a.jsonl --leaf x`, RuleControlFile},
 		// E2: literal assignments and loop items resolve.
 		{"bash", `X=~/.ssh; cat $X/id_rsa`, credentialsRuleID},
 		{"bash", `export K="$HOME/.aws"; cat "$K/credentials"`, credentialsRuleID},

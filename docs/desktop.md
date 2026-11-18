@@ -19,7 +19,8 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
 **Set up / Repair** shows a disclosure, then:
 
 1. installs the pinned Cua Driver 0.38.0, or reuses an existing verified
-   installation of 0.38.0 or later; an older macOS App must be moved to the
+   installation (on macOS any App of 0.38.0 or later; on Linux and Windows
+   only AICE's private 0.38.0 installation); an older macOS App must be moved to the
    Trash first (see [Installation](installation.md#computer-use-helper));
 2. on macOS, runs `cua-driver permissions grant`, which launches CuaDriver through
    LaunchServices so Accessibility and Screen Recording are granted to the
@@ -35,7 +36,7 @@ Use `/desktop` or Settings → Tools & Network → Computer Use.
    ```
 
    On Linux and Windows the command is the private installation under
-   `~/.aice/bin/cua/`. An existing user `cua` entry keeps its own fields (tool
+   `~/.aice/bin/cua/<version>/<os>-<arch>/`. An existing user `cua` entry keeps its own fields (tool
    filters, timeouts, other env entries); only connection fields and the
    preset's env keys are rewritten, and only when they differ.
 4. saves the connection approval for that exact fingerprint, because the user

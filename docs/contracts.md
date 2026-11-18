@@ -204,6 +204,10 @@ retain the short content summary; Session keeps the additive metadata.
   that arrives before the stream's `start` is classified by its cause, like one
   after it, rather than as a protocol error. Tool execution is never
   retried by this policy. [retry.go](../internal/agent/retry.go) owns classification.
+  A gateway's first rejection of replayed reasoning ("`encrypted_content` …
+  was not issued") is retried once immediately, even with retries disabled,
+  and every later request in the run omits reasoning items from history
+  ([reasoning_replay.go](../internal/agent/reasoning_replay.go)).
 - Before each tool execution the loop consults the consumer-defined `Guard`
   interface (`internal/agent` defines it, `internal/guard` implements it,
   `internal/app` wires it). `NewLoop` requires a non-nil `Guard` when the
@@ -246,7 +250,8 @@ retain the short content summary; Session keeps the additive metadata.
   for evaluation process metrics; tool or MCP self-descriptions never replace
   them. `RunLimits.GuardDenials` stops a run after the configured
   number of consecutive or total calls the Guard denied or a person declined;
-  any dispatched call resets the consecutive count.
+  any call the Guard allows resets the consecutive count, even if dispatch
+  then fails.
   Product behavior of the gate, including Session-scoped grants,
   is in [Tool execution and
   Sessions](execution-sessions.md#tool-execution-boundary).
@@ -276,7 +281,9 @@ retain the short content summary; Session keeps the additive metadata.
   configurations. After budget checks and before each model call, the Loop
   passes a deep copy of the effective `llm.RequestConfig` and stamps the
   returned ID on the resulting assistant message, including a recorded failed
-  attempt; a recording error stops the run before the call. Requests are
+  attempt that started streaming or was retried; a failure that run
+  finalization records carries none. A recording error stops the run before
+  the call. Requests are
   derived only by `llm.BuildRequest` followed by `llm.FitOutputTokens`, so the
   input of every recorded assistant message equals that derivation over its
   configuration and Session context. Failed attempts are projected out exactly
@@ -381,13 +388,14 @@ changing events; do not treat numeric enum positions as a public wire format.
 `internal/app` translates between them. `interaction_end` marks interaction
 settlement and `turn_end` marks a completed model round. Neither event owns
 persistence; the synchronous message recorder does. Inside the Loop, turn and
-retry boundaries are emitted only by `eventLifecycle` (`internal/agent/lifecycle.go`),
-which owns the turn number, the retry attempt and whether the attempt's
-assistant message started; `TestLoopEventLifecycleSequences` pins the order.
+retry boundaries are emitted only through the lifecycle methods in
+`internal/agent/lifecycle.go`; their `eventLifecycle` state owns the turn number,
+the retry attempt and whether the attempt's assistant message started; `TestLoopEventLifecycleSequences` pins the order.
 Every `message_start` is paired with a `message_end` before its `turn_end`,
 including a stream cut off without a retry, which ends with the recorded
-terminal failure. A retry sequence closes with `retry_end` after the last
-attempt's `turn_end`.
+terminal failure. A successful retry emits `retry_end` after its assistant
+`message_end` and before tools and `turn_end`; an exhausted retry sequence
+closes with `retry_end` after the last attempt's `turn_end`.
 
 The public print format below is a separate, curated projection. Adding an
 internal event does not automatically expose it in NDJSON or justify serializing
@@ -413,7 +421,7 @@ assistant text and thinking are emitted once at `message_end`.
 
 Tool events use the vocabulary shared with the ACP frontend
 (`interaction.ToolKindOf`, `interaction.ToolLocations`): `kind` is one of
-`read`, `edit`, `search`, `execute`, `fetch` or `other`; `status` is
+`read`, `edit`, `execute`, `fetch` or `other`; `status` is
 `in_progress` at start and `completed` or `failed` at end; `locations` lists
 absolute file paths. Both derive only from the Guard's normalized actions: at
 start from the extraction `Check` uses, at end from the actions recorded on the
@@ -463,10 +471,12 @@ The runtime boundary preserves these ownership rules:
 - Tool events carry the call's complete arguments on start and the shared tool
   vocabulary (`Kind`, `Locations`) on start and end; assistant ends carry the
   stop reason and usage; `EventAgentEnd.LimitReached` marks a Loop run limit.
-  Machine-readable frontends ([ACP](acp.md), print JSON) derive protocol state
-  from these fields instead of importing Agent or Session types.
+  The [ACP](acp.md) frontend derives protocol state from these fields instead
+  of importing Agent or Session types. Print JSON is an application-owned
+  projection of Agent events; see [Print NDJSON events](#print-ndjson-events).
 - Only Bubble Tea Update mutates UI state. App translates Agent events into
-  interaction types; TUI does not import LLM/tool/Session implementation types.
+  interaction types; TUI does not import tool, Session or provider
+  implementation types, only canonical value types such as `llm.ImageContent`.
   Context occupancy arrives as immutable application snapshots, separately
   from cumulative Session usage.
 - [input_context.go](../internal/tui/input_context.go) projects the active input
@@ -511,7 +521,7 @@ terminal viewport remain separate representations with different lifetimes.
 
 ### Settings and Usage capabilities
 
-App implements `SettingsReader`, `SettingsStatusReader`, `SettingsWriter`,
+App implements `SettingsReader`, `SettingsWriter`,
 `SettingsActionRunner` and `UsageReader`. Snapshots carry copied public values,
 not credentials or writable stores. Config owns types/defaults/frozen sources;
 app owns choices, timing, validation and resource publication; TUI owns editors,
@@ -615,5 +625,5 @@ TUI state, restoring them after its command interaction ends.
 owns cursor/token state and stale-result rejection; app owns traversal budgets,
 path resolution, ranking, and permission filtering. Search callbacks carry the
 controller context and never block Update. Provider capability checks accept
-image tool results for vision models through the same `SupportsImage` capability
-used for user images; protocol adapters project the complete tool-call pairing.
+image tool results for vision models through the same catalog `InputModalities`
+check (`provider.Route`) used for user images; protocol adapters project the complete tool-call pairing.

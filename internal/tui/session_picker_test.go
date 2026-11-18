@@ -19,7 +19,7 @@ type pickerBrowser struct{}
 
 type waitingSessionBrowser struct{ started, cancelled chan struct{} }
 
-func (b waitingSessionBrowser) SearchSessions(ctx context.Context, _ string) ([]interaction.SessionSummary, error) {
+func (b waitingSessionBrowser) ScanSessions(ctx context.Context, _ string, _ func([]interaction.SessionSummary) error) ([]interaction.SessionSummary, error) {
 	close(b.started)
 	<-ctx.Done()
 	close(b.cancelled)
@@ -28,6 +28,14 @@ func (b waitingSessionBrowser) SearchSessions(ctx context.Context, _ string) ([]
 
 func (b waitingSessionBrowser) PreviewSession(context.Context, string, string) (string, error) {
 	panic("queued preview started after shutdown")
+}
+
+func (waitingSessionBrowser) ReadSession(context.Context, string, string) (*interaction.SessionReading, error) {
+	panic("read started after shutdown")
+}
+
+func (waitingSessionBrowser) RenameSession(context.Context, string, string) (interaction.SessionSummary, error) {
+	panic("rename started after shutdown")
 }
 
 func TestSessionPickerQueryShutdown(t *testing.T) {
@@ -69,12 +77,18 @@ func TestSessionPickerCommandCannotBecomeSteering(t *testing.T) {
 	}
 }
 
-func (pickerBrowser) SearchSessions(ctx context.Context, _ string) ([]interaction.SessionSummary, error) {
+func (pickerBrowser) ScanSessions(ctx context.Context, _ string, _ func([]interaction.SessionSummary) error) ([]interaction.SessionSummary, error) {
 	return []interaction.SessionSummary{{Key: "one", ID: "one", Title: "中文恢复 original", UpdatedAt: 100},
 		{Key: "two", ID: "two", Title: "Second conversation", UpdatedAt: 200}}, ctx.Err()
 }
 func (pickerBrowser) PreviewSession(ctx context.Context, _, _ string) (string, error) {
 	return "You\n中文问题\n\nAssistant\nA recovered answer", ctx.Err()
+}
+func (pickerBrowser) ReadSession(context.Context, string, string) (*interaction.SessionReading, error) {
+	return nil, errors.New("history reading unavailable")
+}
+func (pickerBrowser) RenameSession(context.Context, string, string) (interaction.SessionSummary, error) {
+	return interaction.SessionSummary{}, errors.New("session renaming unavailable")
 }
 
 func pickerModel(t *testing.T, width, height int) model {
