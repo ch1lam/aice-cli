@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -88,10 +87,9 @@ func Close(ctx context.Context, binary string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, "--session", Session, "close")
-	command.Env = os.Environ()
 	command.WaitDelay = 2 * time.Second
 	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("browser: close session: %s", strings.TrimSpace(string(output)))
+		return fmt.Errorf("browser: close session: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
