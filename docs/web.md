@@ -28,7 +28,7 @@ network reachability. Rules:
 | Invalid file schema or priority referencing an unknown instance | Configuration loading fails with the offending key |
 | Resolver reaches an unknown provider/API or invalid provider options | Search is unavailable; no later service is chosen |
 | First usable entry lacks its credential | `missing_credentials` is reported; AICE does not fall back to another account |
-| Instance `enabled: false` | Skipped with `disabled`; later entries are considered |
+| Instance `enabled: false` | Skipped with `disabled`, even when its definition is invalid; later entries are considered |
 | A search request fails (401, 429, timeout…) | The tool returns a classified error; no second backend is tried |
 | A search returns no results | A successful empty result |
 
@@ -87,8 +87,9 @@ are validated strictly; unknown fields are errors.
   call. `timeout` values are AICE product defaults, not upstream guarantees.
 - `allowed_domains` / `excluded_domains` are bare hostnames and act as the
   upper bound: a model request can only narrow the allow list (label-boundary
-  subdomain matching) and adds to the exclude list. An empty intersection is a
-  `constraint_conflict` error and nothing is sent upstream.
+  subdomain matching); the exclude list comes only from configuration. An
+  empty intersection is a `constraint_conflict` error and nothing is sent
+  upstream.
 - `enabled: false` under `search` or `fetch` disables that tool. A missing
   `priority` uses the default; an explicit `[]` allows no source.
 - Setting `EXA_API_KEY` in the environment does nothing by itself. An instance
@@ -133,9 +134,11 @@ The application closes superseded and exiting backends. See
 
 ## Permissions
 
-Enabled web tools access the network without extra confirmation in interactive
-and Print mode. Search requires an application-bound service; fetch requires a
-valid URL. Invalid targets still fail and `--yolo` never lifts a deny. Disabling
+Enabled web tools access the network without a web-specific confirmation in
+interactive and Print mode. Search requires an application-bound service; fetch
+requires a valid URL. In auto mode (the default) the action classifier reviews
+every `web_search` and `web_fetch` call and may block it; see
+[auto mode](execution-sessions.md#auto-mode). Invalid targets still fail and `--yolo` never lifts a deny. Disabling
 either tool unregisters it. Project Trust does not grant or revoke Web access;
 `/btw`, compaction and `/init` are tool-free.
 
@@ -202,7 +205,8 @@ summaries or deep-search synthesis. The key travels in `x-api-key`; redirects
 are never followed so the key cannot reach another origin. Success bodies are
 limited to 2 MiB and error bodies to 8 KiB. HTTP status maps to
 `authentication` (401/403), `quota_exceeded` (402), `rate_limited` (429,
-retaining `Retry-After`), `invalid_argument` (400/422) and `unavailable` (5xx).
+retaining `Retry-After`), `invalid_argument` (400/422) and `unavailable` (5xx);
+any other status is `invalid_response`.
 Malformed JSON, a missing `results` field or an error envelope with status 200
 are `invalid_response`; an empty array is a successful empty result. Paid
 requests are never retried automatically. Reported `costDollars.total` is

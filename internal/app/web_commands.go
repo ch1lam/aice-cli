@@ -14,7 +14,7 @@ import (
 )
 
 // webIntro is shown at the top of /web prompts.
-const webIntro = "Web search sends queries to the configured service; web_fetch connects directly to public sites. " +
+const webIntro = "Web search sends queries to the configured service; web_fetch reaches public sites through the standard proxy environment. " +
 	"Enabled web tools use the existing network policy. Manual configuration lives under \"web\" in the global settings file."
 
 func (s *interactiveSession) webMenu() *interaction.CommandMenu {
@@ -29,7 +29,7 @@ func (s *interactiveSession) webMenu() *interaction.CommandMenu {
 		{Label: "Remove source from priority…", Description: "native may be removed too; an empty list allows no search", Arguments: "drop"},
 		{Label: "Add source to priority…", Description: "Append native or a configured instance", Arguments: "append"},
 		{Label: "Web search: " + onOff(settings.SearchEnabled) + " (toggle)", Arguments: "search"},
-		{Label: "Web fetch: " + onOff(settings.FetchEnabled) + " (toggle)", Description: "Direct connections, no authentication, HTML/text/Markdown only", Arguments: "fetch"},
+		{Label: "Web fetch: " + onOff(settings.FetchEnabled) + " (toggle)", Description: "Standard proxy environment, no authentication, HTML/text/Markdown only", Arguments: "fetch"},
 	}}
 }
 
