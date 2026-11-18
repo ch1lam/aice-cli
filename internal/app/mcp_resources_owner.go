@@ -80,6 +80,9 @@ func (b mcpBorrowedConnection) ReadResourceChecked(ctx context.Context, uri stri
 	b.owner.mu.Lock()
 	client := s.client
 	b.owner.mu.Unlock()
+	if client == nil {
+		return mcpclient.Result{State: llm.ExecutionNotDispatched}, fmt.Errorf("MCP connection unavailable; discover tools again")
+	}
 	resource, ok := client.(mcpResourceConnection)
 	if !ok {
 		return mcpclient.Result{State: llm.ExecutionNotDispatched}, mcpclient.ErrUnsupported

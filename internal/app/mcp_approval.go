@@ -7,6 +7,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 const (
@@ -132,7 +133,7 @@ func mcpConnectionSummary(server config.MCPServer) string {
 		summary = strings.Join(append([]string{executable}, server.Settings.Args...), " ") + "  (in " + server.WorkingDir + ")"
 	}
 	if len(summary) > mcpConnectionApprovalCommandMaxSize {
-		summary = summary[:mcpConnectionApprovalCommandMaxSize] + "…"
+		summary = utf8text.Prefix(summary, mcpConnectionApprovalCommandMaxSize) + "…"
 	}
 	return summary
 }
