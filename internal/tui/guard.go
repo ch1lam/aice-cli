@@ -172,7 +172,7 @@ func (m *model) resizeGuard() {
 		return
 	}
 	style, width := m.guardLayout(max(m.width-2*m.horizontalPadding(), 1))
-	sections := []string{headerStyle.Render(guardTitle(m.guard.request))}
+	sections := []string{headerStyle.Render(sanitizeSingleLineText(guardTitle(m.guard.request)))}
 	// The agent's stated reason leads; the full command below is what runs.
 	if description := sanitizeSingleLineText(m.guard.request.Description); description != "" {
 		sections = append(sections, description)
@@ -185,7 +185,7 @@ func (m *model) resizeGuard() {
 	}
 	for i, opt := range m.guard.request.Options {
 		if guardOptionNeedsReview(opt, width) || opt.Detail != "" {
-			sections = append(sections, fmt.Sprintf("Option %d: %s", i+1, opt.Label)+"\n"+opt.Detail)
+			sections = append(sections, fmt.Sprintf("Option %d: %s", i+1, sanitizeMultilineText(opt.Label))+"\n"+sanitizeMultilineText(opt.Detail))
 		}
 	}
 	m.guard.viewport.SetWidth(width)
@@ -253,9 +253,7 @@ func guardKeyLine(req *interaction.GuardRequest) string {
 		return renderGuardCommand(req.Command, req.Highlight)
 	}
 	if req.Path != "" {
-		return guardEmphasisStyle.Render(
-			guardDisplayPath(req.Path),
-		)
+		return guardEmphasisStyle.Render(escapeGuardText(guardDisplayPath(req.Path)))
 	}
 	return ""
 }
@@ -266,26 +264,37 @@ func guardDisplayPath(path string) string {
 	return filepath.ToSlash(shellWorkingDirectory(path))
 }
 
+// renderGuardCommand shows control characters visibly: an escape sequence in
+// the command must not restyle or hide part of what the user approves.
 func renderGuardCommand(command, highlight string) string {
 	prefix := "$ "
 	display := command
 	if highlight == "" {
-		return guardEmphasisStyle.Render(prefix + display)
+		return guardEmphasisStyle.Render(prefix + escapeGuardText(display))
 	}
 	index := strings.Index(display, highlight)
 	if index < 0 {
-		return guardEmphasisStyle.Render(prefix + display)
+		return guardEmphasisStyle.Render(prefix + escapeGuardText(display))
 	}
 	end := index + len(highlight)
 	return guardEmphasisStyle.Render(prefix) +
-		guardEmphasisStyle.Render(display[:index]) +
-		guardHighlightStyle.Render(display[index:end]) +
-		guardEmphasisStyle.Render(display[end:])
+		guardEmphasisStyle.Render(escapeGuardText(display[:index])) +
+		guardHighlightStyle.Render(escapeGuardText(display[index:end])) +
+		guardEmphasisStyle.Render(escapeGuardText(display[end:]))
+}
+
+// escapeGuardText keeps line breaks and escapes every other control character.
+func escapeGuardText(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = escapeCodeRow(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func guardSecondaryLine(reason, ruleID string) string {
-	reason = strings.TrimSpace(reason)
-	ruleID = strings.TrimSpace(ruleID)
+	reason = sanitizeSingleLineText(strings.TrimSpace(reason))
+	ruleID = sanitizeSingleLineText(strings.TrimSpace(ruleID))
 	switch {
 	case reason != "" && ruleID != "":
 		return mutedStyle.Render(reason) +
@@ -308,7 +317,7 @@ func (m model) guardOptionsView(width int) string {
 		if i == m.guard.selection {
 			style = guardEmphasisStyle
 		}
-		label := opt.Label
+		label := sanitizeSingleLineText(opt.Label)
 		if guardOptionNeedsReview(opt, width) {
 			label = fmt.Sprintf("Option %d (review above)", i+1)
 			if width < 30 {

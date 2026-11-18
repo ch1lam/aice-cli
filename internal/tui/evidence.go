@@ -29,7 +29,7 @@ func toolEvidenceView(display interaction.EvidenceDisplay, width int) string {
 		url := escapeCodeRow(source.URL)
 		kinds := ""
 		if len(source.Kinds) > 0 {
-			kinds = " · " + strings.Join(source.Kinds, ", ")
+			kinds = " · " + escapeCodeRow(strings.Join(source.Kinds, ", "))
 		}
 		row := fmt.Sprintf("%d. ", index+1)
 		if title != "" {
