@@ -56,7 +56,10 @@ func WithRunLimits(limits RunLimits) LoopOption {
 
 func (e *runExecution) checkBudget(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return errors.Join(err, context.Cause(ctx))
+		if cause := context.Cause(ctx); cause != err {
+			return errors.Join(err, cause)
+		}
+		return err
 	}
 	if limit := e.loop.limits.Tokens; limit > 0 && e.tokensUsed >= limit {
 		return fmt.Errorf("%w (%d of %d tokens); send a new message to continue with a fresh run budget", ErrTokenBudget, e.tokensUsed, limit)
