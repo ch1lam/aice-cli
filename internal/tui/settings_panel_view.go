@@ -350,6 +350,10 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		if event.Button == tea.MouseWheelUp {
 			delta = -1
 		}
+		if delta == 0 {
+			// Horizontal wheel events do not move vertical selections.
+			return m, nil
+		}
 		switch p.mode() {
 		case settingsModeAction:
 			deltaKey := tea.KeyDown
