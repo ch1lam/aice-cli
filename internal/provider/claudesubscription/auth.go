@@ -41,7 +41,6 @@ type AuthClient struct {
 // LoginPrompt describes an authorization step without exposing any tokens.
 type LoginPrompt struct {
 	URL          string
-	Code         string
 	Instructions string
 	AllowInput   bool
 }
@@ -56,9 +55,6 @@ type LoginInteraction struct {
 func writerInteraction(output io.Writer) LoginInteraction {
 	return LoginInteraction{Notify: func(_ context.Context, prompt LoginPrompt) error {
 		_, err := fmt.Fprintf(output, "%s\n%s\n", prompt.URL, prompt.Instructions)
-		if err == nil && prompt.Code != "" {
-			_, err = fmt.Fprintf(output, "Enter code: %s\n", prompt.Code)
-		}
 		return err
 	}}
 }
