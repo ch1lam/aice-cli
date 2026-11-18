@@ -11,11 +11,12 @@ import (
 // newAutoModeCommand prints the built-in classifier template that the
 // auto_mode settings extend.
 func newAutoModeCommand() *cobra.Command {
-	root := &cobra.Command{Use: "auto-mode", Short: "Inspect the auto mode classifier", Args: cobra.NoArgs}
+	noArgs := func(command *cobra.Command, args []string) error { return newUsageError(cobra.NoArgs(command, args)) }
+	root := &cobra.Command{Use: "auto-mode", Short: "Inspect the auto mode classifier", Args: noArgs}
 	root.AddCommand(&cobra.Command{
 		Use:   "defaults",
 		Short: "Print the built-in block rules and allow exceptions that auto_mode extends",
-		Args:  cobra.NoArgs,
+		Args:  noArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			out := command.OutOrStdout()
 			fmt.Fprintf(out, "Prompt version: %s\n\nBlock rules:\n", classify.PromptVersion)

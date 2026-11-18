@@ -46,9 +46,6 @@ func newUpdateCommand(updater Updater) *cobra.Command {
 			return nil
 		},
 	}
-	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return newUsageError(err)
-	})
 	command.Flags().BoolVar(
 		&options.check,
 		"check",
@@ -59,7 +56,7 @@ func newUpdateCommand(updater Updater) *cobra.Command {
 		&options.force,
 		"force",
 		false,
-		"install the latest release even when the current version cannot be compared",
+		"replace a dev build or reinstall the current release",
 	)
 	return command
 }

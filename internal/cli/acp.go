@@ -38,6 +38,9 @@ func newACPCommand(server ACPServer) *cobra.Command {
 			if strings.TrimSpace(options.workspace) == "" {
 				return newUsageError(errors.New("workspace must not be blank"))
 			}
+			if command.Flags().Changed("session") && strings.TrimSpace(options.session) == "" {
+				return newUsageError(errors.New("session must not be blank"))
+			}
 			return newUsageError(cobra.NoArgs(command, args))
 		},
 		RunE: func(command *cobra.Command, _ []string) error {
