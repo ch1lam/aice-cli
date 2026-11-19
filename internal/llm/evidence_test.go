@@ -85,13 +85,6 @@ func TestToolResultEvidenceCloneValidateAndEncode(t *testing.T) {
 	if _, err := NewToolResultMessage(ToolResult{CallID: "c1", Content: []ContentPart{NewTextContent("x").Part()}, Evidence: oversized}); err == nil {
 		t.Fatal("oversized evidence accepted")
 	}
-
-	// Nested tool-result parts (assistant-side projections) clone evidence too.
-	parts := cloneContentParts([]ContentPart{{Type: ContentTypeToolResult, ToolResult: &result}})
-	parts[0].ToolResult.Evidence.Items[0].Text = "nested mutation"
-	if result.Evidence.Items[0].Text == "nested mutation" {
-		t.Fatal("nested clone aliases evidence")
-	}
 	var generic map[string]any
 	if err := json.Unmarshal(encoded[1:len(encoded)-1], &generic); err != nil {
 		t.Fatal(err)

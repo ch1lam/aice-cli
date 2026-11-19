@@ -100,7 +100,7 @@ the resource operation's authorization.
 Structured JSON is retained without decoding numbers into floating point and
 is bounded to 1 MiB of valid UTF-8 JSON. A loss notice describes missing source
 data, not model-only clipping, and must not promise recovery of unsaved bytes.
-Constructors, nested result clones and Session snapshots copy mutable details
+Constructors, message clones and Session snapshots copy mutable details
 and image payloads. No protocol SDK values or new message roles are introduced.
 
 When the request model lacks the `image` input modality, the Loop's request

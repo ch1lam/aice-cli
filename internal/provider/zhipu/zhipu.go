@@ -83,11 +83,10 @@ func newProvider(configuration Config, codingPlan bool) (*Provider, error) {
 		return nil, fmt.Errorf("%s: configure Chat Completions adapter: %w", descriptor.ProviderID(), err)
 	}
 	descriptor.route = provider.Route{
-		Provider:                 descriptor.ProviderID(),
-		Label:                    descriptor.Label(),
-		Models:                   descriptor.Models(),
-		Adapters:                 map[llm.API]llm.Streamer{openaicompletions.API: adapter},
-		NestedToolResultTextOnly: true,
+		Provider: descriptor.ProviderID(),
+		Label:    descriptor.Label(),
+		Models:   descriptor.Models(),
+		Adapters: map[llm.API]llm.Streamer{openaicompletions.API: adapter},
 	}
 	return descriptor, nil
 }

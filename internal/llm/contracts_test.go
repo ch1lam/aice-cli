@@ -55,22 +55,6 @@ func TestContentPartJSONRoundTrip(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "tool result",
-			part: llm.ContentPart{
-				Type: llm.ContentTypeToolResult,
-				ToolResult: &llm.ToolResult{
-					CallID: "call-1",
-					Name:   "read",
-					Content: []llm.ContentPart{
-						{
-							Type: llm.ContentTypeText,
-							Text: "file contents",
-						},
-					},
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {

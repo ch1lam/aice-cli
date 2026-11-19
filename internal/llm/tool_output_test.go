@@ -49,11 +49,6 @@ func TestToolResultDetailsOwnershipAndReplay(t *testing.T) {
 	if !reflect.DeepEqual(message, restored[0]) {
 		t.Fatalf("round trip lost details: %s", encoded)
 	}
-	nested := cloneContentParts([]ContentPart{{Type: ContentTypeToolResult, ToolResult: &ToolResult{CallID: "call", Details: message.Details}}})
-	nested[0].ToolResult.Details.StructuredContent[0] = '!'
-	if !json.Valid(message.Details.StructuredContent) {
-		t.Fatal("nested clone aliases source")
-	}
 	legacy, err := UnmarshalAgentMessages([]byte(`[{"role":"toolResult","tool_call_id":"old","content":[],"timestamp":1}]`))
 	if err != nil || legacy[0].(ToolResultMessage).Details != nil {
 		t.Fatalf("legacy replay: %v", err)

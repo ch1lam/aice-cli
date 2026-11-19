@@ -24,7 +24,6 @@ func TestRouteGate(t *testing.T) {
 	unrouted := llm.Model{ID: "unrouted", Provider: "test", API: "api-c"}
 	image := llm.ContentPart{Type: llm.ContentTypeImage, Image: &llm.ImageContent{Data: []byte("image"), MIMEType: "image/png"}}
 	redacted := llm.ContentPart{Type: llm.ContentTypeThinking, Text: "opaque", Redacted: true}
-	nested := llm.ContentPart{Type: llm.ContentTypeToolResult, ToolResult: &llm.ToolResult{CallID: "call-1", Content: []llm.ContentPart{image}}}
 	user := func(parts ...llm.ContentPart) []llm.Message {
 		return []llm.Message{llm.UserMessage{Role: llm.RoleUser, Content: parts}}
 	}
@@ -34,7 +33,6 @@ func TestRouteGate(t *testing.T) {
 		name     string
 		model    llm.Model
 		messages []llm.Message
-		nested   bool
 		want     string // empty means the request reaches the adapter
 	}{
 		{name: "dispatch by API", model: vision},
@@ -49,9 +47,6 @@ func TestRouteGate(t *testing.T) {
 		{name: "image tool result on vision model", model: vision, messages: toolResult},
 		{name: "redacted thinking on listed API", model: text, messages: user(redacted)},
 		{name: "redacted thinking on other API", model: vision, messages: user(redacted), want: "test: message 0 content 0: redacted thinking is not supported by Test models"},
-		{name: "nested image allowed without text-only rule", model: text, messages: user(nested)},
-		{name: "nested image on text-only text model", model: text, messages: user(nested), nested: true, want: "test: message 0 content 0: non-text tool results are not supported by Test models"},
-		{name: "nested image on text-only vision model", model: vision, messages: user(nested), nested: true},
 		{name: "nil message", model: text, messages: []llm.Message{nil}, want: "test: message 0 is nil"},
 	}
 	for _, tt := range tests {
@@ -59,12 +54,11 @@ func TestRouteGate(t *testing.T) {
 			t.Parallel()
 			a, b := &recordingStreamer{}, &recordingStreamer{}
 			route := provider.Route{
-				Provider:                 "test",
-				Label:                    "Test",
-				Models:                   []llm.Model{text, vision, unrouted},
-				Adapters:                 map[llm.API]llm.Streamer{"api-a": a, "api-b": b},
-				RedactedThinking:         []llm.API{"api-a"},
-				NestedToolResultTextOnly: tt.nested,
+				Provider:         "test",
+				Label:            "Test",
+				Models:           []llm.Model{text, vision, unrouted},
+				Adapters:         map[llm.API]llm.Streamer{"api-a": a, "api-b": b},
+				RedactedThinking: []llm.API{"api-a"},
 			}
 			messages := tt.messages
 			if messages == nil {

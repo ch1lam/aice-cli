@@ -339,23 +339,6 @@ func appendCompactionContent(
 				part.ToolCall.Name,
 				part.ToolCall.Arguments,
 			)
-		case llm.ContentTypeToolResult:
-			if part.ToolResult == nil {
-				builder.WriteString("[Invalid nested tool result]\n")
-				continue
-			}
-			fmt.Fprintf(
-				builder,
-				"[Nested tool result name=%q call_id=%q error=%t]\n",
-				part.ToolResult.Name,
-				part.ToolResult.CallID,
-				part.ToolResult.IsError,
-			)
-			appendCompactionContent(
-				builder,
-				part.ToolResult.Content,
-				maxTextChars,
-			)
 		}
 	}
 	if truncated {

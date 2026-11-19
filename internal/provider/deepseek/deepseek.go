@@ -74,7 +74,6 @@ func New(config Config) (*Provider, error) {
 			anthropic.API:       anthropicAdapter,
 			openairesponses.API: responsesAdapter,
 		},
-		NestedToolResultTextOnly: true,
 	}}, nil
 }
 
