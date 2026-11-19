@@ -484,6 +484,11 @@ credentials/prompt content out of logs.
   file cap. It is not a filesystem snapshot or a bound on all temporary decoding
   allocations. [Truncation metadata](contracts.md#tool-truncation-metadata) distinguishes
   match, byte and long-line limits.
+- `find` lists the files ripgrep would search (`rg --files --hidden`, the same
+  ignore rules as `grep`): hidden files are included, `.gitignore`/`.ignore`
+  rules apply, `.git` directories are skipped, and nested symlinks are neither
+  followed nor listed. A symlinked root directory is listed through its target
+  while results keep the requested spelling. Without `rg` it is unavailable like `grep`.
 - `bash` requires a one-line `description` of why the command runs. A
   permission prompt shows it above the full command, and a folded TUI tool
   card shows it in place of the command, which the expanded card shows in

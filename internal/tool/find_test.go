@@ -9,6 +9,8 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
+// Find lists what grep searches: hidden files, but not .git, ignored files or
+// nested symlinks.
 func TestFindExecuteSupportsDoubleStarAndIgnoresGit(t *testing.T) {
 	t.Parallel()
 	workspace, root := newWorkspace(t)
@@ -16,6 +18,9 @@ func TestFindExecuteSupportsDoubleStarAndIgnoresGit(t *testing.T) {
 	writeFixture(t, root, "internal/a.go", "package internal")
 	writeFixture(t, root, "internal/a_test.go", "package internal")
 	writeFixture(t, root, ".git/hidden.go", "package hidden")
+	writeFixture(t, root, ".gitignore", "ignored.go\n")
+	writeFixture(t, root, "ignored.go", "package ignored")
+	writeFixture(t, root, ".secret/hidden.go", "package hidden")
 	outside := writeFixture(t, t.TempDir(), "outside.go", "package outside")
 	if err := os.Symlink(outside, filepath.Join(root, "linked.go")); err != nil {
 		t.Skipf("os.Symlink() error = %v", err)
@@ -29,7 +34,7 @@ func TestFindExecuteSupportsDoubleStarAndIgnoresGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	want := "internal/a.go\ninternal/a_test.go\nlinked.go\nmain.go"
+	want := ".secret/hidden.go\ninternal/a.go\ninternal/a_test.go\nmain.go"
 	if got := resultText(t, result); got != want {
 		t.Fatalf("Execute() text = %q, want %q", got, want)
 	}
