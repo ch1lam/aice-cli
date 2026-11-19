@@ -87,7 +87,8 @@ are validated strictly; unknown fields are errors.
   call. `timeout` values are AICE product defaults, not upstream guarantees.
 - `allowed_domains` / `excluded_domains` are bare hostnames and act as the
   upper bound: a model request can only narrow the allow list (label-boundary
-  subdomain matching); the exclude list comes only from configuration. An
+  subdomain matching); the exclude list comes only from configuration. Both
+  lists may be set together, in `settings.json` or `/web`. An
   empty intersection is a `constraint_conflict` error and nothing is sent
   upstream.
 - `enabled: false` under `search` or `fetch` disables that tool. A missing

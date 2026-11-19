@@ -46,8 +46,8 @@ func webSettingFields(c config.Config, disabled string) []interaction.SettingFie
 		{config.WebSearchTimeout, "Search timeout", "Positive duration, for example 25s."},
 		{config.WebFetchTimeout, "Fetch timeout", "Positive duration, for example 30s."},
 		{config.WebSearchPriority, "Search priority", "Ordered source list: native or service:<instance>. Empty permits no sources."},
-		{config.WebAllowedDomains, "Allowed search domains", "One domain per entry, without scheme or path. Mutually exclusive with excluded domains."},
-		{config.WebExcludedDomains, "Excluded search domains", "One domain per entry, without scheme or path. Mutually exclusive with allowed domains."},
+		{config.WebAllowedDomains, "Allowed search domains", "One domain per entry, without scheme or path."},
+		{config.WebExcludedDomains, "Excluded search domains", "One domain per entry, without scheme or path."},
 	} {
 		value := webValue(c.Web, d.id)
 		inherited, err := c.WithWebPatch(config.WebPatch{Unset: []config.WebSetting{d.id}})
@@ -227,12 +227,8 @@ func webRequestPatch(c config.Config, request interaction.SettingsRequest) (conf
 		}
 	}
 	patch.Services = nil // existing services use field patches, never full replacement
-	next, err := patch.Apply(c.WebPreferences())
-	if err != nil {
+	if _, err := patch.Apply(c.WebPreferences()); err != nil {
 		return patch, err
-	}
-	if next.Search != nil && len(next.Search.AllowedDomains) > 0 && len(next.Search.ExcludedDomains) > 0 {
-		return patch, fmt.Errorf("allowed and excluded domains are mutually exclusive; clear the other list first")
 	}
 	return patch, nil
 }
