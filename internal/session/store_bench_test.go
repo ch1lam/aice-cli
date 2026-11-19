@@ -56,14 +56,11 @@ func BenchmarkSessionHistory(b *testing.B) {
 					}
 				}
 			})
-			b.Run("reopen", func(b *testing.B) {
+			// The writer above holds the lock, so replay through the read-only path.
+			b.Run("replay", func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					opened, err := session.Open(b.Context(), path)
-					if err != nil {
-						b.Fatal(err)
-					}
-					if err := opened.Close(); err != nil {
+					if _, _, err := session.Read(b.Context(), path); err != nil {
 						b.Fatal(err)
 					}
 				}

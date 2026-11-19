@@ -485,6 +485,33 @@ func TestAdapterPreservesPartialTextOnUnexpectedEOF(t *testing.T) {
 	}
 }
 
+func TestAdapterClassifiesErrorEventByCode(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewSSEServer(t, []string{
+		`{"type":"response.created","sequence_number":0,"response":{"id":"resp-1","model":"deepseek-v4-flash","status":"in_progress"}}`,
+		`{"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}`,
+	})
+	defer server.Close()
+	adapter, err := openairesponses.New(openairesponses.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := adapter.Stream(t.Context(), apitest.MinimalRequest(openairesponses.API))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	events := apitest.CollectEvents(t, stream)
+	var providerErr *llm.ProviderError
+	if last := events[len(events)-1]; last.Type != llm.EventTypeError || !errors.As(last.Err, &providerErr) {
+		t.Fatalf("last event = %#v, want provider error", last)
+	}
+	if providerErr.Transport || providerErr.IsTransient() || providerErr.Code != "context_length_exceeded" {
+		t.Fatalf("provider error = %#v, want non-transient context_length_exceeded", providerErr)
+	}
+}
+
 func TestAdapterPropagatesCanceledContext(t *testing.T) {
 	t.Parallel()
 

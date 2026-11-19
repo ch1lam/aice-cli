@@ -187,11 +187,6 @@ func estimateContentTokens(content []ContentPart) int64 {
 				tokens += EstimateTextTokens(part.ToolCall.Name)
 				tokens += EstimateTextTokens(string(part.ToolCall.Arguments))
 			}
-		case ContentTypeToolResult:
-			if part.ToolResult != nil {
-				tokens += EstimateTextTokens(part.ToolResult.Name)
-				tokens += estimateContentTokens(ToolResultModelContent(part.ToolResult.Content, part.ToolResult.Details, part.ToolResult.IsError))
-			}
 		}
 	}
 	return tokens

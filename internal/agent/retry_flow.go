@@ -117,7 +117,9 @@ func (e *runExecution) retryTurn(
 	}
 	if err := waitRetry(ctx, delay); err != nil {
 		waitErr := errors.Join(runErr, err)
-		_ = e.endRetry(ctx, false, waitErr)
+		if err := e.endRetry(ctx, false, waitErr); err != nil {
+			return stepAbort, errors.Join(waitErr, err)
+		}
 		return stepEnd, waitErr
 	}
 	if err := e.beginTurn(ctx); err != nil {

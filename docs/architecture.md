@@ -172,17 +172,26 @@ upstream protocol version required by a current integration is handled through
 the current SDK's supported API, not by pinning the whole application to an old
 SDK or rebuilding that protocol in AICE.
 
-Selected non-standard dependencies and their reason:
+Direct dependencies in [go.mod](../go.mod) and their reason:
 
 | Dependency | Reason / license |
 | --- | --- |
+| `github.com/anthropics/anthropic-sdk-go` | Anthropic Messages protocol adapter; MIT |
+| `github.com/openai/openai-go/v3` | OpenAI Responses and Chat Completions protocol adapters; Apache-2.0 |
+| `github.com/modelcontextprotocol/go-sdk` | Protocol transport behind `mcpclient`; Apache-2.0/MIT transition, see Cua provenance below |
+| `github.com/coder/acp-go-sdk` | Agent Client Protocol types and stdio connection, confined to `internal/acp`; Apache-2.0 |
+| `github.com/creativeprojects/go-selfupdate` | GitHub release lookup, checksum validation and executable replacement in `internal/update`; MIT |
+| `github.com/Masterminds/semver/v3` | Release version parsing and comparison in `internal/update`; MIT |
+| `github.com/spf13/cobra`, `github.com/spf13/pflag` | CLI commands and flags; Apache-2.0, BSD-3-Clause |
+| `github.com/spf13/viper` | Instance-local settings precedence registry; MIT |
+| `charm.land/bubbletea/v2`, `charm.land/bubbles/v2`, `charm.land/lipgloss/v2`, `charm.land/glamour/v2`, `github.com/charmbracelet/x/ansi` | TUI runtime, input widgets, layout, Markdown rendering and ANSI-aware width/truncation; MIT |
+| `github.com/yuin/goldmark` | Markdown structure, including nested/streaming code blocks; MIT |
 | `mvdan.cc/sh/v3` | Bash AST for command and path checks; MIT |
 | `gopkg.in/yaml.v3` | Agent Skill frontmatter; MIT |
 | `golang.org/x/text` | Unicode normalization for read-path matching; BSD-3-Clause |
 | `golang.org/x/image` | BMP/WebP decoding; BSD-3-Clause |
 | `golang.org/x/net` | HTML parsing, charset and IDNA; BSD-3-Clause |
-| Goldmark | Markdown structure, including nested/streaming code blocks; MIT |
-| Go MCP SDK | Protocol transport behind `mcpclient`; Apache-2.0/MIT transition, see Cua provenance below |
+| `golang.org/x/sys` | Windows file locks and process control, platform-specific Cua installation; BSD-3-Clause |
 
 Imported resources retain source/commit and license notices. Helper provenance
 is owned by [agent-browser VENDOR.md](../internal/deps/agentbrowser/VENDOR.md)

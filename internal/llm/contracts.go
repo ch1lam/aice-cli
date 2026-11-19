@@ -38,12 +38,11 @@ const (
 type ContentType string
 
 const (
-	ContentTypeUnknown    ContentType = ""
-	ContentTypeText       ContentType = "text"
-	ContentTypeThinking   ContentType = "thinking"
-	ContentTypeImage      ContentType = "image"
-	ContentTypeToolCall   ContentType = "tool_call"
-	ContentTypeToolResult ContentType = "tool_result"
+	ContentTypeUnknown  ContentType = ""
+	ContentTypeText     ContentType = "text"
+	ContentTypeThinking ContentType = "thinking"
+	ContentTypeImage    ContentType = "image"
+	ContentTypeToolCall ContentType = "tool_call"
 )
 
 // ThinkingLevel is the requested amount of model reasoning.
@@ -297,13 +296,12 @@ type ThinkingContent struct {
 // Text carries both visible text and thinking text. Signature is opaque provider
 // state that may need to be sent back unchanged on a later request.
 type ContentPart struct {
-	Type       ContentType   `json:"type"`
-	Text       string        `json:"text,omitempty"`
-	Signature  string        `json:"signature,omitempty"`
-	Redacted   bool          `json:"redacted,omitempty"`
-	Image      *ImageContent `json:"image,omitempty"`
-	ToolCall   *ToolCall     `json:"tool_call,omitempty"`
-	ToolResult *ToolResult   `json:"tool_result,omitempty"`
+	Type      ContentType   `json:"type"`
+	Text      string        `json:"text,omitempty"`
+	Signature string        `json:"signature,omitempty"`
+	Redacted  bool          `json:"redacted,omitempty"`
+	Image     *ImageContent `json:"image,omitempty"`
+	ToolCall  *ToolCall     `json:"tool_call,omitempty"`
 }
 
 // ImageContent contains inline image data.
@@ -725,18 +723,18 @@ func validateMessageContent(role Role, content []ContentPart, allowEmpty bool) e
 func (p ContentPart) Validate() error {
 	switch p.Type {
 	case ContentTypeText:
-		if p.Redacted || p.Image != nil || p.ToolCall != nil || p.ToolResult != nil {
+		if p.Redacted || p.Image != nil || p.ToolCall != nil {
 			return fmt.Errorf("text content has conflicting payload fields")
 		}
 	case ContentTypeThinking:
-		if p.Image != nil || p.ToolCall != nil || p.ToolResult != nil {
+		if p.Image != nil || p.ToolCall != nil {
 			return fmt.Errorf("thinking content has conflicting payload fields")
 		}
 	case ContentTypeImage:
 		if p.Image == nil {
 			return fmt.Errorf("image content payload is required")
 		}
-		if p.Text != "" || p.Signature != "" || p.Redacted || p.ToolCall != nil || p.ToolResult != nil {
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.ToolCall != nil {
 			return fmt.Errorf("image content has conflicting payload fields")
 		}
 		if len(p.Image.Data) == 0 || p.Image.MIMEType == "" {
@@ -746,7 +744,7 @@ func (p ContentPart) Validate() error {
 		if p.ToolCall == nil {
 			return fmt.Errorf("tool call payload is required")
 		}
-		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.ToolResult != nil {
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil {
 			return fmt.Errorf("tool call content has conflicting payload fields")
 		}
 		if p.ToolCall.ID == "" || p.ToolCall.Name == "" {
@@ -754,16 +752,6 @@ func (p ContentPart) Validate() error {
 		}
 		if !json.Valid(p.ToolCall.Arguments) {
 			return fmt.Errorf("tool call arguments are not valid json")
-		}
-	case ContentTypeToolResult:
-		if p.ToolResult == nil {
-			return fmt.Errorf("tool result payload is required")
-		}
-		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.ToolCall != nil {
-			return fmt.Errorf("tool result content has conflicting payload fields")
-		}
-		if err := p.ToolResult.Validate(); err != nil {
-			return err
 		}
 	default:
 		return fmt.Errorf("unsupported content type %q", p.Type)

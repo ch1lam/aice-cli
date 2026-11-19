@@ -100,7 +100,7 @@ the resource operation's authorization.
 Structured JSON is retained without decoding numbers into floating point and
 is bounded to 1 MiB of valid UTF-8 JSON. A loss notice describes missing source
 data, not model-only clipping, and must not promise recovery of unsaved bytes.
-Constructors, nested result clones and Session snapshots copy mutable details
+Constructors, message clones and Session snapshots copy mutable details
 and image payloads. No protocol SDK values or new message roles are introduced.
 
 When the request model lacks the `image` input modality, the Loop's request
@@ -138,6 +138,8 @@ Legacy tool errors retain their existing text-only behavior. Repetition detectio
 includes explicit outcome details, so changed structured results count as
 observable progress. The storage companion does not participate in that
 comparison; retained whitespace/HTML spelling alone does not introduce progress.
+Nor does `Review` provenance, or the text of a call an automatic review refused
+([repeated-tool detection](execution-sessions.md#repeated-tool-detection)).
 Neither result conversion nor Session recovery reruns tools.
 
 The application opts main runs into `RunInput.ResultViewTokens` and provides
@@ -201,7 +203,9 @@ retain the short content summary; Session keeps the additive metadata.
   larger hints stop retries. Cancellation, protocol/context errors, event-sink
   failures and configured stop reasons are not retried. A provider error event
   that arrives before the stream's `start` is classified by its cause, like one
-  after it, rather than as a protocol error. Tool execution is never
+  after it, rather than as a protocol error. An error event inside an accepted
+  stream is classified by its error code or type, not as a transport failure,
+  so only transient codes retry. Tool execution is never
   retried by this policy. [retry.go](../internal/agent/retry.go) owns classification.
   A gateway's first rejection of replayed reasoning ("`encrypted_content` …
   was not issued") is retried once immediately, even with retries disabled,

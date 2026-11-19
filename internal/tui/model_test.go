@@ -333,7 +333,7 @@ func TestModelAssistantBodyIsSeparatedAndUniformlyIndented(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := ansi.Strip(current.entryView(tt.entry, false))
+			got := ansi.Strip(current.transcriptEntryItem(0, tt.entry, false, transcriptStandalone).content().view)
 			lines := strings.Split(got, "\n")
 			for index := range lines {
 				lines[index] = strings.TrimRight(lines[index], " ")
@@ -1218,7 +1218,7 @@ func TestModelToolStatusUsesOnlySpinnerOrEmoji(t *testing.T) {
 			t.Parallel()
 
 			current := newModel(make(chan runRequest), make(chan struct{}))
-			view := ansi.Strip(current.entryView(tt.entry, false))
+			view := ansi.Strip(current.transcriptEntryItem(0, tt.entry, false, transcriptStandalone).content().view)
 			if !strings.Contains(view, "read") {
 				t.Fatalf("tool name is missing: %q", view)
 			}

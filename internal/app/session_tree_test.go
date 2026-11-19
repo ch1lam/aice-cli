@@ -230,13 +230,16 @@ func TestSessionNavigationDoesNotRecoverIncompleteGroup(t *testing.T) {
 			t.Fatal("menu offers incomplete tool group")
 		}
 	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
+	// Inspection replays read-only, so it works while a writer holds the Session.
+	for _, command := range []string{"tree", "reviews"} {
+		inspect := newSessionTestCommand(t)
+		inspect.SetOut(io.Discard)
+		inspect.SetArgs([]string{"session", command, "--workspace", workspace, "--session", path})
+		if err := inspect.ExecuteContext(t.Context()); err != nil {
+			t.Fatalf("session %s: %v", command, err)
+		}
 	}
-	tree := newSessionTestCommand(t)
-	tree.SetOut(io.Discard)
-	tree.SetArgs([]string{"session", "tree", "--workspace", workspace, "--session", path})
-	if err := tree.ExecuteContext(t.Context()); err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.ReadFile(path)

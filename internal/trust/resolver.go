@@ -78,8 +78,6 @@ type Resolution struct {
 	Entry Entry
 	// Choice is the selected option when Source is SourceInteractive.
 	Choice Choice
-	// Prompted reports whether an interactive prompt was shown.
-	Prompted bool
 }
 
 // Resolve determines the effective trust decision for one startup, mirroring
@@ -137,6 +135,5 @@ func (s *Store) Resolve(options ResolveOptions) (Resolution, error) {
 		Decision: choice.Decision,
 		Source:   SourceInteractive,
 		Choice:   choice,
-		Prompted: true,
 	}, nil
 }

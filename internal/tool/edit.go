@@ -151,7 +151,20 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 		bom = "\ufeff"
 		content = strings.TrimPrefix(content, bom)
 	}
-	usesCRLF := strings.Count(content, "\r\n") > strings.Count(content, "\n")-strings.Count(content, "\r\n")
+	// Match against LF-normalized text, but splice into the original so
+	// untouched lines keep their own endings. crlf holds the normalized offset
+	// of each '\n' whose '\r' was removed.
+	var crlf []int
+	for offset := 0; ; offset += 2 {
+		next := strings.Index(content[offset:], "\r\n")
+		if next < 0 {
+			break
+		}
+		offset += next
+		crlf = append(crlf, offset-len(crlf))
+	}
+	original := func(offset int) int { return offset + sort.SearchInts(crlf, offset) }
+	usesCRLF := len(crlf) > strings.Count(content, "\n")-len(crlf)
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 
 	positioned := make([]positionedReplacement, 0, len(edits))
@@ -196,16 +209,15 @@ func applyReplacements(content string, edits []replacement) (string, error) {
 	var builder strings.Builder
 	last := 0
 	for _, edit := range positioned {
-		_, _ = builder.WriteString(normalized[last:edit.start])
+		_, _ = builder.WriteString(content[last:original(edit.start)])
+		if usesCRLF {
+			edit.newText = strings.ReplaceAll(edit.newText, "\n", "\r\n")
+		}
 		_, _ = builder.WriteString(edit.newText)
-		last = edit.end
+		last = original(edit.end)
 	}
-	_, _ = builder.WriteString(normalized[last:])
-	updated := builder.String()
-	if usesCRLF {
-		updated = strings.ReplaceAll(updated, "\n", "\r\n")
-	}
-	return bom + updated, nil
+	_, _ = builder.WriteString(content[last:])
+	return bom + builder.String(), nil
 }
 
 // ResolvePath returns the existing regular file that edit will replace.

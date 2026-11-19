@@ -123,6 +123,23 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	}
 }
 
+func TestPendingSteerSanitizesText(t *testing.T) {
+	t.Parallel()
+
+	current := testModel(t, 80, 24)
+	current.pendingDeliveries = []pendingDelivery{{
+		text: "\x1b]0;title\x07fix\ttests",
+		mode: interaction.DeliveryKindSteer,
+	}}
+	view := current.pendingSteeringView()
+	if strings.Contains(view, "]0;title") || strings.Contains(view, "\t") {
+		t.Fatalf("pending steer view = %q, want sanitized text", view)
+	}
+	if !strings.Contains(ansi.Strip(view), "fix    tests") {
+		t.Fatalf("pending steer view = %q, want expanded text", view)
+	}
+}
+
 func TestModelSteerEventMovesPendingInputIntoTranscript(t *testing.T) {
 	t.Parallel()
 

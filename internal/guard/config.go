@@ -15,4 +15,8 @@ type Config struct {
 	ControlFiles []string
 	// Rules are explicit allow/ask/deny rules from settings.
 	Rules Rules
+	// BashDirectory is the directory the bash tool starts in, spelled as its
+	// $PWD: the workspace before symlink resolution, which logical `cd ..`
+	// leaves from. Empty means the workspace.
+	BashDirectory string
 }

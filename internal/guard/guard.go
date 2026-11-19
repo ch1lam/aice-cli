@@ -39,9 +39,14 @@ type Guard struct {
 	// physicalWorkspace is workspace with symlinks resolved; boundary
 	// checks compare physical paths.
 	physicalWorkspace string
-	readOnlyRoots     []string
-	credentialFiles   []string
-	controlFiles      []string
+	// bashDir is the directory bash starts in, spelled like its $PWD.
+	bashDir       string
+	readOnlyRoots []string
+	// credentialFiles and credentialDirs are denied; built-in home stores
+	// are joined to the home directory once.
+	credentialFiles []string
+	credentialDirs  []string
+	controlFiles    []string
 	// rules are explicit settings rules; AddRule appends under mu.
 	rules ruleSet
 	// sessionAllowedTools tracks unknown tool names allowed for this Session.
@@ -73,12 +78,19 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	if err != nil {
 		return nil, err
 	}
+	credentialFiles, credentialDirs := credentialPaths(cfg.CredentialFiles)
+	bashDir := workspace
+	if cfg.BashDirectory != "" {
+		bashDir = filepath.Clean(cfg.BashDirectory)
+	}
 	return &Guard{
 		rules:               rules,
 		workspace:           workspace,
 		physicalWorkspace:   physicalWorkspace(workspace),
+		bashDir:             bashDir,
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
-		credentialFiles:     cleanPaths(cfg.CredentialFiles),
+		credentialFiles:     credentialFiles,
+		credentialDirs:      credentialDirs,
 		controlFiles:        cleanPaths(cfg.ControlFiles),
 		sessionAllowedTools: map[string]bool{},
 		sessionCommands:     map[string]bool{},
@@ -187,7 +199,7 @@ func (g *Guard) Check(ctx context.Context, call llm.ToolCall) (Result, error) {
 		res.Actions = []Action{res.Action}
 		return res, nil
 	}
-	analysis := extractActions(call, g.workspace)
+	analysis := g.extractActions(call)
 	res := g.checkActions(ctx, call, analysis)
 	res.Actions = callActions(call, analysis)
 	return res, nil
@@ -204,7 +216,7 @@ func (g *Guard) Actions(call llm.ToolCall) []Action {
 	if isNetworkTool(call.Name) {
 		return []Action{g.checkNetwork(call).Action}
 	}
-	return callActions(call, extractActions(call, g.workspace))
+	return callActions(call, g.extractActions(call))
 }
 
 // callActions is the recorded view of a call: a bash command, then the file
@@ -237,12 +249,14 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 		}
 	}
 	seen := make(map[string]bool)
+	gitWrite := false
 	for _, act := range analysis.actions {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		phys := physicalPath(abs)
 		if denied, ok := g.denyPath(ctx, call.Name, act, abs, phys); ok {
 			return denied
 		}
+		gitWrite = gitWrite || act.Op == opWrite && g.inGitDir(phys)
 		key := act.Op + "\x00" + phys
 		if seen[key] {
 			continue
@@ -255,23 +269,29 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 	if len(approvals) > 0 {
 		return Result{Decision: DecisionAsk, Approvals: approvals}
 	}
-	result := Result{Decision: DecisionAllow}
-	if call.Name == "bash" {
+	result := Result{Decision: DecisionAllow, GitWrite: gitWrite}
+	if call.Name == "bash" && !gitWrite {
 		result.ReadOnly, result.RuleCovered = g.bashHints(extractCommand(call.Arguments), analysis)
 	}
 	return result
 }
 
+// inGitDir reports a physical path inside a .git directory of the
+// workspace or of a repository nested in it. Writes there (hooks, config)
+// run code later, so auto mode reviews them.
+func (g *Guard) inGitDir(phys string) bool {
+	if g.physicalWorkspace == "" || !hostpath.Within(g.physicalWorkspace, phys) {
+		return false
+	}
+	rel, err := filepath.Rel(g.physicalWorkspace, phys)
+	return err == nil && slices.ContainsFunc(strings.Split(filepath.ToSlash(rel), "/"), func(part string) bool {
+		return strings.EqualFold(part, ".git")
+	})
+}
+
 // bashHints classifies an allowed bash command for auto mode routing.
 func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered bool) {
-	readOnly = len(analysis.findings) == 0 && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
-	// Writes into .git (hooks, config) run code later, so they always need review.
-	gitDir := filepath.Join(g.physicalWorkspace, ".git")
-	if slices.ContainsFunc(analysis.actions, func(a Action) bool {
-		return a.Op == opWrite && hostpath.Within(gitDir, physicalPath(resolveAbsolute(a.Path, g.workspace, a.ToolName)))
-	}) {
-		return false, false
-	}
+	readOnly = len(analysis.findings) == 0 && !analysis.hidden && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
 	covered = g.sessionCommands[cmd]
 	allCovered := true
 	for _, words := range analysis.commands {
@@ -284,7 +304,7 @@ func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered 
 			allCovered = false
 		}
 	}
-	return readOnly, covered || allCovered && len(analysis.commands) > 0
+	return readOnly, covered || allCovered && !analysis.hidden && len(analysis.commands) > 0
 }
 
 // denyPath applies hard denials to the spelled and the physical path.
@@ -479,27 +499,31 @@ func (g *Guard) riskyDelete(f finding) bool {
 	if g.workspace == "" || f.extraArgs {
 		return true
 	}
+	workspace := g.physicalWorkspace
 	for _, target := range f.deleteTargets {
 		text := target.text
-		if target.unresolved || f.base == "" && !isRootedWord(text) || text == "" {
+		if target.unresolved || text == "" {
 			return true
 		}
 		dir, last := filepath.Split(filepath.FromSlash(text))
+		glob := strings.ContainsAny(last, "*?[")
 		if strings.ContainsAny(dir, "*?[") {
 			return true
 		}
-		abs := resolveAbsolute(text, f.base, "bash")
-		if strings.ContainsAny(last, "*?[") {
-			abs = filepath.Dir(abs)
-			if hostpath.Same(abs, g.workspace) {
+		for _, cwd := range f.dirs {
+			if cwd == unknownDir && !isRootedWord(text) {
 				return true
 			}
-		}
-		if !hostpath.Within(g.workspace, abs) || hostpath.Within(filepath.Join(g.workspace, ".git"), abs) {
-			return true
-		}
-		if hostpath.Same(abs, g.workspace) && !f.filtered {
-			return true
+			abs := resolveAbsolute(text, resolveBase(cwd, g.bashDir, g.workspace), "bash")
+			if glob {
+				abs = filepath.Dir(abs)
+			}
+			// Resolve only the parent: rm removes a symlink, not its target.
+			abs = filepath.Join(physicalPath(filepath.Dir(abs)), filepath.Base(abs))
+			if glob && hostpath.Same(abs, workspace) || hostpath.Same(abs, workspace) && !f.filtered ||
+				!hostpath.Within(workspace, abs) || hostpath.Within(filepath.Join(workspace, ".git"), abs) {
+				return true
+			}
 		}
 	}
 	return false

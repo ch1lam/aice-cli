@@ -45,8 +45,14 @@ func displayToolOutput(event agent.AgentEvent) interaction.ToolOutputDisplay {
 			}
 		}
 	}
-	if text.Len() == 0 && event.Err != nil {
+	switch {
+	case text.Len() > 0:
+	case event.Err != nil:
 		appendPart(event.Err.Error())
+	case event.ToolResult != nil && event.ToolResult.Details != nil && event.ToolResult.Details.State == llm.ExecutionUnknown:
+		// A recovered interrupted call records no text of its own; show the
+		// notice the model sees for its unknown outcome.
+		appendPart(llm.UnknownOutcomeNotice)
 	}
 	output.Text = text.String()
 	return output

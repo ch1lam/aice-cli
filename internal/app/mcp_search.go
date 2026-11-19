@@ -76,13 +76,16 @@ func mcpSearchTerms(value string) map[string]bool {
 }
 
 // mcpSearchDocument is a value-only projection of a discovered tool. Retrieval
-// neither reads live catalog state nor grants execution permission.
+// neither reads live catalog state nor grants execution permission. Ranking
+// indexes the remote name and description; description is the model-visible
+// text returned with a hit.
 type mcpSearchDocument struct {
-	reference   agent.ToolReference
-	service     string
-	name        string
-	remoteName  string
-	description string
+	reference         agent.ToolReference
+	service           string
+	name              string
+	remoteName        string
+	description       string
+	remoteDescription string
 }
 
 func rankMCPTools(documents map[string]mcpSearchDocument, request tool.ToolSearchRequest, response tool.ToolSearchResult) tool.ToolSearchResult {
@@ -104,7 +107,7 @@ func rankMCPTools(documents map[string]mcpSearchDocument, request tool.ToolSearc
 		if request.Service != "" && entry.service != request.Service || len(request.IDs) > 0 && !slices.Contains(request.IDs, id) {
 			continue
 		}
-		documentTerms := mcpSearchTerms(entry.description)
+		documentTerms := mcpSearchTerms(entry.remoteDescription)
 		for term := range mcpSearchTerms(entry.remoteName) {
 			documentTerms[term] = true
 		}

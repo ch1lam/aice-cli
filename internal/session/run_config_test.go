@@ -117,6 +117,44 @@ func TestAssistantMessageMustNameRecordedRunConfig(t *testing.T) {
 	}
 }
 
+// Bounded result views make the Loop ignore earlier provider usage when it
+// fits output tokens, so the rebuild must estimate the whole context as well.
+func TestRebuildRequestFitsOutputTokensLikeTheLoop(t *testing.T) {
+	t.Parallel()
+	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))
+	conversation := toolMessages()
+	prompt := conversation[0].(llm.UserMessage)
+	prompt.Content = []llm.ContentPart{llm.NewTextContent(strings.Repeat("x", 20_000)).Part()}
+	conversation[0] = prompt
+	result := conversation[2].(llm.ToolResultMessage)
+	result.Details = &llm.ToolResultDetails{State: llm.ExecutionReturned}
+	conversation[2] = result
+	record, err := session.NewRunConfig("test-build", llm.RequestConfig{
+		Model:            llm.Model{ID: "requested-model", Provider: "custom-provider", API: "custom-chat-api", ContextWindow: 10_000, MaxTokens: 6_000},
+		ResultViewTokens: 100_000,
+	}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendRunConfig(t.Context(), record); err != nil {
+		t.Fatal(err)
+	}
+	final := conversation[3].(llm.AssistantMessage)
+	final.RequestConfig = record.ID
+	conversation[3] = final
+	entries := appendMessages(t, store, "message", conversation...)
+
+	request, err := session.RebuildRequest(snapshotOf(t, store), entries[3].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, safety := llm.ContextBudgets(10_000)
+	full := llm.EstimateContextTokens(llm.Request{Messages: request.Messages, ReestimateContext: true}).Tokens
+	if want := 10_000 - full - safety; request.Options.MaxTokens != want {
+		t.Fatalf("rebuilt output limit = %d, want %d from the full estimate", request.Options.MaxTokens, want)
+	}
+}
+
 func TestRebuildRequestFollowsEachBranch(t *testing.T) {
 	t.Parallel()
 	store := mustCreate(t, filepath.Join(t.TempDir(), "session.jsonl"))

@@ -1,11 +1,12 @@
 package tool
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -27,9 +28,10 @@ const (
 }`
 )
 
-// Find locates files by glob pattern.
+// Find locates files by glob pattern among the files grep would search.
 type Find struct {
 	workspace *Workspace
+	rgPath    string
 }
 
 // NewFind constructs a find tool.
@@ -37,7 +39,11 @@ func NewFind(workspace *Workspace) (*Find, error) {
 	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	return &Find{workspace: workspace}, nil
+	rgPath, err := lookupRipgrep()
+	if err != nil {
+		return nil, err
+	}
+	return &Find{workspace: workspace, rgPath: rgPath}, nil
 }
 
 // Definition returns the model-facing find contract.
@@ -50,7 +56,7 @@ func (f *Find) Definition() llm.ToolDefinition {
 	}
 }
 
-// Execute walks the requested directory without following directory symlinks.
+// Execute lists the requested directory and matches the pattern in path order.
 func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Pattern string `json:"pattern"`
@@ -91,14 +97,17 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if !info.IsDir() {
 		return llm.ToolResult{}, fmt.Errorf("tool \"find\": %q is not a directory", args.Path)
 	}
+	// List the symlinked root's target but report paths under the requested
+	// root; nested links are neither followed nor listed.
+	walkRoot, err := filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"find\": resolve %q: %w", args.Path, err)
+	}
 
 	collector := newTextCollector(maxOutputBytes)
 	count := 0
 	entriesScanned := 0
-	err = filepath.WalkDir(rootPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
+	err = f.listFiles(ctx, walkRoot, func(filePath string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -106,16 +115,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		if entriesScanned > maxWalkEntries {
 			return errScanLimit
 		}
-		if filePath == rootPath {
-			return nil
-		}
-		if entry.IsDir() {
-			if entry.Name() == ".git" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		matchPath, relativeErr := filepath.Rel(rootPath, filePath)
+		matchPath, relativeErr := filepath.Rel(walkRoot, filePath)
 		if relativeErr != nil {
 			return relativeErr
 		}
@@ -130,9 +130,9 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			return errResultLimit
 		}
 		count++
-		resultPath := filePath
+		resultPath := filepath.Join(rootPath, matchPath)
 		if !filepath.IsAbs(args.Path) {
-			resultPath, relativeErr = filepath.Rel(f.workspace.physicalPath, filePath)
+			resultPath, relativeErr = filepath.Rel(f.workspace.physicalPath, resultPath)
 			if relativeErr != nil {
 				return relativeErr
 			}
@@ -143,7 +143,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		return nil
 	})
 	if err != nil && err != errResultLimit && err != errOutputLimit && err != errScanLimit {
-		return llm.ToolResult{}, fmt.Errorf("tool \"find\": walk %q: %w", args.Path, err)
+		return llm.ToolResult{}, fmt.Errorf("tool \"find\": list %q: %w", args.Path, err)
 	}
 	if err == errResultLimit && !collector.truncated {
 		collector.WriteString(fmt.Sprintf("[result limit reached: %d]", args.Limit))
@@ -152,6 +152,53 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		collector.WriteString(fmt.Sprintf("[scan limit reached: %d entries]", maxWalkEntries))
 	}
 	return textResult(call, strings.TrimSuffix(collector.String(), "\n"), false), nil
+}
+
+// listFiles streams the files ripgrep would search under root with grep's
+// ignore rules: hidden files included, .gitignore/.ignore applied, nested
+// symlinks neither followed nor listed. .git directories are skipped too.
+func (f *Find) listFiles(ctx context.Context, root string, visit func(string) error) error {
+	command := exec.CommandContext(ctx, f.rgPath,
+		"--files", "--hidden", "--null", "--sort", "path", "--glob", "!.git", "--", root)
+	command.Dir = f.workspace.Path()
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("open ripgrep output: %w", err)
+	}
+	stderr := newBoundedWriter(maxOutputBytes)
+	command.Stderr = stderr
+	configureProcess(command)
+	cleanup, err := startProcessTree(command)
+	if err != nil {
+		return fmt.Errorf("start ripgrep: %w", err)
+	}
+	defer cleanup()
+
+	reader := bufio.NewReader(stdout)
+	for {
+		filePath, readErr := reader.ReadString(0)
+		if readErr != nil {
+			break
+		}
+		if err := visit(strings.TrimSuffix(filePath, "\x00")); err != nil {
+			// As with grep's match limit, the early stop is the result.
+			_ = cancelRipgrep(command)
+			_ = command.Wait()
+			return err
+		}
+	}
+	waitErr := command.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var exitError *exec.ExitError
+	if waitErr == nil || errors.As(waitErr, &exitError) && exitError.ExitCode() == 1 {
+		return nil
+	}
+	if text := strings.TrimSpace(stderr.String()); text != "" {
+		return fmt.Errorf("ripgrep failed: %s: %w", text, waitErr)
+	}
+	return fmt.Errorf("ripgrep failed: %w", waitErr)
 }
 
 var (

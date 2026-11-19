@@ -147,6 +147,31 @@ func openExistingSession(
 	return store, snapshot, nil
 }
 
+// readExistingSession replays a workspace Session without locking or repairing
+// it, for commands that only inspect it. An incomplete final record is ignored.
+func readExistingSession(
+	ctx context.Context,
+	workspace *tool.Workspace,
+	requestedPath string,
+) (session.Snapshot, error) {
+	path, err := resolveSessionPath(requestedPath)
+	if err != nil {
+		return session.Snapshot{}, err
+	}
+	snapshot, _, err := session.Read(ctx, path)
+	if err != nil {
+		return session.Snapshot{}, fmt.Errorf("app: read session: %w", sessionReadError(path, err))
+	}
+	if filepath.Clean(snapshot.Header.WorkingDirectory) != workspace.Path() {
+		return session.Snapshot{}, fmt.Errorf(
+			"app: session working directory is %q, current working directory is %q",
+			snapshot.Header.WorkingDirectory,
+			workspace.Path(),
+		)
+	}
+	return snapshot, nil
+}
+
 // Keep compatibility guidance shared by history browsing and explicit opens.
 func sessionReadError(path string, err error) error {
 	if !errors.Is(err, session.ErrUnsupportedVersion) {

@@ -85,13 +85,13 @@ func TestCuaInstallationStagesVerifiesAndReuses(t *testing.T) {
 	if result.Installation.Bundle != filepath.Join(i.applications, "CuaDriver.app") {
 		t.Fatal(result)
 	}
-	for _, name := range []string{"cua-driver", "cua_driver_node_runtime.node", ".aice-cua-install.lock"} {
+	for _, name := range []string{"cua-driver", "cua_driver_node_runtime.node"} {
 		if _, err := os.Lstat(filepath.Join(i.applications, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("unexpected installation %s: %v", name, err)
 		}
 	}
 	entries, _ := os.ReadDir(i.applications)
-	if len(entries) != 1 {
+	if len(entries) != 2 {
 		t.Fatal("staging artifacts not removed", entries)
 	}
 	license, err := os.ReadFile(filepath.Join(i.options.BinDir, "cua", CuaDriverVersion, "LICENSE"))
@@ -149,9 +149,11 @@ func TestCuaInstallationFailuresPreserveExternalState(t *testing.T) {
 			} else if !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatal("failed verification published an App")
 			}
-			if _, err := os.Stat(filepath.Join(i.applications, ".aice-cua-install.lock")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatal("lock retained")
+			unlock, err := lockCuaInstall(t.Context(), i.applications)
+			if err != nil {
+				t.Fatal("lock retained", err)
 			}
+			_ = unlock()
 		})
 	}
 }

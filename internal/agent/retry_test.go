@@ -391,6 +391,43 @@ func TestLoopCancelsDuringRetryBackoff(t *testing.T) {
 	}
 }
 
+// A sink failure on the canceled wait's retry_end stops the run like every
+// other sink failure: no agent_end follows.
+func TestLoopStopsWhenRetryEndSinkFailsAfterCanceledBackoff(t *testing.T) {
+	t.Parallel()
+
+	modelInfo := testModel()
+	providerErr := &llm.ProviderError{StatusCode: 503, Err: errors.New("unavailable")}
+	failed := assistantMessage(modelInfo, llm.StopReasonError)
+	failed.ErrorMessage = "unavailable"
+	model := &scriptedModel{scripts: []*streamScript{{events: []llm.Event{
+		{Type: llm.EventTypeStart},
+		{Type: llm.EventTypeError, Message: &failed, Err: providerErr},
+	}}}}
+	loop := mustRetryLoop(t, model, 1, time.Hour)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	sinkErr := errors.New("sink closed")
+	agentEnded := false
+	_, err := loop.Run(ctx, testInput(modelInfo, mustPrompt(t, "hello")), func(_ context.Context, event agent.AgentEvent) error {
+		switch event.Type {
+		case agent.EventTypeRetryStart:
+			cancel()
+		case agent.EventTypeRetryEnd:
+			return sinkErr
+		case agent.EventTypeAgentEnd:
+			agentEnded = true
+		}
+		return nil
+	})
+	if !errors.Is(err, sinkErr) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want cancellation joined with the sink failure", err)
+	}
+	if agentEnded {
+		t.Fatal("agent_end delivered after an event-sink failure")
+	}
+}
+
 func mustRetryLoop(
 	t *testing.T,
 	model agent.Model,

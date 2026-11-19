@@ -14,14 +14,24 @@ import (
 
 type mcpRefreshFunc func(context.Context, config.MCPServer) (config.MCPOAuthCredentials, error)
 
+// mcpOAuthRefreshMargin refreshes a token this close to expiry before sending
+// it, so clock skew and request latency do not turn it into a rejection.
+const mcpOAuthRefreshMargin = time.Minute
+
+// mcpOAuthExpiring reports whether a known expiry falls within the margin.
+func mcpOAuthExpiring(expiresAt time.Time) bool {
+	return !expiresAt.IsZero() && time.Until(expiresAt) <= mcpOAuthRefreshMargin
+}
+
 // mcpOAuthRefresh freezes the auth-file location, not the rotating token. The
-// existing writer rereads and verifies the grant under its cross-process lock.
-// Rediscovery must match the saved binding before any token is sent. It never
-// prompts, reconnects, or replays an RPC.
+// existing writer rereads and verifies the grant under its cross-process lock,
+// adopting another process's rotation unless it too is expiring. Rediscovery
+// must match the saved binding before any token is sent. It never prompts,
+// reconnects, or replays an RPC.
 func mcpOAuthRefresh(paths config.Paths) mcpRefreshFunc {
 	return func(ctx context.Context, server config.MCPServer) (config.MCPOAuthCredentials, error) {
 		credential, err := config.RefreshMCPOAuth(ctx, paths, server, func(ctx context.Context, current config.MCPOAuthCredentials) (config.MCPOAuthCredentials, error) {
-			if current.ExpiresAt.IsZero() || current.ExpiresAt.After(time.Now()) {
+			if !mcpOAuthExpiring(current.ExpiresAt) {
 				return current, nil
 			}
 			if current.RefreshToken == "" {
@@ -52,10 +62,11 @@ func mcpOAuthRefresh(paths config.Paths) mcpRefreshFunc {
 }
 
 // prepareAuthentication runs with the service gate held, before entering the
-// transport queue. It releases the owner mutex for disk/network I/O. The final
-// dispatch callback remains local: later expiry rejects dispatch without replay.
-// A failed refresh stops this owner's automatic attempts: the server may already
-// have consumed a refresh token even if its response or durable save was lost.
+// transport queue. It refreshes a token that expires within the margin,
+// releasing the owner mutex for disk/network I/O. The final dispatch callback
+// remains local: later expiry rejects dispatch without replay. A failed refresh
+// stops this owner's automatic attempts: the server may already have consumed a
+// refresh token even if its response or durable save was lost.
 func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService) error {
 	o.mu.Lock()
 	if err := ctx.Err(); err != nil {
@@ -66,7 +77,7 @@ func (o *mcpOwner) prepareAuthentication(ctx context.Context, s *mcpOwnedService
 		o.mu.Unlock()
 		return err
 	}
-	if !s.server.OAuthTokenExpired(time.Now()) {
+	if !s.server.OAuthTokenExpired(time.Now().Add(mcpOAuthRefreshMargin)) {
 		o.mu.Unlock()
 		return nil
 	}

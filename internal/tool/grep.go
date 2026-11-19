@@ -81,14 +81,23 @@ func NewGrep(workspace *Workspace) (*Grep, error) {
 	if workspace == nil || workspace.path == "" {
 		return nil, fmt.Errorf("tool: workspace is required")
 	}
-	rgPath, err := exec.LookPath("rg")
+	rgPath, err := lookupRipgrep()
 	if err != nil {
-		return nil, fmt.Errorf("tool: find ripgrep (rg) executable: %w", err)
-	}
-	if !filepath.IsAbs(rgPath) {
-		return nil, fmt.Errorf("tool: ripgrep (rg) executable path must be absolute")
+		return nil, err
 	}
 	return &Grep{workspace: workspace, rgPath: rgPath}, nil
+}
+
+// lookupRipgrep resolves the host ripgrep shared by grep and find.
+func lookupRipgrep() (string, error) {
+	rgPath, err := exec.LookPath("rg")
+	if err != nil {
+		return "", fmt.Errorf("tool: find ripgrep (rg) executable: %w", err)
+	}
+	if !filepath.IsAbs(rgPath) {
+		return "", fmt.Errorf("tool: ripgrep (rg) executable path must be absolute")
+	}
+	return rgPath, nil
 }
 
 // Definition returns the model-facing grep contract.

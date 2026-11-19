@@ -5,7 +5,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
@@ -50,11 +49,26 @@ func secretDenial(target string) string {
 
 const credentialsRuleID = "credentials"
 
-// credentialDirs and credentialFiles are home-relative stores of host
+// credentialPaths returns the configured credential files with the
+// built-in home stores joined to the current home directory.
+func credentialPaths(configured []string) (files, dirs []string) {
+	files = cleanPaths(configured)
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, file := range homeCredentialFiles {
+			files = append(files, filepath.Join(home, filepath.FromSlash(file)))
+		}
+		for _, dir := range homeCredentialDirs {
+			dirs = append(dirs, filepath.Join(home, filepath.FromSlash(dir)))
+		}
+	}
+	return files, dirs
+}
+
+// homeCredentialDirs and homeCredentialFiles are home-relative stores of host
 // credentials. Every operation on them is denied, whether or not they exist.
 var (
-	credentialDirs  = []string{".ssh", ".aws", ".gnupg", "Library/Keychains"}
-	credentialFiles = []string{
+	homeCredentialDirs  = []string{".ssh", ".aws", ".gnupg", "Library/Keychains"}
+	homeCredentialFiles = []string{
 		".netrc", ".git-credentials", ".npmrc", ".pypirc", ".docker/config.json",
 		".kube/config", ".config/gh/hosts.yml",
 	}
@@ -65,23 +79,13 @@ var (
 // isCredentialPath reports whether abs is a built-in or configured
 // credential location. A glob is denied when it could match one.
 func (g *Guard) isCredentialPath(abs string) bool {
-	files := slices.Clone(g.credentialFiles)
-	var dirs []string
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		for _, file := range credentialFiles {
-			files = append(files, filepath.Join(home, filepath.FromSlash(file)))
-		}
-		for _, dir := range credentialDirs {
-			dirs = append(dirs, filepath.Join(home, filepath.FromSlash(dir)))
-		}
-	}
 	glob := strings.ContainsAny(abs, "*?[")
-	for _, file := range files {
+	for _, file := range g.credentialFiles {
 		if glob && globCovers(abs, file, true) || hostpath.Same(file, abs) {
 			return true
 		}
 	}
-	for _, root := range dirs {
+	for _, root := range g.credentialDirs {
 		inside := glob && globCovers(abs, root, false) || !glob && hostpath.Within(root, abs)
 		if !inside {
 			continue

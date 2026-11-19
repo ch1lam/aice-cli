@@ -24,7 +24,9 @@ messages is used as that Session, otherwise the previous one is detached as
 `/new` does. `session/load` and `session/resume` open a Session of the served
 project by ID, recovering interrupted tools like `/history`; `load` replays its
 active branch as user, thought, message and tool-call updates. Switching is
-refused while a prompt runs. `cwd` must name the served workspace.
+refused while a prompt runs. `cwd` must name the served workspace. When the
+client disconnects, AICE cancels the running prompt and waits for it to stop
+before closing the Session.
 Client-provided `mcpServers` are rejected: MCP services come from AICE
 configuration and its Guard permissions ([MCP](mcp.md)).
 

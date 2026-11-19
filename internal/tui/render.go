@@ -277,8 +277,7 @@ func (m model) pendingQueueView(width int) string {
 }
 
 func pendingDeliveryPreview(text string) string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
+	text = sanitizeMultilineText(text)
 	first, rest, multiline := strings.Cut(text, "\n")
 	first = strings.TrimSpace(first)
 	if multiline && strings.TrimSpace(rest) != "" {
@@ -560,11 +559,22 @@ func (m model) pendingSteeringView() string {
 		if delivery.mode != interaction.DeliveryKindSteer {
 			continue
 		}
-		style := pendingSteerStyle.BorderStyle(lipgloss.Border{
-			Left: pendingSteerRail(m.steerRailFrame),
-		})
-		bodyWidth := max(m.contentWidth()-style.GetHorizontalFrameSize(), 1)
-		body := style.Width(bodyWidth).Render(delivery.text)
+		bodyWidth := max(m.contentWidth()-pendingSteerStyle.GetHorizontalFrameSize(), 1)
+		cached := delivery.steerBody
+		if cached == nil {
+			cached = &steerBody{}
+		}
+		if cached.view == "" || cached.text != delivery.text || cached.width != bodyWidth {
+			*cached = steerBody{text: delivery.text, width: bodyWidth, view: pendingSteerStyle.
+				BorderLeft(false).
+				Width(bodyWidth - pendingSteerStyle.GetBorderLeftSize()).
+				Render(sanitizeMultilineText(delivery.text))}
+		}
+		body := pendingSteerStyle.
+			UnsetForeground().
+			UnsetPaddingLeft().
+			BorderStyle(lipgloss.Border{Left: pendingSteerRail(m.steerRailFrame)}).
+			Render(cached.view)
 		parts = append(parts, transcriptViewPart{
 			content: lipgloss.NewStyle().Padding(0, 1).Render(body),
 		})
@@ -665,18 +675,13 @@ func joinTranscriptViewParts(parts []transcriptViewPart) string {
 	return view.String()
 }
 
-func (m model) entryView(
-	entry transcriptEntry,
-	activeAssistant bool,
-) string {
+// entryView renders the entry kinds that have no assistant or tool content
+// model; transcriptEntryItem renders those two itself.
+func (m model) entryView(entry transcriptEntry) string {
 	width := m.contentWidth()
 	switch entry.kind {
 	case entryUser:
 		return m.userMessageView(entry.text)
-	case entryAssistant:
-		return m.assistantEntryContent(entry, activeAssistant, true, true, true).view
-	case entryTool:
-		return m.transcriptContentView(m.toolHeaderView(entry) + "\n\n" + m.toolBodyView(entry))
 	case entryError:
 		return m.transcriptContentView(
 			errorStyle.Render("✕ Error  " + entry.text),

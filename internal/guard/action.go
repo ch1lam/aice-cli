@@ -49,6 +49,9 @@ type Result struct {
 	// or which an exact Session grant covers. Auto mode routes on them.
 	ReadOnly    bool
 	RuleCovered bool
+	// GitWrite reports a write whose physical path is inside the workspace's
+	// .git directory, whose hooks and config run code later.
+	GitWrite bool
 }
 
 // Approval describes one scope requiring confirmation. It cannot override a deny.
@@ -91,7 +94,7 @@ func extractStringArgument(raw json.RawMessage, key string) string {
 
 // extractActions returns the file actions of call and, for bash, its
 // commands and the findings that need confirmation.
-func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
+func (g *Guard) extractActions(call llm.ToolCall) bashAnalysis {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
 		if p == "" && searchTools[call.Name] {
@@ -109,7 +112,7 @@ func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
 	}
 	if call.Name == "bash" {
 		if cmd := extractCommand(call.Arguments); strings.TrimSpace(cmd) != "" {
-			return analyzeBash(cmd, workspace)
+			return g.analyzeBash(cmd)
 		}
 	}
 	return bashAnalysis{}
@@ -150,7 +153,7 @@ func maybePathLike(s string) bool {
 	// Heuristic: contains "/" or "."
 	// or starts with "~". Also recognizes Windows "\" paths and drive letters
 	// without treating a single escape like "\d" as a path.
-	if strings.HasPrefix(s, "~") {
+	if strings.HasPrefix(s, "~") || s == "." || s == ".." {
 		return true
 	}
 	if strings.Contains(s, "/") {

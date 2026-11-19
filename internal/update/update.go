@@ -51,7 +51,6 @@ type Options struct {
 	client     *selfupdate.Updater
 	Repository selfupdate.Repository  // default ParseSlug(repositorySlug)
 	Current    string                 // installed version reported by the binary
-	Disabled   bool                   // startup checks disabled by resolved configuration
 	Now        func() time.Time       // default time.Now
 	Executable func() (string, error) // default selfupdate.ExecutablePath
 	StatePath  string                 // startup-check state file, default ~/.aice/update-state
@@ -105,8 +104,6 @@ const (
 	// StartupStatusUnknown is the zero value and is never returned after a
 	// completed startup check.
 	StartupStatusUnknown StartupStatus = iota
-	// StartupStatusDisabled means the user disabled automatic checks.
-	StartupStatusDisabled
 	// StartupStatusDevelopment means the current build has no comparable version.
 	StartupStatusDevelopment
 	// StartupStatusCurrent means no newer release is available.
@@ -212,17 +209,12 @@ func Update(ctx context.Context, opts Options, force bool) (UpdateResult, error)
 }
 
 // CheckStartup resolves the status shown by the interactive welcome screen.
-// It skips network access for disabled and development builds, reuses a fresh
-// successful result, and bounds a due network check with startupCheckTimeout.
+// The application skips it when checks are disabled. It skips network access
+// for development builds, reuses a fresh successful result, and bounds a due
+// network check with startupCheckTimeout.
 func CheckStartup(ctx context.Context, opts Options) (StartupResult, error) {
 	opts = normalize(opts)
 	current := strings.TrimSpace(opts.Current)
-	if opts.Disabled {
-		return StartupResult{
-			Status:  StartupStatusDisabled,
-			Current: current,
-		}, nil
-	}
 	if !versioned(current) {
 		return StartupResult{
 			Status:  StartupStatusDevelopment,

@@ -4,40 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
-func mcpMenu() *interaction.CommandMenu {
-	return &interaction.CommandMenu{Title: "MCP services", Options: []interaction.CommandOption{
-		{Label: "Show status", Arguments: "status"},
-		{Label: "Add a user service", Arguments: "add"},
-		{Label: "Replace a user service definition", Arguments: "replace"},
-		{Label: "Approve a connection", Arguments: "approve"},
-		{Label: "Deny and revoke a connection", Arguments: "deny"},
-		{Label: "Forget connection approval", Arguments: "forget"},
-		{Label: "Set or clear a credential", Arguments: "credential"},
-		{Label: "Log in to an OAuth service", Arguments: "login"},
-		{Label: "Log out of an OAuth service", Arguments: "logout"},
-		{Label: "Test connection and discovery", Arguments: "connect"},
-		{Label: "Reconnect and discover", Arguments: "reconnect"},
-		{Label: "Enable a user service", Arguments: "enable"},
-		{Label: "Disable a user service", Arguments: "disable"},
-		{Label: "Remove a user service and stored access", Arguments: "remove"},
-		{Label: "Inspect operation permissions", Arguments: "permissions"},
-		{Label: "Save or remove a user permission", Arguments: "permission"},
-	}}
-}
-
 func mcpActionKnown(action string) bool {
-	for _, option := range mcpMenu().Options {
-		if action == option.Arguments {
-			return true
-		}
-	}
-	return false
+	return slices.Contains([]string{"status", "add", "replace", "approve", "deny", "forget", "credential", "login", "logout",
+		"connect", "reconnect", "enable", "disable", "remove", "permissions", "permission"}, action)
 }
 
 // Values remain in the transient interaction. They are never model input,

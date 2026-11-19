@@ -35,21 +35,6 @@ func TestLockExcludesOtherHoldersUntilUnlock(t *testing.T) {
 	}
 }
 
-func TestLockReplacesLegacyLockDirectory(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.Mkdir(path+".lock", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	unlock, err := Lock(t.Context(), path)
-	if err != nil {
-		t.Fatalf("lock over legacy directory: %v", err)
-	}
-	if err := unlock(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestReadRetry(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {

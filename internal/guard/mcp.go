@@ -63,14 +63,6 @@ type MCPPermit struct {
 	serviceTools         map[string]uint64
 }
 
-// SetMCPService replaces a service's current policy. Unchanged tools retain
-// grants; connection/scope/enable changes clear them all, while individual
-// schema/filter changes clear just that tool. Reverting a change never revives
-// an earlier grant. An explicit revocation survives subsequent publications.
-func (g *Guard) SetMCPService(input MCPService) error {
-	return g.setMCPService(input, mcpReplace)
-}
-
 // BindMCPService initializes a policy only if absent. A run with an older
 // configuration must not overwrite the current application-owned identity.
 func (g *Guard) BindMCPService(input MCPService) error {
@@ -101,11 +93,15 @@ func (g *Guard) MCPServiceAvailable(source, id, connection, scope string) bool {
 	return state != nil && state.enabled && !state.revoked && state.connection == connection && state.scope == scope
 }
 
-// mcpPublication is how setMCPService treats an existing binding.
+// mcpPublication is how setMCPService treats an existing binding. Whatever
+// the mode, unchanged tools retain grants; connection/scope/enable changes
+// clear them all, while individual schema/filter changes clear just that tool.
+// Reverting a change never revives an earlier grant, and an explicit
+// revocation survives subsequent publications.
 type mcpPublication int
 
 const (
-	mcpReplace          mcpPublication = iota // install unconditionally
+	mcpReplace          mcpPublication = iota // install unconditionally (tests)
 	mcpBind                                   // keep a matching binding unchanged
 	mcpRefreshTools                           // replace ordinary tools, keep resource grants
 	mcpRefreshResources                       // replace resource reads, keep tools
@@ -225,15 +221,9 @@ func (g *Guard) setMCPService(input MCPService, publication mcpPublication) erro
 }
 
 // RevokeMCPService immediately denies further calls and invalidates pending
-// approvals. RestoreMCPService is a separate, explicit user-management action.
+// approvals. Removing and rebinding the service is the only way back.
 func (g *Guard) RevokeMCPService(source, id string) {
 	g.setMCPRevoked(source, id, true)
-}
-
-// RestoreMCPService lifts only the explicit revocation, without restoring any
-// grants. Disabled services, filters and current identity checks still apply.
-func (g *Guard) RestoreMCPService(source, id string) {
-	g.setMCPRevoked(source, id, false)
 }
 
 func (g *Guard) setMCPRevoked(source, id string, revoked bool) {

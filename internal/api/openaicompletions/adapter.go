@@ -777,7 +777,7 @@ func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
 		}
 		events := []llm.Event{start}
 		if call.Function.Arguments != "" {
-			state.Arguments += call.Function.Arguments
+			state.Arguments.WriteString(call.Function.Arguments)
 			events = append(events, llm.Event{
 				Type:         llm.EventTypeToolCallDelta,
 				ContentIndex: state.Index,
@@ -798,7 +798,7 @@ func (s *stream) toolCallDelta(call wireToolCall) []llm.Event {
 	if call.Function.Arguments == "" {
 		return nil
 	}
-	state.Arguments += call.Function.Arguments
+	state.Arguments.WriteString(call.Function.Arguments)
 	return []llm.Event{{
 		Type:         llm.EventTypeToolCallDelta,
 		ContentIndex: state.Index,
@@ -828,7 +828,7 @@ func (s *stream) mergeUsage(usage *wireUsage) {
 // agent loop will surface it instead of executing a partial call.
 func (s *stream) finish() ([]llm.Event, error) {
 	for _, state := range s.toolCalls {
-		if _, err := streamcore.FinishToolCall(state.ToolCall, state.Arguments, nil); err != nil {
+		if _, err := streamcore.FinishToolCall(state.ToolCall, state.Arguments.String(), nil); err != nil {
 			return nil, fmt.Errorf("openai completions: %w", err)
 		}
 	}
@@ -893,6 +893,12 @@ func stopReason(finishReason string) llm.StopReason {
 }
 
 func normalizeProviderError(err error) error {
+	// The SDK reports an error event inside an accepted stream as a
+	// StreamError, not an API error; it is not a transport failure.
+	var streamErr *ssestream.StreamError
+	if errors.As(err, &streamErr) {
+		return streamcore.StreamEventError(err, streamErr.Event.Data)
+	}
 	return streamcore.SDKError(err, func(apiErr *openaisdk.Error) (int, string, *http.Response) {
 		return apiErr.StatusCode, cmp.Or(apiErr.Code, apiErr.Type), apiErr.Response
 	})

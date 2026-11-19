@@ -322,7 +322,6 @@ func TestCheckStartupReportsUpdateAndCachesResult(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
-	opts.Disabled = false
 	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
 	opts.Now = time.Now
 
@@ -357,25 +356,6 @@ func TestCheckStartupReportsUpdateAndCachesResult(t *testing.T) {
 	}
 }
 
-func TestCheckStartupSkipsWhenDisabled(t *testing.T) {
-	var hits int
-	server := newReleaseServer(t, releaseFixture{}, &hits)
-	opts := testOptions(testSource(t, server))
-	opts.Current = "1.1.0"
-	opts.Disabled = true
-
-	result, err := CheckStartup(t.Context(), opts)
-	if err != nil {
-		t.Fatalf("CheckStartup() error = %v", err)
-	}
-	if result.Status != StartupStatusDisabled {
-		t.Fatalf("CheckStartup() status = %d, want disabled", result.Status)
-	}
-	if hits != 0 {
-		t.Fatalf("manifest requests = %d, want 0 when disabled", hits)
-	}
-}
-
 func TestCheckStartupUsesFreshCache(t *testing.T) {
 	var hits int
 	server := newReleaseServer(t, releaseFixture{}, &hits)
@@ -393,7 +373,6 @@ func TestCheckStartupUsesFreshCache(t *testing.T) {
 	}
 	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
-	opts.Disabled = false
 	opts.StatePath = statePath
 	opts.Now = func() time.Time { return now }
 
@@ -457,7 +436,6 @@ func TestCheckStartupRefreshesStaleInvalidOrFutureCache(t *testing.T) {
 			}
 			opts := testOptions(testSource(t, server))
 			opts.Current = "1.2.0"
-			opts.Disabled = false
 			opts.StatePath = statePath
 			opts.Now = func() time.Time { return now }
 
@@ -484,7 +462,6 @@ func TestCheckStartupKeepsResultWhenCacheWriteFails(t *testing.T) {
 	}
 	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
-	opts.Disabled = false
 	opts.StatePath = filepath.Join(blockingFile, "update-state")
 
 	result, err := CheckStartup(t.Context(), opts)
@@ -504,7 +481,6 @@ func TestCheckStartupStopsWhenContextIsCanceled(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testSource(t, server))
 	opts.Current = "1.1.0"
-	opts.Disabled = false
 	opts.StatePath = filepath.Join(t.TempDir(), "update-state")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -529,7 +505,6 @@ func TestCheckStartupRefreshesLegacyCacheWithoutLatestVersion(t *testing.T) {
 	}
 	opts := testOptions(testSource(t, server))
 	opts.Current = "1.2.0"
-	opts.Disabled = false
 	opts.StatePath = statePath
 	opts.Now = func() time.Time { return now }
 
@@ -550,7 +525,6 @@ func TestCheckStartupSkipsDevelopmentBuildBeforeNetwork(t *testing.T) {
 	server := newReleaseServer(t, releaseFixture{}, &hits)
 	opts := testOptions(testSource(t, server))
 	opts.Current = "dev"
-	opts.Disabled = false
 
 	result, err := CheckStartup(t.Context(), opts)
 	if err != nil {

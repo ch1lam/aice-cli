@@ -68,8 +68,8 @@ func CloneAgentMessage(message AgentMessage) (AgentMessage, error) {
 }
 
 // cloneContentParts deep-copies one message's content slice, including image
-// bytes, tool-call raw arguments, and recursively nested tool-result content,
-// so no mutable field can alias between a frozen snapshot and the parent.
+// bytes and tool-call raw arguments, so no mutable field can alias between a
+// frozen snapshot and the parent.
 func cloneContentParts(parts []ContentPart) []ContentPart {
 	if parts == nil {
 		return nil
@@ -88,14 +88,6 @@ func cloneContentParts(parts []ContentPart) []ContentPart {
 				call := *part.ToolCall
 				call.Arguments = slices.Clone(part.ToolCall.Arguments)
 				cloned[index].ToolCall = &call
-			}
-		case ContentTypeToolResult:
-			if part.ToolResult != nil {
-				result := *part.ToolResult
-				result.Content = cloneContentParts(part.ToolResult.Content)
-				result.Evidence = part.ToolResult.Evidence.Clone()
-				result.Details = part.ToolResult.Details.Clone()
-				cloned[index].ToolResult = &result
 			}
 		}
 	}

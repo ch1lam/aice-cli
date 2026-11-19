@@ -25,13 +25,6 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if len(fields) > 1 {
 		op.Key = fields[1]
 	}
-	if len(fields) == 0 && request.Auth != nil {
-		var err error
-		op.Action, err = mcpPrompt(ctx, request.Auth, interaction.AuthPrompt{Title: "MCP services", Menu: mcpMenu()})
-		if err != nil {
-			return result, err
-		}
-	}
 	if !mcpActionKnown(op.Action) {
 		return result, fmt.Errorf("unknown MCP action; use /mcp to choose an action")
 	}
@@ -39,10 +32,12 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if err := s.beginSettingsOperation(revision, shared); err != nil {
 		return result, err
 	}
-	changed := false
+	// A connection test changes only status, so it refreshes drafts without
+	// invalidating held runs or /btw threads.
+	changed, resources := false, false
 	defer func() {
 		var warnings []string
-		result.Revision, warnings = s.endSettingsOperation(changed, changed && shared)
+		result.Revision, warnings = s.endSettingsOperation(changed, resources && shared)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
 	s.stateMu.RLock()
@@ -54,7 +49,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 		return result, err
 	}
 	if op.Action == "reconnect" {
-		changed = true
+		changed, resources = true, true
 		if err := s.publishMCPConfiguration(current, op.Key); err != nil {
 			return result, err
 		}
@@ -66,6 +61,7 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	result.Committed = managed.Committed
 	result.Warnings = append(result.Warnings, managed.Warnings...)
 	changed = changed || managed.Committed || op.Action == "connect"
+	resources = resources || managed.Committed
 	if managed.Committed {
 		if op.Action == "deny" {
 			// Publish the persisted decision even if writer cleanup failed. The

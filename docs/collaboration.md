@@ -64,11 +64,6 @@ without dropping tests or race detection. Preserve sequential real-ripgrep
 acceptance where concurrent child processes exhaust hosted-runner resources.
 A local pass establishes only that platform.
 
-The CLI documentation checks in
-[root_documentation_test.go](../internal/cli/root_documentation_test.go) normalize
-CRLF to LF before matching headings and parsing tables. Their line-ending
-regression covers both checkout formats on every host.
-
 For macOS clipboard changes, use an isolated pasteboard:
 
 ```sh
@@ -83,6 +78,23 @@ Match the current reply or cancellation and the READY header in the same frame.
 A previous run's cancellation notice remains in the transcript while a later
 run is still stopping. Failed input or repaint writes must report the pending
 action and terminal transcript so a deadline is not reduced to a closed-pipe error.
+
+## Documentation checks
+
+The [root-command documentation tests](../internal/cli/root_documentation_test.go)
+compare documented flag names/shorthands with Cobra and the
+[run-limit table](configuration.md#run-limits) with Cobra defaults and
+`config.SettingDefinitions`. They normalize CRLF to LF before matching headings
+and parsing tables; their line-ending regression covers both checkout formats.
+The Go test job runs them in CI. Run them without starting AICE:
+
+```sh
+go test ./internal/cli -run '^TestRootCommandDocumentation' -count=1
+```
+
+They cover these facts only. When changing a check, temporarily change a
+covered default, flag or environment name, confirm that the check fails, then
+restore the file and confirm it passes. Do not update prose to conceal a regression.
 
 ## Installer checks
 

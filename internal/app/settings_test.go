@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/ch1lam/aice-cli/internal/web"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -164,6 +165,22 @@ func TestSettingsWebPrepareFailureDoesNotSave(t *testing.T) {
 	result, err := s.ApplySettings(t.Context(), interaction.SettingsRequest{Changes: []interaction.SettingChange{{ID: "web.fetch.timeout", Value: interaction.SettingValue{Kind: interaction.SettingDuration, Duration: 9 * time.Second}}}})
 	if err == nil || result.Committed || s.configuration.Web.FetchTimeout != before {
 		t.Fatalf("unexpected save: %+v %v", result, err)
+	}
+}
+
+func TestSettingsWebDomainListsCombine(t *testing.T) {
+	s := webCommandSession(t, testWebBackends(&fakeWireBackend{}, &fakeFetch{}), nil)
+	list := func(id string, domains ...string) interaction.SettingChange {
+		return interaction.SettingChange{ID: id, Value: interaction.SettingValue{Kind: interaction.SettingList, List: domains}}
+	}
+	result, err := s.ApplySettings(t.Context(), interaction.SettingsRequest{Changes: []interaction.SettingChange{
+		list("web.search.allowed_domains", "example.com"),
+		list("web.search.excluded_domains", "ads.example.com"),
+	}})
+	got := s.configuration.Web
+	if err != nil || !result.Committed || !slices.Equal(got.AllowedDomains, []string{"example.com"}) ||
+		!slices.Equal(got.ExcludedDomains, []string{"ads.example.com"}) {
+		t.Fatalf("result = %+v, web = %+v, err = %v", result, got, err)
 	}
 }
 

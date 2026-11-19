@@ -39,9 +39,9 @@ type finding struct {
 
 	scoped        bool // a recursive delete limited to deleteTargets
 	deleteTargets []shellWord
-	base          string
-	extraArgs     bool // targets also come from xargs or find -exec
-	filtered      bool // find -delete limited by a test such as -name
+	dirs          []string // candidate working directories of the delete
+	extraArgs     bool     // targets also come from xargs or find -exec
+	filtered      bool     // find -delete limited by a test such as -name
 }
 
 const (
@@ -66,25 +66,27 @@ type launcher struct {
 	positional int      // leading operands before the command (timeout DURATION)
 	assigns    bool     // NAME=value words precede the command (env)
 	extraArgs  bool     // appends unseen arguments (xargs)
+	chdir      []string // options that run the command in another directory
 }
 
 var launchers = map[string]launcher{
-	"env":     {valueFlags: "uSC", longValues: []string{"--unset", "--chdir"}, assigns: true},
+	"env":     {valueFlags: "uSC", longValues: []string{"--unset", "--chdir"}, assigns: true, chdir: []string{"-C", "--chdir"}},
 	"time":    {},
 	"nice":    {valueFlags: "n", longValues: []string{"--adjustment"}},
 	"nohup":   {},
 	"command": {},
+	"builtin": {},
 	"exec":    {valueFlags: "a"},
 	"timeout": {valueFlags: "sk", longValues: []string{"--signal", "--kill-after"}, positional: 1},
 	"stdbuf":  {valueFlags: "ioe", longValues: []string{"--input", "--output", "--error"}},
 	// GNU -i, -e and -l take only attached optional values; -J, -R and -S are BSD.
 	"xargs": {valueFlags: "InPLsdEaJRS", longValues: []string{"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars", "--process-slot-var"}, extraArgs: true},
 	"sudo": {valueFlags: "ugpChDTUrt", longValues: []string{"--user", "--group", "--prompt", "--close-from", "--chdir", "--host", "--role", "--type", "--other-user", "--command-timeout"},
-		privileged: "superuser command"},
+		privileged: "superuser command", chdir: []string{"-D", "--chdir"}},
 	"doas":   {valueFlags: "uC", privileged: "privileged command execution"},
 	"pkexec": {valueFlags: "u", longValues: []string{"--user"}, privileged: "privileged command execution"},
 	"run0": {valueFlags: "uD", longValues: []string{"--user", "--group", "--chdir", "--unit", "--property", "--description", "--slice", "--nice", "--setenv", "--machine", "--background"},
-		privileged: "privileged command execution"},
+		privileged: "privileged command execution", chdir: []string{"-D", "--chdir"}},
 }
 
 // unwrap strips one launcher. It returns the privilege description even when
@@ -103,8 +105,12 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 	}
 	words := cmd.words[1:]
 	positional := spec.positional
+	dirs := cmd.dirs
 	for len(words) > 0 {
 		text := words[0].text
+		if flag, _, _ := strings.Cut(text, "="); slices.Contains(spec.chdir, flag) || len(text) > 2 && slices.Contains(spec.chdir, text[:2]) {
+			dirs = []string{unknownDir}
+		}
 		switch {
 		case text == "--":
 			words = words[1:]
@@ -133,7 +139,7 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 	if len(words) == 0 {
 		return cmd, spec.privileged, false
 	}
-	return shellCommand{words: words, base: cmd.base, extraArgs: cmd.extraArgs || spec.extraArgs}, spec.privileged, true
+	return shellCommand{words: words, dirs: dirs, extraArgs: cmd.extraArgs || spec.extraArgs}, spec.privileged, true
 }
 
 // envSplitString returns the words env -S/--split-string runs as a script.
@@ -180,7 +186,8 @@ func shellScript(cmd shellCommand) (shellWord, bool) {
 	return shellWord{}, false
 }
 
-// findExec returns the command run by find -exec/-execdir/-ok/-okdir.
+// findExec returns the command run by find -exec/-execdir/-ok/-okdir;
+// -execdir and -okdir run it in each match's directory.
 func findExec(cmd shellCommand) (shellCommand, bool) {
 	if cmd.name() != "find" {
 		return shellCommand{}, false
@@ -195,8 +202,12 @@ func findExec(cmd shellCommand) (shellCommand, bool) {
 					break
 				}
 			}
+			dirs := cmd.dirs
+			if strings.HasSuffix(w.text, "dir") {
+				dirs = []string{unknownDir}
+			}
 			if i+1 < end {
-				return shellCommand{words: cmd.words[i+1 : end], base: cmd.base, extraArgs: true}, true
+				return shellCommand{words: cmd.words[i+1 : end], dirs: dirs, extraArgs: true}, true
 			}
 		}
 	}
@@ -224,11 +235,14 @@ var grepLongValues = []string{
 var readSpec = argSpec{op: opRead}
 
 var argSpecs = map[string]argSpec{
-	"cat": readSpec, "less": readSpec, "more": readSpec, "wc": readSpec, "ls": {op: opRead, valueFlags: "IwT"},
-	"stat": {op: opRead, valueFlags: "cf"}, "file": readSpec, "tree": {op: opRead, valueFlags: "LIP"}, "du": {op: opRead, valueFlags: "dB"},
-	"df": readSpec, "nl": readSpec, "od": readSpec, "xxd": readSpec, "hexdump": readSpec, "strings": readSpec,
+	"less": {op: opRead, valueFlags: "bhjkoOpPtTxyz", flagPaths: map[string]string{
+		"-o": opWrite, "-O": opWrite, "--log-file": opWrite, "--LOG-FILE": opWrite, "-k": opRead, "--lesskey-file": opRead,
+	}},
+	"cat": readSpec, "more": readSpec, "wc": readSpec, "ls": {op: opRead, valueFlags: "IwT"},
+	"stat": {op: opRead, valueFlags: "cf"}, "file": readSpec, "tree": {op: opRead, valueFlags: "LIPo", flagPaths: map[string]string{"-o": opWrite}}, "du": {op: opRead, valueFlags: "dB"},
+	"df": readSpec, "nl": readSpec, "od": readSpec, "xxd": {op: opRead, dstLast: true, valueFlags: "cglosn"}, "hexdump": readSpec, "strings": readSpec,
 	"md5": readSpec, "md5sum": readSpec, "shasum": {op: opRead, valueFlags: "a"}, "sha256sum": readSpec,
-	"cmp": readSpec, "diff": {op: opRead, valueFlags: "UCLIx"}, "uniq": readSpec, "paste": {op: opRead, valueFlags: "d"},
+	"cmp": readSpec, "diff": {op: opRead, valueFlags: "UCLIx"}, "uniq": {op: opRead, dstLast: true, valueFlags: "fsw", longValues: []string{"--skip-fields", "--skip-chars", "--check-chars"}}, "paste": {op: opRead, valueFlags: "d"},
 	"column": {op: opRead, valueFlags: "st"}, "fold": {op: opRead, valueFlags: "w"}, "fmt": readSpec, "rev": readSpec, "tac": readSpec,
 	"realpath": readSpec, "readlink": readSpec, "cd": readSpec, "pushd": readSpec, "source": readSpec, ".": readSpec, "bat": readSpec,
 	"head": {op: opRead, valueFlags: "nc"}, "tail": {op: opRead, valueFlags: "nc"},
@@ -340,13 +354,13 @@ func commandPaths(cmd shellCommand, movedBase bool) []pathArg {
 			value, attached = words[i].text, true
 			w = words[i]
 		} else if attached {
-			w = shellWord{text: value, unresolved: w.unresolved}
+			w.text = value
 		}
 		switch {
 		case isPath && attached:
-			out = append(out, pathArg{word: shellWord{text: value, unresolved: w.unresolved}, op: op, force: true})
+			out = append(out, pathArg{word: w, op: op, force: true})
 		case !known && attached && isRootedWord(value):
-			out = append(out, pathArg{word: shellWord{text: value, unresolved: w.unresolved}, op: spec.op})
+			out = append(out, pathArg{word: w, op: spec.op})
 		}
 	}
 	if spec.noPaths {
@@ -362,6 +376,10 @@ func commandPaths(cmd shellCommand, movedBase bool) []pathArg {
 			op = opWrite
 		}
 		out = append(out, pathArg{word: w, op: op, force: known && movedBase})
+	}
+	if name == "sed" {
+		paths, _, _ := sedEffects(cmd.words)
+		out = append(out, paths...)
 	}
 	return out
 }
@@ -426,12 +444,16 @@ var gitReadOnly = map[string]bool{
 }
 
 // readOnlyCommand reports whether rule words name a read-only command.
-// find with an action, sed -i and branch changes are not.
+// Options and scripts that run programs or write files are not: find
+// actions, sed -i and sed e/r/w commands, rg --pre, printf -v, git grep -O,
+// git --output and branch changes.
 func readOnlyCommand(words []string) bool {
 	name := words[0]
 	switch name {
 	case "git":
-		if len(words) < 2 {
+		if len(words) < 2 || slices.ContainsFunc(words[2:], func(w string) bool {
+			return strings.HasPrefix(w, "--output") || strings.HasPrefix(w, "--open-files-in-pager") || words[1] == "grep" && strings.HasPrefix(w, "-O")
+		}) {
 			return false
 		}
 		if words[1] == "branch" {
@@ -445,9 +467,200 @@ func readOnlyCommand(words []string) bool {
 			return w == "-delete" || strings.HasPrefix(w, "-exec") || strings.HasPrefix(w, "-ok") || strings.HasPrefix(w, "-fprint") || w == "-fls"
 		})
 	case "sed":
-		return !hasShortFlag(words[1:], "i") && !hasLongOption(words, "in-place")
+		sed := make([]shellWord, len(words))
+		for i, w := range words {
+			sed[i] = shellWord{text: w}
+		}
+		_, runs, _ := sedEffects(sed)
+		return !runs
+	case "rg":
+		return !slices.ContainsFunc(words, func(w string) bool { return strings.HasPrefix(w, "--pre") })
+	case "printf":
+		return len(words) < 2 || !strings.HasPrefix(words[1], "-v")
 	}
 	return readOnlyCommands[name]
+}
+
+// gitRunsConfiguredCode reports git global options that choose the
+// configuration or programs git runs, such as -c core.fsmonitor=CMD or
+// --git-dir of another repository.
+func gitRunsConfiguredCode(cmd shellCommand) bool {
+	if cmd.name() != "git" {
+		return false
+	}
+	_, _, args := gitInvocation(cmd)
+	return slices.ContainsFunc(cmd.words[1:len(cmd.words)-len(args)], func(w shellWord) bool {
+		return w.text == "-c" || slices.ContainsFunc([]string{"--config-env", "--exec-path", "--git-dir", "--work-tree"}, func(o string) bool {
+			return strings.HasPrefix(w.text, o)
+		})
+	})
+}
+
+// inertVariable reports assignments that cannot change which code a
+// command runs: lower-case shell variables, locale and display settings,
+// and a pager of cat. Upper-case names such as PATH, LD_PRELOAD, DYLD_*,
+// GIT_* or LESSOPEN may.
+func inertVariable(name, value string) bool {
+	switch {
+	case name == "PAGER" || name == "GIT_PAGER":
+		return value == "" || value == "cat"
+	case name == "LANG", name == "LANGUAGE", name == "TZ", name == "NO_COLOR", name == "TERM", name == "COLUMNS", name == "LINES", strings.HasPrefix(name, "LC_"):
+		return true
+	}
+	return strings.ToLower(name) == name
+}
+
+// sedEffects returns the files a sed invocation's scripts read (r, R, -f)
+// and write (w, W, s///w). runs reports an in-place edit, a script file, a
+// command that runs a program (e, s///e) or one it does not recognize;
+// computed reports a script from an expansion.
+func sedEffects(words []shellWord) (paths []pathArg, runs, computed bool) {
+	var scripts []shellWord
+	expression, took, inPlace, operand := false, false, false, false
+	file := func(w shellWord) { paths, runs = append(paths, pathArg{word: w, op: opRead, force: true}), true }
+	script := func(w shellWord) { scripts, expression = append(scripts, w), true }
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		switch t := w.text; {
+		case t == "--":
+			operand = true
+		case operand || !strings.HasPrefix(t, "-") || t == "-":
+			// After -i, BSD sed takes a separate suffix, so any operand may be the script.
+			if !expression && (!took || inPlace) {
+				scripts, took = append(scripts, w), true
+			}
+		case strings.HasPrefix(t, "--in-place"):
+			inPlace = true
+		case t == "--file" && i+1 < len(words):
+			i++
+			file(words[i])
+		case t == "--expression" && i+1 < len(words):
+			i++
+			script(words[i])
+		case strings.HasPrefix(t, "--file="):
+			w.text = strings.TrimPrefix(t, "--file=")
+			file(w)
+		case strings.HasPrefix(t, "--expression="):
+			w.text = strings.TrimPrefix(t, "--expression=")
+			script(w)
+		case strings.HasPrefix(t, "--"):
+		default:
+			for j := 1; j < len(t); j++ {
+				switch t[j] {
+				case 'i':
+					inPlace, j = true, len(t)
+				case 'e', 'f', 'l':
+					value := w
+					value.text = t[j+1:]
+					if value.text == "" && i+1 < len(words) {
+						i++
+						value = words[i]
+					}
+					switch t[j] {
+					case 'e':
+						script(value)
+					case 'f':
+						file(value)
+					}
+					j = len(t)
+				}
+			}
+		}
+	}
+	runs = runs || inPlace
+	for _, w := range scripts {
+		if w.unresolved {
+			computed = true
+			continue
+		}
+		reads, writes, r := sedScript(w.text)
+		runs = runs || r
+		for _, name := range reads {
+			paths = append(paths, pathArg{word: shellWord{text: name}, op: opRead, force: true})
+		}
+		for _, name := range writes {
+			paths = append(paths, pathArg{word: shellWord{text: name}, op: opWrite, force: true})
+		}
+	}
+	return paths, runs, computed
+}
+
+// sedScript scans one script for the files it reads and writes, and for
+// commands that run a program (e, s///e) or that it does not recognize.
+func sedScript(s string) (reads, writes []string, runs bool) {
+	for i := 0; i < len(s); {
+		c := s[i]
+		switch {
+		case strings.IndexByte(" \t\n;{}!,$~+0123456789", c) >= 0:
+			i++
+		case c == '/':
+			i = sedSkipDelimited(s, i+1, '/')
+		case c == '\\' && i+1 < len(s):
+			i = sedSkipDelimited(s, i+2, s[i+1])
+		case c == '#':
+			i = sedSkipTo(s, i, "\n")
+		case (c == 's' || c == 'y') && i+1 < len(s):
+			i = sedSkipDelimited(s, sedSkipDelimited(s, i+2, s[i+1]), s[i+1])
+			for c == 's' && i < len(s) && strings.IndexByte(";\n}", s[i]) < 0 {
+				if s[i] == 'w' {
+					var name string
+					name, i = sedFile(s, i+1)
+					writes = append(writes, name)
+					break
+				}
+				runs = runs || s[i] == 'e'
+				i++
+			}
+		case c == 'r' || c == 'R' || c == 'w' || c == 'W':
+			var name string
+			name, i = sedFile(s, i+1)
+			if c == 'r' || c == 'R' {
+				reads = append(reads, name)
+			} else {
+				writes = append(writes, name)
+			}
+		case c == 'a' || c == 'i' || c == 'c':
+			// Text runs to the end of the line; backslash-newline continues it.
+			for i++; i < len(s) && s[i] != '\n'; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case c == ':' || c == 'b' || c == 't' || c == 'T':
+			i = sedSkipTo(s, i+1, ";\n")
+		case strings.IndexByte("pdDnNgGhHxzF=PlLqQ", c) >= 0:
+			i++
+		default:
+			return reads, writes, true
+		}
+	}
+	return reads, writes, runs
+}
+
+// sedFile returns the file name that runs to the end of the line.
+func sedFile(s string, i int) (string, int) {
+	end := sedSkipTo(s, i, "\n")
+	return strings.TrimLeft(s[i:end], " \t"), end
+}
+
+// sedSkipDelimited returns the index after the next unescaped delim.
+func sedSkipDelimited(s string, i int, delim byte) int {
+	for ; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case delim:
+			return i + 1
+		}
+	}
+	return len(s)
+}
+
+func sedSkipTo(s string, i int, stops string) int {
+	for i < len(s) && strings.IndexByte(stops, s[i]) < 0 {
+		i++
+	}
+	return i
 }
 
 // isLauncher reports commands that only run another command; the inner
@@ -497,7 +710,33 @@ func gitPaths(cmd shellCommand) []pathArg {
 	if dir != nil {
 		out = append(out, pathArg{word: *dir, op: op, force: true})
 	}
-	for _, w := range args {
+	// valued adds the value of option, attached with = or in the next word;
+	// a relative one is under -C.
+	valued := func(words []shellWord, i int, option, op string) {
+		w := words[i]
+		if value, ok := strings.CutPrefix(w.text, option+"="); ok {
+			w.text = value
+		} else if w.text != option || i+1 == len(words) {
+			return
+		} else {
+			w = words[i+1]
+		}
+		if dir != nil && !isRootedWord(w.text) {
+			w.text, w.unresolved = filepath.Join(dir.text, w.text), w.unresolved || dir.unresolved
+		}
+		out = append(out, pathArg{word: w, op: op, force: true})
+	}
+	global := cmd.words[1 : len(cmd.words)-len(args)]
+	for i := range global {
+		valued(global, i, "--git-dir", op)
+		valued(global, i, "--work-tree", op)
+	}
+	for i, w := range args {
+		valued(args, i, "--output", opWrite)
+		valued(args, i, "--output-directory", opWrite)
+		if sub == "format-patch" {
+			valued(args, i, "-o", opWrite)
+		}
 		if !strings.HasPrefix(w.text, "-") && isRootedWord(w.text) {
 			out = append(out, pathArg{word: w, op: op})
 		}
@@ -630,17 +869,22 @@ func classifyCommand(cmd shellCommand) []finding {
 		return add(RuleBashDelete, "secure file overwrite")
 	case "rm":
 		if hasShortFlag(words[1:], "r") || hasShortFlag(words[1:], "R") || hasLongOption(words, "recursive") || hasLongOption(words, "dir") {
-			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: operandsOf(cmd), base: cmd.base, extraArgs: cmd.extraArgs}}
+			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: operandsOf(cmd), dirs: cmd.dirs, extraArgs: cmd.extraArgs}}
 		}
 	case "find":
 		if slices.Contains(words, "-delete") {
 			filtered := slices.ContainsFunc(words, func(w string) bool {
 				return slices.Contains([]string{"-name", "-iname", "-path", "-ipath", "-regex", "-iregex", "-type", "-newer", "-mtime", "-mmin", "-size", "-empty"}, w)
 			})
-			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: findStarts(cmd), base: cmd.base, filtered: filtered}}
+			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: findStarts(cmd), dirs: cmd.dirs, filtered: filtered}}
 		}
 	case "git":
 		return gitFindings(cmd, add)
+	case "sed":
+		// A computed script can read or write any file.
+		if _, _, computed := sedEffects(cmd.words); computed {
+			return []finding{{rule: RuleBashDynamic, desc: "sed script from a variable or substitution", pattern: cmd.display()}}
+		}
 	case "curl":
 		if curlUploads(words) {
 			return add(RuleBashOutbound, "HTTP upload")

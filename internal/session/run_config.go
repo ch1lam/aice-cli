@@ -92,12 +92,17 @@ func (s *Store) AppendRunConfig(ctx context.Context, record RunConfig) error {
 	if err != nil {
 		return fmt.Errorf("session: encode run config: %w", err)
 	}
-	if err := s.appendData(ctx, "run config", data); err != nil {
+	// Decode and validate as replay will, before writing, so a failure leaves
+	// disk and memory unchanged.
+	var stored RunConfig
+	if err := decodeRecord(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended run config: %w", err)
+	}
+	if err := stored.Validate(); err != nil {
 		return err
 	}
-	var stored RunConfig
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("session: retain appended run config: %w", err)
+	if err := s.appendData(ctx, "run config", data); err != nil {
+		return err
 	}
 	s.retainRunConfig(stored)
 	return nil
@@ -137,10 +142,15 @@ func RebuildRequest(snapshot Snapshot, messageID string) (llm.Request, error) {
 	if err != nil {
 		return llm.Request{}, err
 	}
-	request, _, err := llm.BuildRequest(snapshot.RunConfigs[config].Config, append(history, assistant))
+	request, changed, err := llm.BuildRequest(snapshot.RunConfigs[config].Config, append(history, assistant))
 	if err != nil {
 		return llm.Request{}, err
 	}
+	// The Loop fits output tokens to a full estimate when the projection
+	// changed results, as it did for this context. A run with a tool catalog
+	// also reestimates, but the Session does not record that a catalog was
+	// present, so such a request is rebuilt from provider usage.
+	request.ReestimateContext = changed
 	last := len(request.Messages) - 1
 	if last < 0 {
 		return llm.Request{}, fmt.Errorf("session: message %q has no projected context", messageID)

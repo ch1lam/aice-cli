@@ -1040,6 +1040,33 @@ func TestAdapterNormalizesHTTPError(t *testing.T) {
 	}
 }
 
+func TestAdapterClassifiesErrorEventByCode(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewSSEServer(t, []string{
+		`{"id":"chunk-1","object":"chat.completion.chunk","created":1,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"partial"}}]}`,
+		`{"error":{"message":"quota exhausted","type":"insufficient_quota","code":"insufficient_quota"}}`,
+	})
+	defer server.Close()
+	adapter, err := openaicompletions.New(openaicompletions.Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := adapter.Stream(t.Context(), apitest.MinimalRequest(openaicompletions.API))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	events := apitest.CollectEvents(t, stream)
+	var providerErr *llm.ProviderError
+	if last := events[len(events)-1]; last.Type != llm.EventTypeError || !errors.As(last.Err, &providerErr) {
+		t.Fatalf("last event = %#v, want provider error", last)
+	}
+	if providerErr.Transport || providerErr.Code != "insufficient_quota" {
+		t.Fatalf("provider error = %#v, want classified insufficient_quota", providerErr)
+	}
+}
+
 func TestAdapterRejectsExcessiveTemperature(t *testing.T) {
 	t.Parallel()
 

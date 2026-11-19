@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 
@@ -18,7 +17,7 @@ import (
 // mode decision on the active branch. Each line is a classify.Case whose
 // expect is the classifier's decision and whose set is empty: a person labels
 // it before it joins internal/classify/eval.
-func (a *application) SessionReviews(ctx context.Context, request cli.SessionTreeRequest, output io.Writer) (returnErr error) {
+func (a *application) SessionReviews(ctx context.Context, request cli.SessionTreeRequest, output io.Writer) error {
 	if output == nil {
 		return fmt.Errorf("app: output is required")
 	}
@@ -26,12 +25,11 @@ func (a *application) SessionReviews(ctx context.Context, request cli.SessionTre
 	if err != nil {
 		return fmt.Errorf("app: create workspace: %w", err)
 	}
-	store, snapshot, err := openExistingSession(ctx, workspace, request.Session)
+	snapshot, err := readExistingSession(ctx, workspace, request.Session)
 	if err != nil {
 		return err
 	}
-	defer func() { returnErr = errors.Join(returnErr, store.Close()) }()
-	entries, err := activeEntries(store, nil)
+	entries, err := branchEntries(snapshot)
 	if err != nil {
 		return err
 	}

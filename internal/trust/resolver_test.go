@@ -35,7 +35,7 @@ func TestResolveOverrideIgnoresStore(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/workspace", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/workspace", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	resolution, err := store.Resolve(ResolveOptions{
@@ -78,7 +78,7 @@ func TestResolveStoredDecisionWinsOverPolicy(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/workspace", DecisionUntrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/workspace", Decision: DecisionUntrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	resolution, err := store.Resolve(ResolveOptions{
@@ -190,8 +190,7 @@ func TestResolveAskWithUIUsesChoice(t *testing.T) {
 		t.Errorf("AskUI cwd = %q, want /workspace", gotCWD)
 	}
 	if resolution.Decision != DecisionTrusted ||
-		resolution.Source != SourceInteractive ||
-		!resolution.Prompted {
+		resolution.Source != SourceInteractive {
 		t.Errorf("Resolve() = %#v, want trusted interactive prompt", resolution)
 	}
 	if resolution.Choice.Label != "Trust" {

@@ -501,7 +501,9 @@ func welcomeInitMessages(t *testing.T, current model) []tea.Msg {
 		raw := command()
 		batch, ok := raw.(tea.BatchMsg)
 		if !ok {
-			t.Fatalf("Init message = %T, want tea.BatchMsg", raw)
+			// tea.Batch returns a lone command unwrapped.
+			messages = append(messages, raw)
+			return
 		}
 		for _, command := range batch {
 			messages = append(messages, command())

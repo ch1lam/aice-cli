@@ -32,21 +32,29 @@ func withMCPConnectionApprover(ctx context.Context, approve mcpConnectionApprove
 
 // approveIfNeeded runs before an operation acquires the service. Prompts are
 // serialized so concurrent discovery asks once per service, and the answer is
-// remembered for this exact fingerprint for the owner's lifetime. No owner or
-// Guard lock is held while the user decides.
+// remembered for this exact fingerprint for the owner's lifetime. Only services
+// still awaiting approval wait for the prompt lock, so an open prompt never
+// blocks work on an approved service. No owner or Guard lock is held while the
+// user decides.
 func (o *mcpOwner) approveIfNeeded(ctx context.Context, s *mcpOwnedService) error {
 	approve, _ := ctx.Value(mcpConnectionApproverKey{}).(mcpConnectionApprover)
 	if approve == nil || s == nil {
 		return nil
 	}
+	pending := func() (config.MCPServer, bool) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		state, _ := o.blockLocked(s)
+		return s.server, state == mcpNeedsApproval
+	}
+	if _, ok := pending(); !ok {
+		return nil
+	}
 	o.approvalMu.Lock()
 	defer o.approvalMu.Unlock()
-	o.mu.Lock()
-	state, _ := o.blockLocked(s)
-	pending := state == mcpNeedsApproval
-	server := s.server
-	o.mu.Unlock()
-	if !pending {
+	// Another prompt may have answered for this service while we waited.
+	server, ok := pending()
+	if !ok {
 		return nil
 	}
 	allowed, err := approve(ctx, server)

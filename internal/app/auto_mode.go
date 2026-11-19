@@ -16,7 +16,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/classify"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
-	"github.com/ch1lam/aice-cli/internal/hostpath"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 )
@@ -301,17 +300,7 @@ func (a *autoMode) needsReview(call llm.ToolCall, hints routeHints) bool {
 	case call.Name == "web_fetch" || call.Name == "web_search":
 		return true
 	case call.Name == "write" || call.Name == "edit":
-		var args struct {
-			Path string `json:"path"`
-		}
-		if json.Unmarshal(call.Arguments, &args) != nil || args.Path == "" {
-			return true
-		}
-		path := args.Path
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(a.workspace, path)
-		}
-		return hostpath.Within(filepath.Join(a.workspace, ".git"), filepath.Clean(path))
+		return hints.gitWrite
 	}
 	return false
 }

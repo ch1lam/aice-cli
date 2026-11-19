@@ -109,7 +109,7 @@ func TestStdioRoundTrip(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`)); !errors.Is(err, ErrClosed) {
+	if _, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("call after close: %v", err)
 	}
 }
@@ -130,7 +130,7 @@ func assertRoundTrip(t *testing.T, c *Client) {
 		t.Fatalf("output schema number rounded: %s", catalog.Items[0].OutputSchema)
 	}
 	args := json.RawMessage(`{"n":9007199254740993,"decimal":1.234567890123456789}`)
-	result, err := c.Call(t.Context(), "echo", args)
+	result, err := c.CallChecked(t.Context(), "echo", args, nil)
 	if err != nil || result.State != llm.ExecutionReturned || !result.IsError || len(result.Content) != 5 || !bytes.Equal(result.StructuredContent, args) {
 		t.Fatalf("call: %+v, %v", result, err)
 	}
@@ -143,7 +143,7 @@ func assertRoundTrip(t *testing.T, c *Client) {
 	if err != nil || !resources.Complete || len(resources.Items) != 1 {
 		t.Fatalf("resources: %+v, %v", resources, err)
 	}
-	read, err := c.ReadResource(t.Context(), resources.Items[0].URI)
+	read, err := c.ReadResourceChecked(t.Context(), resources.Items[0].URI, nil)
 	if err != nil || read.State != llm.ExecutionReturned || len(read.Content) != 1 || read.Content[0].Text != "resource body" {
 		t.Fatalf("resource read: %+v, %v", read, err)
 	}
@@ -269,7 +269,7 @@ func TestHTTPNoReplay(t *testing.T) {
 					c.Limits.MessageBytes = 1024
 				}
 			})
-			result, err := c.Call(ctx, "echo", json.RawMessage(`{}`))
+			result, err := c.CallChecked(ctx, "echo", json.RawMessage(`{}`), nil)
 			if err == nil || result.State != llm.ExecutionUnknown || f.calls.Load() != 1 {
 				t.Fatalf("outcome=%+v err=%v dispatches=%d", result, err, f.calls.Load())
 			}
@@ -284,14 +284,14 @@ func TestInvalidAndCanceledBeforeDispatch(t *testing.T) {
 	f := &httpFixture{}
 	c := openFixture(t, f, nil)
 	for _, args := range []string{"", "[]", "null", "{broken"} {
-		result, err := c.Call(t.Context(), "echo", json.RawMessage(args))
+		result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(args), nil)
 		if !errors.Is(err, ErrConfig) || result.State != llm.ExecutionNotDispatched {
 			t.Fatalf("%q: %+v %v", args, result, err)
 		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result, err := c.Call(ctx, "echo", json.RawMessage(`{}`))
+	result, err := c.CallChecked(ctx, "echo", json.RawMessage(`{}`), nil)
 	if !errors.Is(err, context.Canceled) || result.State != llm.ExecutionNotDispatched || f.calls.Load() != 0 {
 		t.Fatalf("%+v %v calls=%d", result, err, f.calls.Load())
 	}
@@ -338,7 +338,7 @@ func TestConfiguredFrameLimitReachesSDK(t *testing.T) {
 					config.CallTimeout = 30 * time.Second
 				})
 			}
-			result, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+			result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 			if err != nil || result.State != llm.ExecutionReturned || len(result.Content) != 1 || len(result.Content[0].Text) != 17<<20 {
 				t.Fatalf("large response: err=%v state=%s blocks=%d", err, result.State, len(result.Content))
 			}

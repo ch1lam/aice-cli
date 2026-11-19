@@ -1,9 +1,11 @@
 package provider_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -47,6 +49,9 @@ type providerCase struct {
 	paths map[llm.API]string
 	// anyModel providers accept IDs outside their catalog.
 	anyModel bool
+	// encryptedReasoning providers request encrypted reasoning on Responses
+	// calls; third-party gateways may reject the include.
+	encryptedReasoning bool
 }
 
 func providerCases() []providerCase {
@@ -59,7 +64,7 @@ func providerCases() []providerCase {
 	}
 	return []providerCase{
 		{
-			descriptor: &openai.Provider{}, models: openai.Models, credential: "key", paths: responses,
+			descriptor: &openai.Provider{}, models: openai.Models, credential: "key", paths: responses, encryptedReasoning: true,
 			connect: func(baseURL string, client *http.Client) (llm.Streamer, error) {
 				return openai.New(openai.Config{APIKey: "test-key", BaseURL: baseURL, HTTPClient: client})
 			},
@@ -250,6 +255,16 @@ func TestProvidersRouteCatalogModelsAndRejectMismatchesBeforeHTTP(t *testing.T) 
 			var mu sync.Mutex
 			var paths []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Include []string `json:"include"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if strings.HasSuffix(r.URL.Path, "/responses") &&
+					slices.Contains(body.Include, "reasoning.encrypted_content") != tc.encryptedReasoning {
+					t.Errorf("%s include = %q, want encrypted reasoning %t", r.URL.Path, body.Include, tc.encryptedReasoning)
+				}
 				mu.Lock()
 				paths = append(paths, r.URL.Path)
 				mu.Unlock()

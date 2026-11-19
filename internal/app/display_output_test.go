@@ -55,6 +55,7 @@ func TestDisplayToolOutputEmptyFailureAndImage(t *testing.T) {
 		{name: "absent"},
 		{name: "empty", result: &llm.ToolResultMessage{}, available: true},
 		{name: "failure", err: errors.New("permission denied"), want: "permission denied", available: true},
+		{name: "recovered unknown outcome", result: &llm.ToolResultMessage{IsError: true, Details: &llm.ToolResultDetails{State: llm.ExecutionUnknown}}, want: llm.UnknownOutcomeNotice, available: true},
 		{name: "image", result: &llm.ToolResultMessage{Content: []llm.ContentPart{{Type: llm.ContentTypeImage}}}, want: "[Image result]", available: true},
 		{name: "multiple blocks", result: &llm.ToolResultMessage{Content: []llm.ContentPart{llm.NewTextContent("one").Part(), llm.NewTextContent("two").Part()}}, want: "one\ntwo", available: true},
 	} {

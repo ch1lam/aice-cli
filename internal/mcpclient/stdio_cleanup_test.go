@@ -55,7 +55,7 @@ func TestChildNormalCloseReapsSuccessfully(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.StdioPID() != c.child.cmd.Process.Pid || c.StdioPID() == os.Getpid() {
+	if c.child == nil || c.child.cmd.Process.Pid == os.Getpid() {
 		t.Fatal("wrong owned child identity")
 	}
 	if err := c.Close(); err != nil {

@@ -35,6 +35,9 @@ type mcpCatalogEntry struct {
 	binding    llm.ToolBinding
 	service    string
 	generation uint64
+	// remoteDescription is the server's own tool description, indexed for
+	// search without the wrapper text every model-visible description shares.
+	remoteDescription string
 }
 
 // mcpCatalog is one run's discovery view, not the Loop's selected tool set.
@@ -433,7 +436,7 @@ func (c *mcpCatalog) publish(server config.MCPServer, connection mcpCatalogConne
 		if err != nil {
 			return err
 		}
-		entries = append(entries, mcpCatalogEntry{agent.CatalogTool{Reference: ref, Tool: mapped}, binding, server.Key, catalog.Generation})
+		entries = append(entries, mcpCatalogEntry{agent.CatalogTool{Reference: ref, Tool: mapped}, binding, server.Key, catalog.Generation, remote.Description})
 	}
 	newNames := 0
 	for _, entry := range entries {
@@ -520,7 +523,7 @@ func (c *mcpCatalog) searchSnapshot() map[string]mcpSearchDocument {
 		documents[id] = mcpSearchDocument{
 			reference: entry.Reference, service: entry.service,
 			name: definition.Name, remoteName: entry.binding.ToolName,
-			description: definition.Description,
+			description: definition.Description, remoteDescription: entry.remoteDescription,
 		}
 	}
 	return documents

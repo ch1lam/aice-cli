@@ -60,7 +60,9 @@ The definition is:
 
 A rewrite keeps the rest of the service: tool filters, timeouts and env entries
 other than the preset's five keys stay as you set them. Changes require idle
-state like other MCP configuration changes. A project
+state like other MCP configuration changes; Set up / Repair over an unchanged
+definition still rebuilds the connection, so earlier prepared runs and BTW
+snapshots do not keep the replaced service. A project
 service already named `browser` blocks setup. The service can also be edited
 with `/mcp` like any other; Settings shows its state from configuration
 without helper or MCP I/O.

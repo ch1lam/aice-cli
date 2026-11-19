@@ -3,9 +3,10 @@
 ## Run resource limits
 
 AICE has no model-round or tool-step ceiling by default. Optional
-`--run-token-budget N` and `--run-timeout 30m` bound one Agent run; both default
-to zero (unlimited). They work in interactive and print modes, with the same
-configuration precedence as model settings. See [configuration](configuration.md#run-limits).
+`--run-token-budget N` and `--run-timeout 30m` bound one Agent run. They work in
+interactive and print modes, with the same configuration precedence as model
+settings. Defaults, settings keys and environment variables for every run limit
+are in the [run limits table](configuration.md#run-limits).
 
 A run includes its steering and queued follow-up inputs. Automatic compaction
 is charged to the same run. A new user-triggered run starts a fresh budget,
@@ -35,7 +36,7 @@ Guard or Project Trust.
 ### Optional turn limit
 
 `--max-turns N` optionally bounds model request attempts in each Agent run.
-The default `0` is unlimited; positive integers set a ceiling. Each call to the
+`0` is unlimited; positive integers set a ceiling. Each call to the
 model counts once, including failed attempts and retries. Tool calls do not count
 separately, and a synthetic terminal message does not consume another turn.
 
@@ -55,12 +56,15 @@ budgets as well to bound resources across compaction and the main run.
 
 ### Repeated-tool detection
 
-By default, AICE stops after 8 consecutive completed tool rounds have identical
-ordered tool names, arguments and results. Configure `--run-no-progress-limit N`
-with `N >= 2`, or `0` to disable it. JSON object key order and whitespace do not
+AICE stops after `--run-no-progress-limit N` consecutive completed tool rounds
+have identical ordered tool names, arguments and results; `N >= 2`, or `0`
+disables it. The default threshold is in the
+[run limits table](configuration.md#run-limits). JSON object key order and whitespace do not
 matter; different call IDs, timestamps or assistant commentary alone do not
 count as progress. Result content, error status, diff, truncation and structured outcome details
-participate in the comparison. Web evidence metadata does not. Repeated denials are detected too.
+participate in the comparison. Web evidence metadata does not, nor does an
+auto-mode review: its reason and usage, and the text of a call it refused, vary
+between identical calls. Repeated denials are detected too.
 
 Changed tool work resets the streak. Accepted steering and natural completion
 also reset it, so queued follow-ups and new runs start fresh. Compaction does
@@ -137,9 +141,11 @@ documents should link here instead of restating these lists.
 ### Policies
 
 `internal/app` constructs the gate through `newExecutionGuard` and
-`executionGuardConfig`, passing the physical workspace, discovered skill
-directories as `ReadOnlyRoots`, AICE credential stores, AICE control files
-and the [permission rules](#permission-rules) from settings. The built-in
+`executionGuardConfig`, passing the physical workspace, the workspace as
+spelled as `BashDirectory` (where the bash tool starts, keeping a symlinked
+`$PWD`), discovered skill directories as `ReadOnlyRoots`, AICE credential
+stores, AICE control files and the [permission rules](#permission-rules)
+from settings. The built-in
 policies below are fixed in `internal/guard`.
 
 The default permission mode works like accept-edits inside the workspace:
@@ -155,20 +161,47 @@ denies credential access.
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/std{in,out,err}`, `/dev/tty`, `/dev/fd/N` | allow | allow |
 
 Bash commands are parsed with `mvdan.cc/sh`. Launchers (`env`, `time`, `nice`,
-`nohup`, `command`, `exec`, `timeout`, `stdbuf`, `xargs`, `sudo`, `doas`,
+`nohup`, `command`, `builtin`, `exec`, `timeout`, `stdbuf`, `xargs`, `sudo`, `doas`,
 `pkexec`, `run0`), `bash`/`sh`/`zsh`/`dash`/`ksh -c` scripts and `find -exec`
 commands are unwrapped and checked as the command they run. A command table
 records which operands are patterns or messages rather than paths (`grep`,
 `rg`, `sed`, `awk`, `jq`, `echo`, `printf`, ...), which are read and which are
-written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...).
-Commands outside the table treat path-like operands as writes; `docker`/`podman`
+written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...). Files a `sed` script names are read (`r`, `R`, `-f`) or written (`w`, `W`, `s///w`), and a computed `sed` script asks `bash.dynamic`; git `--git-dir`/`--work-tree` are accessed like `-C`, and `--output`, `--output-directory` and `format-patch -o` are written.
+Commands outside the table treat path-like operands (with `/`, `~`, a dotted name, `.` or `..`) as writes; `docker`/`podman`
 bind-mount sources (`-v SRC:DST`, `--mount source=SRC`) are writes. Unquoted
 backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
 assignments earlier in the same command line (`X=~/.ssh`, `export`,
-`declare`, `local`, `readonly`) are substituted; other expansions are
-unresolved. `for` loop items are checked as reads. A literal `eval` script is
-checked like `bash -c`. `cd`/`pushd` moves the base for later relative paths;
-a target that cannot be resolved makes later relative paths unresolved.
+`declare`, `local`, `readonly`, `X+=`) are substituted, and so are literal
+`for` items, `set --` operands and function call arguments (`$1`, ...); other
+expansions are unresolved. A variable the command line sets any other way (a
+command substitution or other unresolved expansion, an array, `read`,
+`mapfile`, `getopts`, `printf -v`, `shift`) is computed: a path that expands it
+asks `bash.dynamic`. A variable that `if`/`case` branches, `&&`/`||` or loops
+may leave with different values keeps all of them, and a command is checked
+once for each; more than 64 combinations, or a loop whose values keep
+changing, asks `bash.dynamic`. `for` loop items are checked as reads. A
+literal `eval` script is checked like `bash -c`.
+
+Relative paths follow the working directory as bash does, starting from
+`BashDirectory`. `cd`/`pushd` move it logically (`cd link/..` returns to where
+it started, and `cd ..` leaves a symlinked workspace for the link's parent), while a relative path
+resolves from the physical directory, and a target with `..` is also checked
+as `cd -P` resolves it. A statement that may fail keeps the directory it
+started in as a candidate: `cd dir; cat f` checks `f` in both directories,
+`cd dir && cat f` only in `dir`. Subshells, pipelines, command and process
+substitutions, background jobs and `bash -c` scripts restore the directory.
+`command cd`, `builtin cd`, literal `eval` scripts and calls of functions
+defined earlier in the command line change it; a function body is checked
+where it is defined and from each caller's directory, and a loop whose body
+changes directory is checked again from an unknown one. The directory becomes
+unknown after `cd -`, `popd`, `source`, an expansion, a target that is not an
+existing directory, `~user`, a bare name while `CDPATH` may be set,
+`env -C`/`--chdir` and `find -execdir`; every relative path from an unknown
+directory asks `bash.dynamic`. A `trap` action may run at any later point, so
+it is checked after the command line with its final functions, from an unknown
+directory and with every variable the command line sets computed (so
+`tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT` asks); a computed action asks
+`bash.dynamic`.
 
 Boundary checks use physical paths: symlinks in the longest existing prefix
 are resolved for every file action, bash included, so a workspace symlink to
@@ -190,7 +223,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` or `bash -c` of a computed script, scripts nested too deeply to inspect, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c`, `trap` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory or a computed variable, variables with too many possible values or that a loop keeps changing, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
@@ -358,8 +391,19 @@ In auto mode every call is routed by the default-mode result:
 | --- | --- |
 | Deny (`credentials`, `secret-files`, `rule.deny`, MCP user deny) | deny |
 | Ask with `controlFile.write`, `bash.privileged`, `bash.disk`, `bash.fetchExec`, `rule.ask`, `mcp.connection` or `unknownTool` | a person decides; `--print` denies |
-| Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
-| Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes under `.git/` | classifier |
+| Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside any `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
+| Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes whose physical path is under a `.git/` directory in the workspace, nested repositories included, however spelled (`~`, absolute or through a symlink) | classifier |
+
+A command line is not read-only, and allow rules do not cover it, when it may
+run code or touch files its words do not show: an assignment to an upper-case
+variable other than locale, `TZ`, `NO_COLOR`, `TERM`, `COLUMNS`, `LINES` or a
+`cat` pager (`LD_PRELOAD=`, `DYLD_*`, `PATH`, `GIT_*`, including `env NAME=` and
+`export`), git `-c`, `--config-env`, `--exec-path`, `--git-dir` or
+`--work-tree`, a path built from a command substitution (`cat $(…)`) or a computed variable, or a `trap` action.
+`sed` with `-i`, `-f`, an `e` command or flag or a command it does not recognize,
+`rg --pre`/`--pre-glob`, `printf -v`, `git grep -O` and git `--output` are not
+read-only either; the output operands of `uniq` and `xxd`, `tree -o` and the `less -o`/`-O`/`--log-file` log are
+writes.
 
 Broad allow rules that permit arbitrary code (`bash(python *)`, `bash(npm run *)`,
 `bash(make *)`, `bash(git *)` and similar) do not count as coverage in auto
@@ -455,7 +499,8 @@ credentials/prompt content out of logs.
   `oldText` cannot be empty and empty `newText` deletes. Unknown/legacy fields
   and malformed entries fail before file access. All matches use the same
   original file, must be unique and non-overlapping, with BOM preservation and
-  CRLF/LF normalization only. Errors identify original entry indices. A final
+  CRLF/LF normalization only. Replacement text takes the file's dominant line
+  ending; untouched text keeps its original endings. Errors identify original entry indices. A final
   byte-identical result is a no-change error. Matching failures require rereading
   and correcting the edit, not blindly overwriting the file.
 - `write`/`edit` serialize mutations per Workspace through cleanup. They check
@@ -481,6 +526,11 @@ credentials/prompt content out of logs.
   file cap. It is not a filesystem snapshot or a bound on all temporary decoding
   allocations. [Truncation metadata](contracts.md#tool-truncation-metadata) distinguishes
   match, byte and long-line limits.
+- `find` lists the files ripgrep would search (`rg --files --hidden`, the same
+  ignore rules as `grep`): hidden files are included, `.gitignore`/`.ignore`
+  rules apply, `.git` directories are skipped, and nested symlinks are neither
+  followed nor listed. A symlinked root directory is listed through its target
+  while results keep the requested spelling. Without `rg` it is unavailable like `grep`.
 - `bash` requires a one-line `description` of why the command runs. A
   permission prompt shows it above the full command, and a folded TUI tool
   card shows it in place of the command, which the expanded card shows in
@@ -814,6 +864,10 @@ aice session checkout --workspace . \
 aice session stats path/to/a.jsonl path/to/b.jsonl
 ```
 
+`session tree` and `session reviews` use the same read-only replay as listing:
+they work while another process holds the writer, ignore an incomplete final
+record and never repair or recover the file.
+
 `session stats` reads files without locking or repairing them, so it also
 inspects Sessions copied from other hosts such as evaluation trials. It counts
 every recorded branch: usage and cost, model requests and failed attempts, the
@@ -828,8 +882,8 @@ recorded messages is left untouched and stays resumable with `--session`.
 Once detached, a failure to close or remove the previous file is reported as a
 warning; the switch still completes. `/clear` only clears the visible
 transcript. `/new` does not rebuild the process environment: prompt files and
-skill discovery are reused. Dynamic Guard
-grants are cleared. Browser state belongs to the browser MCP service and is
+skill discovery are reused. Like a Session switch, `/new` clears BTW threads
+and dynamic Guard grants and empties the visible transcript. Browser state belongs to the browser MCP service and is
 neither reset nor restored from history; see [Browser automation](browser.md#lifetime-and-concurrency). Restart AICE
 to reload prompt files or Skills.
 
@@ -852,8 +906,11 @@ Session, and the format rejection alone does not establish whether its remaining
 records are intact.
 
 Before execution resumes, AICE appends an error result for each outstanding tool
-call on the active branch. The result says the outcome is unknown and the tool
-may have produced effects; inspect the current state before retrying. Existing
+call on the active branch. The result has no text of its own and records the
+`unknown` execution state; its model view carries the single notice that the
+tool may have produced effects and the current state should be inspected before
+retrying ([structured tool outcomes](contracts.md#structured-tool-outcomes)).
+The transcript shows the same notice as the call's output. Existing
 results remain unchanged, recovery is idempotent, and AICE never replays the
 interrupted call itself. Tree inspection does not append recovery messages.
 

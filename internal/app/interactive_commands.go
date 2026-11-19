@@ -329,7 +329,7 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 		return menu
 	}
 	menu.Options[0].Current = snapshot.LeafID == ""
-	nodes, err := session.Nodes(snapshot)
+	nodes, err := session.CheckoutTargets(snapshot)
 	if err != nil {
 		return menu
 	}
@@ -342,11 +342,6 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 		compactions[compaction.ID] = compaction
 	}
 	for _, node := range nodes {
-		target := snapshot
-		target.LeafID = node.ID
-		if _, err := session.BuildContext(target); err != nil {
-			continue
-		}
 		description := sessionNodeDescription(node, messages, compactions)
 		if description == "" {
 			description = "Session " + string(node.Type)
@@ -540,8 +535,8 @@ func (s *interactiveSession) slashCompact(
 // next accepted prompt starts a fresh one through ensureSessionStore. The
 // previous file is left untouched when it recorded messages; a previous file
 // that never recorded anything is removed instead of lingering as a
-// header-only stub. The TUI discards the visible transcript through the
-// same sessionChanged channel as /checkout.
+// header-only stub. Like a Session switch it clears BTW threads and temporary
+// Guard grants, and publishes an empty transcript.
 func (s *interactiveSession) slashNew(
 	ctx context.Context,
 	request interaction.CommandRequest,
@@ -554,12 +549,7 @@ func (s *interactiveSession) slashNew(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.installStore(nil, nil, "", false)
-	s.guard.ResetSessionGrants()
-	s.stateMu.Lock()
-	s.totalUsage = llm.Usage{}
-	s.throughput = interaction.DisplayThroughput{}
-	s.sessionChanged = true
-	s.stateMu.Unlock()
+	s.resetSessionScope(llm.Usage{}, &interaction.Transcript{})
 	if previous == nil {
 		return "Started new session", nil
 	}
@@ -707,9 +697,8 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	var total *llm.Usage
 	if store := s.conversation.currentStore(); store != nil {
-		if snapshot, err := store.Snapshot(); err == nil {
-			usage := session.TotalUsage(snapshot)
-			total = &usage
+		if summary, err := store.Usage(); err == nil {
+			total = &summary.Total
 		}
 	}
 	s.stateMu.Lock()

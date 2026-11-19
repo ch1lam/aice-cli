@@ -36,7 +36,7 @@ func TestDeepWikiRemoteReadOnly(t *testing.T) {
 	if !found {
 		t.Fatal("public documentation structure tool not found")
 	}
-	result, err := c.Call(t.Context(), "read_wiki_structure", json.RawMessage(`{"repoName":"facebook/react"}`))
+	result, err := c.CallChecked(t.Context(), "read_wiki_structure", json.RawMessage(`{"repoName":"facebook/react"}`), nil)
 	if err != nil || result.State != llm.ExecutionReturned || result.IsError || len(result.Content) == 0 {
 		t.Fatalf("read outcome=%s isError=%v blocks=%d err=%v", result.State, result.IsError, len(result.Content), err)
 	}

@@ -72,7 +72,7 @@ func TestCurrentProtocolInputRequiredDoesNotReplay(t *testing.T) {
 		}
 	}}
 	c := openFixture(t, f, nil)
-	result, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+	result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 	if !errors.Is(err, ErrUnsupported) || result.State != llm.ExecutionReturned || !result.IsError || f.calls.Load() != 1 {
 		t.Fatal("input-required result was replayed or lost its outcome", result, err, f.calls.Load())
 	}

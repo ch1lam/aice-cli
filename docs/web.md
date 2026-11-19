@@ -77,7 +77,9 @@ are validated strictly; unknown fields are errors.
 - `credential` is exactly one of `{"env": "NAME"}` or
   `{"auth_ref": "web_services.<id>"}`. Keys are never stored in
   `settings.json`. `auth_ref` reads the `web_services` object in
-  `~/.aice/auth.json`, which `/web` writes when you enter a key.
+  `~/.aice/auth.json`, which `/web` writes when you enter a key; a
+  `web_services` object in any `settings.json` is ignored with a startup
+  diagnostic.
 - Instance IDs match `[a-z0-9][a-z0-9_-]{0,63}`. The same provider can appear
   several times with different IDs and endpoints. Each instance has its own
   credential reference; environment references may name the same variable.
@@ -87,7 +89,8 @@ are validated strictly; unknown fields are errors.
   call. `timeout` values are AICE product defaults, not upstream guarantees.
 - `allowed_domains` / `excluded_domains` are bare hostnames and act as the
   upper bound: a model request can only narrow the allow list (label-boundary
-  subdomain matching); the exclude list comes only from configuration. An
+  subdomain matching); the exclude list comes only from configuration. Both
+  lists may be set together, in `settings.json` or `/web`. An
   empty intersection is a `constraint_conflict` error and nothing is sent
   upstream.
 - `enabled: false` under `search` or `fetch` disables that tool. A missing
@@ -214,6 +217,8 @@ recorded as an upstream cost in USD; a missing value stays unknown, never zero.
 
 Default tests use local fixtures. A real request requires the `integration`
 tag and explicit opt-in; see [Verification](collaboration.md#web-checks).
+Live Exa, public-page fetch and native `/web` terminal acceptance are not
+recorded.
 Implementation: [binding](../internal/app/web.go),
 [configuration](../internal/config/web.go),
 [Exa](../internal/web/exa/client.go), and

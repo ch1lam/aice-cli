@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -85,6 +86,17 @@ type guardAdapter struct {
 	auto *autoMode
 	// yolo upgrades Decision ask to allow. It never remaps deny.
 	yolo bool
+
+	workspaceOnce sync.Once
+	workspace     *tool.Workspace
+	workspaceErr  error
+}
+
+// toolWorkspace resolves the gate's workspace for the file tools' path
+// resolution once; every later check reuses it.
+func (g *guardAdapter) toolWorkspace() (*tool.Workspace, error) {
+	g.workspaceOnce.Do(func() { g.workspace, g.workspaceErr = tool.NewWorkspace(g.inner.Workspace()) })
+	return g.workspace, g.workspaceErr
 }
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
@@ -108,6 +120,7 @@ func (g *guardAdapter) checkInput(ctx context.Context, call llm.ToolCall) (agent
 type routeHints struct {
 	readOnly    bool // bash made only of read-only commands
 	ruleCovered bool // bash covered by explicit allow rules or an exact grant
+	gitWrite    bool // a write lands in the workspace's .git directory
 	mcp         bool // an MCP binding decided the call
 }
 
@@ -142,7 +155,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 	if call.Name == "read" && res.Decision != guard.DecisionDeny {
 		var args tool.ReadRequest
 		if json.Unmarshal(call.Arguments, &args) == nil && args.Path != "" && g.inner.Workspace() != "" {
-			workspace, err := tool.NewWorkspace(g.inner.Workspace())
+			workspace, err := g.toolWorkspace()
 			if err != nil {
 				return agent.GuardResult{}, routeHints{}, err
 			}
@@ -186,7 +199,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 		if err := json.Unmarshal(args["path"], &path); err != nil {
 			return agent.GuardResult{}, routeHints{}, err
 		}
-		workspace, err := tool.NewWorkspace(g.inner.Workspace())
+		workspace, err := g.toolWorkspace()
 		if err != nil {
 			return agent.GuardResult{}, routeHints{}, err
 		}
@@ -235,6 +248,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 				res.Decision = guard.DecisionAsk
 				res.Approvals = appendUniqueApprovals(g.inner, res.Approvals, other.Approvals)
 			}
+			res.GitWrite = res.GitWrite || other.GitWrite
 		}
 	}
 	mapped := mapGuardResult(res)
@@ -248,7 +262,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 			mapped.Decision = agent.GuardAllow
 		}
 	}
-	return mapped, routeHints{readOnly: res.ReadOnly, ruleCovered: res.RuleCovered}, nil
+	return mapped, routeHints{readOnly: res.ReadOnly, ruleCovered: res.RuleCovered, gitWrite: res.GitWrite}, nil
 }
 
 // appendUniqueApprovals adds approvals whose rule and resolved path are not

@@ -44,14 +44,6 @@ func NewStore(path string) *Store {
 	return &Store{path: path}
 }
 
-// Path returns the trust store file path.
-func (s *Store) Path() string {
-	if s == nil {
-		return ""
-	}
-	return s.path
-}
-
 // Lookup returns the nearest stored decision for path, walking parents, and
 // whether any entry matched.
 func (s *Store) Lookup(path string) (Entry, bool, error) {
@@ -75,11 +67,6 @@ func (s *Store) Lookup(path string) (Entry, bool, error) {
 		}
 		path = parent
 	}
-}
-
-// Set records one decision for path. DecisionUnknown removes the entry.
-func (s *Store) Set(path string, decision Decision) error {
-	return s.SetMany([]Update{{Path: path, Decision: decision}})
 }
 
 // SetMany applies several updates atomically under one lock. A DecisionUnknown

@@ -133,7 +133,7 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 			content.append(m.toolBodyContent(e), "\n\n")
 			return m.indentTranscript(content)
 		}
-		return transcriptContent{view: m.entryView(e, active)}
+		return transcriptContent{view: m.entryView(e)}
 	}}
 	if e.kind == entryAssistant && e.complete && mode != transcriptThinking &&
 		(len(e.text) >= historyMarkdownThreshold || strings.Count(e.text, "\n") > historyCodeLineLimit) {

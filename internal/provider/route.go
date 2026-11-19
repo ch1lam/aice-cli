@@ -30,9 +30,6 @@ type Route struct {
 	// RedactedThinking lists the APIs through which the provider accepts
 	// replayed redacted thinking.
 	RedactedThinking []llm.API
-	// NestedToolResultTextOnly rejects non-text tool results nested in user
-	// content unless the model accepts images.
-	NestedToolResultTextOnly bool
 }
 
 // Stream checks the request and delegates it to the adapter for its API.
@@ -82,9 +79,6 @@ func (r Route) model(id string) (llm.Model, bool) {
 // Image support comes from the catalog model's input modalities.
 func (r Route) validateMessages(messages []llm.Message, model llm.Model) error {
 	image := slices.Contains(model.InputModalities, llm.InputModalityImage)
-	accepts := func(part llm.ContentPart) bool {
-		return part.Type == llm.ContentTypeText || part.Type == llm.ContentTypeImage && image
-	}
 	for messageIndex, message := range messages {
 		var content []llm.ContentPart
 		switch value := message.(type) {
@@ -94,7 +88,7 @@ func (r Route) validateMessages(messages []llm.Message, model llm.Model) error {
 			content = value.Content
 		case llm.ToolResultMessage:
 			for partIndex, part := range value.Content {
-				if !accepts(part) {
+				if part.Type != llm.ContentTypeText && (part.Type != llm.ContentTypeImage || !image) {
 					return fmt.Errorf(
 						"%s: message %d content %d: non-text tool results are not supported by %s models",
 						r.Provider, messageIndex, partIndex, r.Label,
@@ -108,7 +102,7 @@ func (r Route) validateMessages(messages []llm.Message, model llm.Model) error {
 			return fmt.Errorf("%s: message %d has unsupported type %T", r.Provider, messageIndex, message)
 		}
 		for partIndex, part := range content {
-			if err := r.validateContent(part, model.API, image, accepts); err != nil {
+			if err := r.validateContent(part, model.API, image); err != nil {
 				return fmt.Errorf("%s: message %d content %d: %w", r.Provider, messageIndex, partIndex, err)
 			}
 		}
@@ -116,12 +110,7 @@ func (r Route) validateMessages(messages []llm.Message, model llm.Model) error {
 	return nil
 }
 
-func (r Route) validateContent(
-	part llm.ContentPart,
-	api llm.API,
-	image bool,
-	accepts func(llm.ContentPart) bool,
-) error {
+func (r Route) validateContent(part llm.ContentPart, api llm.API, image bool) error {
 	switch part.Type {
 	case llm.ContentTypeImage:
 		if !image {
@@ -130,15 +119,6 @@ func (r Route) validateContent(
 	case llm.ContentTypeThinking:
 		if part.Redacted && !slices.Contains(r.RedactedThinking, api) {
 			return errors.New("redacted thinking is not supported by " + r.Label + " models")
-		}
-	case llm.ContentTypeToolResult:
-		if !r.NestedToolResultTextOnly || part.ToolResult == nil {
-			return nil
-		}
-		for _, nested := range part.ToolResult.Content {
-			if !accepts(nested) {
-				return errors.New("non-text tool results are not supported by " + r.Label + " models")
-			}
 		}
 	}
 	return nil

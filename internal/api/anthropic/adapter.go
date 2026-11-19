@@ -223,13 +223,7 @@ func messageParams(
 				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
 			}
 			role = value.Role
-			block, err := toolResultBlockParam(&llm.ToolResult{
-				CallID:  value.ToolCallID,
-				Name:    value.ToolName,
-				Content: value.Content,
-				Details: value.Details,
-				IsError: value.IsError,
-			})
+			block, err := toolResultBlockParam(value)
 			if err != nil {
 				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
 			}
@@ -328,21 +322,12 @@ func contentBlockParam(role llm.Role, part llm.ContentPart) (anthropicsdk.Conten
 			part.ToolCall.Arguments,
 			part.ToolCall.Name,
 		), nil
-	case llm.ContentTypeToolResult:
-		if role != llm.RoleUser {
-			return anthropicsdk.ContentBlockParamUnion{}, errors.New("tool result requires a user role")
-		}
-		return toolResultBlockParam(part.ToolResult)
 	default:
 		return anthropicsdk.ContentBlockParamUnion{}, fmt.Errorf("unsupported content type %q", part.Type)
 	}
 }
 
-func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockParamUnion, error) {
-	if result == nil {
-		return anthropicsdk.ContentBlockParamUnion{}, errors.New("tool result payload is required")
-	}
-
+func toolResultBlockParam(result llm.ToolResultMessage) (anthropicsdk.ContentBlockParamUnion, error) {
 	content := make([]anthropicsdk.ToolResultBlockParamContentUnion, 0, len(result.Content))
 	for index, part := range streamcore.DescribeImages(llm.ToolResultModelContent(result.Content, result.Details, result.IsError)) {
 		switch part.Type {
@@ -367,7 +352,7 @@ func toolResultBlockParam(result *llm.ToolResult) (anthropicsdk.ContentBlockPara
 
 	return anthropicsdk.ContentBlockParamUnion{
 		OfToolResult: &anthropicsdk.ToolResultBlockParam{
-			ToolUseID: result.CallID,
+			ToolUseID: result.ToolCallID,
 			Content:   content,
 			IsError:   anthropicsdk.Bool(result.IsError),
 		},

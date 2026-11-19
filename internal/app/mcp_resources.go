@@ -118,7 +118,7 @@ func (c *mcpCatalog) ListResources(ctx context.Context, request tool.ResourceLis
 	if denied {
 		delete(c.entries, id)
 	} else {
-		c.entries[id] = mcpCatalogEntry{agent.CatalogTool{Reference: ref, Tool: mapped}, binding, server.Key, catalog.Generation}
+		c.entries[id] = mcpCatalogEntry{CatalogTool: agent.CatalogTool{Reference: ref, Tool: mapped}, binding: binding, service: server.Key, generation: catalog.Generation}
 		c.names[name] = id
 	}
 	start := min(request.Offset, len(catalog.Items))

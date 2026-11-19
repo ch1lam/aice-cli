@@ -219,6 +219,11 @@ func TestCachedHighlightMatchesPureRecompute(t *testing.T) {
 	viewportTop := current.verticalPadding() + lipgloss.Height(current.headerView(current.layoutWidth()))
 	press := tea.Mouse{X: current.horizontalPadding(), Y: viewportTop, Button: tea.MouseLeft}
 	current = updateModel(t, current, tea.MouseClickMsg(press))
+	// View runs on a model copy; the cache must still survive to the next frame.
+	_ = current.View()
+	if h := current.selection.highlight; h == nil || h.original == nil {
+		t.Fatal("View did not retain the highlight cache")
+	}
 
 	assertCached := func(step string) {
 		t.Helper()

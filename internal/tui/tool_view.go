@@ -114,10 +114,6 @@ func toolDiffStats(entry transcriptEntry) string {
 		" " + errorStyle.Render(fmt.Sprintf("-%d", removed))
 }
 
-func (m model) toolBodyView(entry transcriptEntry) string {
-	return m.toolBodyContent(entry).view
-}
-
 func (m model) toolBodyContent(entry transcriptEntry) transcriptContent {
 	width := m.contentWidth()
 	var content transcriptContent

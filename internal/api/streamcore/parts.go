@@ -84,7 +84,7 @@ type PartState struct {
 	Text      strings.Builder
 	Signature string
 	ToolCall  llm.ToolCall
-	Arguments string
+	Arguments strings.Builder
 }
 
 // PartialContent implements Partial.
@@ -95,7 +95,7 @@ func (s *PartState) PartialContent() (llm.ContentPart, bool) {
 	case llm.ContentTypeThinking:
 		return PartialThinking(s.Text.String(), s.Signature, false), true
 	case llm.ContentTypeToolCall:
-		return PartialToolCall(s.ToolCall, s.Arguments, nil)
+		return PartialToolCall(s.ToolCall, s.Arguments.String(), nil)
 	default:
 		return llm.ContentPart{}, false
 	}

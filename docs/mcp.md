@@ -147,7 +147,8 @@ The guard panel shows the source, the resolved executable with its arguments
 and directory or the endpoint, and offers **Allow this connection while AICE is
 running**, **Always allow this exact connection** (saved as the `allow`
 decision for the current fingerprint) or **Deny**. Any other reply denies.
-Prompts are serialized, so concurrent discovery asks once per service. Allow
+Prompts are serialized, so concurrent discovery asks once per service; work on
+services that need no approval proceeds while a prompt is open. Allow
 and Deny answers are remembered for that exact fingerprint until the process
 exits; a changed command, endpoint or credential asks again, and a cancelled
 prompt records nothing. A later saved allow, such as `/mcp approve`, clears an
@@ -364,7 +365,9 @@ remain at the auth boundary. Known credentials are redacted from results.
 ### Automatic refresh before operations
 
 After checking connection authorization and acquiring the service gate, the app
-refreshes expired credentials before opening, listing or calling. Construction,
+refreshes credentials that expire within one minute before opening, listing or
+calling, so clock skew and latency do not send a token that is rejected on
+arrival. Construction,
 status, denied work and unknown expiry do not refresh. The existing auth-file
 lock coordinates processes: adopt a prior rotation or perform one exchange
 against the saved identity binding, then persist before use. Refresh has a
@@ -428,8 +431,9 @@ service that does not fit is never partially loaded and stays searchable. Later
 search selections can evict initial tools like any older selection.
 
 `tool_search` supports keywords, source-qualified service browsing, up to five
-exact IDs and `next_offset` paging. Search is lexical: names/descriptions,
-limited English normalization, overlapping Chinese character pairs and a small
+exact IDs and `next_offset` paging. Search is lexical over the server's own
+tool names and descriptions (not the wrapper text AICE adds), with limited
+English normalization, overlapping Chinese character pairs and a small
 fixed action vocabulary. Complete remote-name matches rank first; ties use stable
 IDs. It does not translate or infer arbitrary synonyms. Preserve original-language
 keywords, refine mismatches or browse/select exactly. Changed catalogs can move

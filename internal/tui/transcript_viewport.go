@@ -180,34 +180,6 @@ func (v *transcriptViewport) GotoBottom() {
 	}
 }
 
-// YOffset is a selection coordinate, not an exact scrollbar total. Unknown
-// blocks count as one row; measuring them here would defeat lazy rendering.
-// Drag selection freezes both this coordinate and the visible rows.
-func (v transcriptViewport) YOffset() int {
-	offset := v.line
-	for i := 0; i <= v.index && i < len(v.items); i++ {
-		item := v.items[i]
-		if item.parts == nil {
-			if i < v.index {
-				offset += max(1, len(item.lines)) + item.gap
-			}
-			continue
-		}
-		for part, piece := range item.parts {
-			if i == v.index && part >= v.part {
-				break
-			}
-			offset += max(1, len(piece.lines)) + piece.gap
-		}
-	}
-	return offset
-}
-
-func (v *transcriptViewport) SetYOffset(offset int) {
-	v.GotoTop()
-	v.scroll(max(offset, 0))
-}
-
 func (v *transcriptViewport) previousPart() bool {
 	if v.part > 0 {
 		v.part--
@@ -289,7 +261,7 @@ func (v transcriptViewport) View() string {
 
 // Rendering and hit-testing walk exactly the same wrapped, clipped rows.
 // A row carries the item-local position needed to anchor a fold without
-// measuring all preceding history (YOffset deliberately isn't that measure).
+// measuring all preceding history.
 type transcriptRow struct {
 	text string
 	item int
@@ -364,27 +336,6 @@ func (v *transcriptViewport) anchorRow(key, line, screenRow int) {
 			v.scroll(-screenRow)
 			return
 		}
-	}
-}
-
-// Full-content access is for explicit snapshots/tests, never a frame or scroll.
-func (v transcriptViewport) GetContent() string {
-	var lines []string
-	for i := range v.items {
-		for part, item := range v.itemParts(i) {
-			for range item.gap {
-				lines = append(lines, "")
-			}
-			lines = append(lines, v.partLines(i, part)...)
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (v *transcriptViewport) SetContent(content string) {
-	v.setItems([]transcriptItem{{version: content, render: func() string { return content }}})
-	if v.AtBottom() {
-		v.GotoBottom()
 	}
 }
 
