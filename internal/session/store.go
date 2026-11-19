@@ -316,12 +316,14 @@ func (s *Store) AppendCompaction(
 	if err != nil {
 		return fmt.Errorf("session: encode compaction: %w", err)
 	}
+	// Decode as replay will, before writing, so a failure leaves disk and
+	// memory unchanged.
+	var stored Compaction
+	if err := decodeRecord(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended compaction: %w", err)
+	}
 	if err := s.appendData(ctx, "compaction", data); err != nil {
 		return err
-	}
-	var stored Compaction
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("session: retain appended compaction: %w", err)
 	}
 	s.retainCompaction(stored)
 	return nil

@@ -92,12 +92,17 @@ func (s *Store) AppendRunConfig(ctx context.Context, record RunConfig) error {
 	if err != nil {
 		return fmt.Errorf("session: encode run config: %w", err)
 	}
-	if err := s.appendData(ctx, "run config", data); err != nil {
+	// Decode and validate as replay will, before writing, so a failure leaves
+	// disk and memory unchanged.
+	var stored RunConfig
+	if err := decodeRecord(data, &stored); err != nil {
+		return fmt.Errorf("session: retain appended run config: %w", err)
+	}
+	if err := stored.Validate(); err != nil {
 		return err
 	}
-	var stored RunConfig
-	if err := json.Unmarshal(data, &stored); err != nil {
-		return fmt.Errorf("session: retain appended run config: %w", err)
+	if err := s.appendData(ctx, "run config", data); err != nil {
+		return err
 	}
 	s.retainRunConfig(stored)
 	return nil
