@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ch1lam/aice-cli/internal/evidence"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 )
@@ -407,33 +408,37 @@ func TestStoreCancellationClosedAndMissingLeaf(t *testing.T) {
 	}
 }
 
-func TestTruncationMetadataSurvivesSessionReplay(t *testing.T) {
-	for _, kind := range []string{"legacy", "read", "grep"} {
-		legacy := kind == "legacy"
-		t.Run(kind, func(t *testing.T) {
+// TestToolResultMetadataSurvivesSessionReplay covers the optional diff,
+// truncation and evidence fields: written only when set, restored on reopen,
+// and absent from legacy records.
+func TestToolResultMetadataSurvivesSessionReplay(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "session.jsonl")
 			store := mustCreate(t, path)
 			messages := toolMessages()
 			result := messages[2].(llm.ToolResultMessage)
 			if !legacy {
-				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, OutputLines: 2, OutputBytes: 40000, NextOffset: 3}
-			}
-			if kind == "grep" {
-				assistant := messages[1].(llm.AssistantMessage)
-				for i := range assistant.Content {
-					if assistant.Content[i].ToolCall != nil {
-						assistant.Content[i].ToolCall.Name = "grep"
-					}
+				source, err := evidence.NewSource("https://example.com/docs", "Docs 文档", "2024-01-02")
+				if err != nil {
+					t.Fatal(err)
 				}
-				messages[1] = assistant
-				result.ToolName = "grep"
-				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, MatchLimitReached: 100, LinesTruncated: true, OutputLines: 33, OutputBytes: 50000}
+				result.Diff = llm.ToolDiff{Text: "@@ -1 +1 @@\n-old\n+new\n", Truncated: true, Added: 99, Removed: 33, StatsKnown: true}
+				result.Truncation = llm.ToolTruncation{Reason: llm.TruncationByteLimit, MatchLimitReached: 100, LinesTruncated: true, OutputLines: 33, OutputBytes: 50000, NextOffset: 3}
+				result.Evidence = &evidence.Bundle{
+					Sources: []evidence.Source{source},
+					Items: []evidence.Evidence{{SourceID: source.ID, Kind: evidence.KindExcerpt, Text: "excerpt", Format: evidence.FormatText,
+						Acquisition: evidence.AcquisitionSearchService, RetrievedAt: 5, ReturnedBytes: 7}},
+					Diagnostics: evidence.Diagnostics{UpstreamRequestID: "req", Warnings: []string{"w"}, ReportedCost: &evidence.Cost{Amount: 0.01, Currency: "USD", Source: "test"}},
+				}
 			}
 			messages[2] = result
 			appendMessages(t, store, "read", messages...)
-			raw := fileBytes(t, path)
-			if strings.Contains(string(raw), `"truncation"`) == legacy {
-				t.Fatalf("unexpected optional field: %s", raw)
+			raw := string(fileBytes(t, path))
+			for _, field := range []string{`"diff"`, `"truncation"`, `"evidence"`} {
+				if strings.Contains(raw, field) == legacy {
+					t.Fatalf("optional field %s presence differs from legacy=%t: %s", field, legacy, raw)
+				}
 			}
 			if err := store.Close(); err != nil {
 				t.Fatal(err)
@@ -447,9 +452,8 @@ func TestTruncationMetadataSurvivesSessionReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := history[2].(llm.ToolResultMessage)
-			if got.Truncation != result.Truncation {
-				t.Fatalf("replay lost metadata: %+v", got)
+			if !reflect.DeepEqual(history[2], result) {
+				t.Fatalf("replay lost metadata: %+v want %+v", history[2], result)
 			}
 		})
 	}
