@@ -15,6 +15,15 @@ type pendingDelivery struct {
 	id   string
 	text string
 	mode interaction.DeliveryKind
+	// steerBody caches the sanitized, wrapped steering body so spinner ticks
+	// only redraw the rail. A pointer keeps fills made on model copies.
+	steerBody *steerBody
+}
+
+type steerBody struct {
+	text  string
+	width int
+	view  string
 }
 
 func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bool) {
@@ -35,9 +44,10 @@ func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bo
 
 	m.nextDeliveryID++
 	delivery := pendingDelivery{
-		id:   deliveryID(m.nextDeliveryID),
-		text: imageInputText(text, len(m.composerImages())),
-		mode: mode,
+		id:        deliveryID(m.nextDeliveryID),
+		text:      imageInputText(text, len(m.composerImages())),
+		mode:      mode,
+		steerBody: &steerBody{},
 	}
 	input := interaction.Delivery{ID: delivery.id, Text: text, Kind: mode,
 		Images: m.composerImages(), Files: m.composerFiles(), Skills: m.composerSkills()}
