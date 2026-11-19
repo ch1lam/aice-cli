@@ -96,6 +96,71 @@ func TestGuardBashCorpus(t *testing.T) {
 	}
 }
 
+// TestGuardWorkingDirectoryCorpus pins how relative paths follow cd: the
+// directory is restored after subshells, kept when a cd may fail, followed
+// into functions and eval, and unknown when the target cannot be determined.
+func TestGuardWorkingDirectoryCorpus(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "ws")
+	for _, dir := range []string{filepath.Join(workspace, "sub"), filepath.Join(root, "deep")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "deep"), filepath.Join(workspace, "link")); err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(workspace, Config{CredentialFiles: []string{filepath.Join(root, "secret.key")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		command string
+		rule    string // first approval or denial rule; "" allows
+	}{
+		{`cd sub && cat ../go.mod`, ""},
+		{`cd sub; cat x.txt && go test ./...`, ""},
+		{`cd sub && rm -rf build`, ""},
+		{`cd sub && cat ../../secret.key`, credentialsRuleID},
+		// A failed cd stays put: `;` runs the next command either way.
+		{`cd missing; cat ../secret.key`, credentialsRuleID},
+		{`cd sub; cat ../secret.key`, credentialsRuleID},
+		// Subshells restore the directory.
+		{`(cd sub); cat ../secret.key`, credentialsRuleID},
+		{`echo "$(cd sub)"; cat ../secret.key`, credentialsRuleID},
+		{`shopt -s lastpipe; echo | cd ..; cat secret.key`, credentialsRuleID},
+		// cd that runs in this shell, wherever it is written.
+		{`command cd ..; cat secret.key`, credentialsRuleID},
+		{`builtin cd ..; cat secret.key`, credentialsRuleID},
+		{`eval "cd .."; cat secret.key`, credentialsRuleID},
+		{`f() { cd ..; }; f; cat secret.key`, credentialsRuleID},
+		{`f() { cat secret.key; }; cd ..; f`, credentialsRuleID},
+		{`for d in a b; do cat secret.key; cd ..; done`, credentialsRuleID},
+		{`if true; then cd ..; fi; cat secret.key`, credentialsRuleID},
+		// cd is logical, but ".." in a path is resolved physically.
+		{`cd link && cat ../secret.key`, credentialsRuleID},
+		{`cd -P link/.. && cat secret.key`, credentialsRuleID},
+		// Unknown directories ask for every relative path.
+		{`cd -; cat x.txt`, RuleBashDynamic},
+		{`cd "$D" && cat x.txt`, RuleBashDynamic},
+		{`cd $(mktemp -d) && rm -rf build`, RuleBashDynamic},
+		{`CDPATH=/; cd sub && cat x.txt`, RuleBashDynamic},
+		{`source env.sh; cat x.txt`, RuleBashDynamic},
+		{`env -C .. cat x.txt`, RuleBashDynamic},
+		{`find . -execdir cat x.txt \;`, RuleBashDynamic},
+	}
+	for _, tc := range cases {
+		res := checkCall(t, g, "bash", map[string]any{"command": tc.command})
+		got := res.RuleID
+		if res.Decision == DecisionAsk {
+			got = res.Approvals[0].RuleID
+		}
+		if got != tc.rule || tc.rule == "" && res.Decision != DecisionAllow {
+			t.Errorf("%s: %s %q, want %q (%+v)", tc.command, res.Decision, got, tc.rule, res)
+		}
+	}
+}
+
 func TestGuardControlFileIgnoresGrants(t *testing.T) {
 	workspace := t.TempDir()
 	settings := filepath.Join(workspace, ".aice", "settings.json")

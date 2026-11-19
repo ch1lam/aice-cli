@@ -28,7 +28,7 @@ func TestAnalyzeBash_DegenerateInputDoesNotPanic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_ = analyzeBash(tt.command, "/workspace")
+			_ = newTestGuard(t, "/workspace").analyzeBash(tt.command)
 		})
 	}
 }

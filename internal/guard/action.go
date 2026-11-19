@@ -91,7 +91,7 @@ func extractStringArgument(raw json.RawMessage, key string) string {
 
 // extractActions returns the file actions of call and, for bash, its
 // commands and the findings that need confirmation.
-func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
+func (g *Guard) extractActions(call llm.ToolCall) bashAnalysis {
 	if fileTools[call.Name] {
 		p := extractFilePath(call.Arguments)
 		if p == "" && searchTools[call.Name] {
@@ -109,7 +109,7 @@ func extractActions(call llm.ToolCall, workspace string) bashAnalysis {
 	}
 	if call.Name == "bash" {
 		if cmd := extractCommand(call.Arguments); strings.TrimSpace(cmd) != "" {
-			return analyzeBash(cmd, workspace)
+			return g.analyzeBash(cmd)
 		}
 	}
 	return bashAnalysis{}

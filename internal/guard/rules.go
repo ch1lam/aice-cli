@@ -217,7 +217,7 @@ func (g *Guard) SuggestCommandRule(command string) (string, bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	prefix := ""
-	for _, f := range g.pendingFindings(analyzeBash(command, g.workspace).findings) {
+	for _, f := range g.pendingFindings(g.analyzeBash(command).findings) {
 		if !slices.Contains(persistableRules, f.rule) || len(f.words) == 0 {
 			return "", false
 		}

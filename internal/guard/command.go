@@ -39,9 +39,9 @@ type finding struct {
 
 	scoped        bool // a recursive delete limited to deleteTargets
 	deleteTargets []shellWord
-	base          string
-	extraArgs     bool // targets also come from xargs or find -exec
-	filtered      bool // find -delete limited by a test such as -name
+	dirs          []string // candidate working directories of the delete
+	extraArgs     bool     // targets also come from xargs or find -exec
+	filtered      bool     // find -delete limited by a test such as -name
 }
 
 const (
@@ -66,25 +66,27 @@ type launcher struct {
 	positional int      // leading operands before the command (timeout DURATION)
 	assigns    bool     // NAME=value words precede the command (env)
 	extraArgs  bool     // appends unseen arguments (xargs)
+	chdir      []string // options that run the command in another directory
 }
 
 var launchers = map[string]launcher{
-	"env":     {valueFlags: "uSC", longValues: []string{"--unset", "--chdir"}, assigns: true},
+	"env":     {valueFlags: "uSC", longValues: []string{"--unset", "--chdir"}, assigns: true, chdir: []string{"-C", "--chdir"}},
 	"time":    {},
 	"nice":    {valueFlags: "n", longValues: []string{"--adjustment"}},
 	"nohup":   {},
 	"command": {},
+	"builtin": {},
 	"exec":    {valueFlags: "a"},
 	"timeout": {valueFlags: "sk", longValues: []string{"--signal", "--kill-after"}, positional: 1},
 	"stdbuf":  {valueFlags: "ioe", longValues: []string{"--input", "--output", "--error"}},
 	// GNU -i, -e and -l take only attached optional values; -J, -R and -S are BSD.
 	"xargs": {valueFlags: "InPLsdEaJRS", longValues: []string{"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars", "--process-slot-var"}, extraArgs: true},
 	"sudo": {valueFlags: "ugpChDTUrt", longValues: []string{"--user", "--group", "--prompt", "--close-from", "--chdir", "--host", "--role", "--type", "--other-user", "--command-timeout"},
-		privileged: "superuser command"},
+		privileged: "superuser command", chdir: []string{"-D", "--chdir"}},
 	"doas":   {valueFlags: "uC", privileged: "privileged command execution"},
 	"pkexec": {valueFlags: "u", longValues: []string{"--user"}, privileged: "privileged command execution"},
 	"run0": {valueFlags: "uD", longValues: []string{"--user", "--group", "--chdir", "--unit", "--property", "--description", "--slice", "--nice", "--setenv", "--machine", "--background"},
-		privileged: "privileged command execution"},
+		privileged: "privileged command execution", chdir: []string{"-D", "--chdir"}},
 }
 
 // unwrap strips one launcher. It returns the privilege description even when
@@ -103,8 +105,12 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 	}
 	words := cmd.words[1:]
 	positional := spec.positional
+	dirs := cmd.dirs
 	for len(words) > 0 {
 		text := words[0].text
+		if flag, _, _ := strings.Cut(text, "="); slices.Contains(spec.chdir, flag) || len(text) > 2 && slices.Contains(spec.chdir, text[:2]) {
+			dirs = []string{unknownDir}
+		}
 		switch {
 		case text == "--":
 			words = words[1:]
@@ -133,7 +139,7 @@ func unwrap(cmd shellCommand) (shellCommand, string, bool) {
 	if len(words) == 0 {
 		return cmd, spec.privileged, false
 	}
-	return shellCommand{words: words, base: cmd.base, extraArgs: cmd.extraArgs || spec.extraArgs}, spec.privileged, true
+	return shellCommand{words: words, dirs: dirs, extraArgs: cmd.extraArgs || spec.extraArgs}, spec.privileged, true
 }
 
 // envSplitString returns the words env -S/--split-string runs as a script.
@@ -180,7 +186,8 @@ func shellScript(cmd shellCommand) (shellWord, bool) {
 	return shellWord{}, false
 }
 
-// findExec returns the command run by find -exec/-execdir/-ok/-okdir.
+// findExec returns the command run by find -exec/-execdir/-ok/-okdir;
+// -execdir and -okdir run it in each match's directory.
 func findExec(cmd shellCommand) (shellCommand, bool) {
 	if cmd.name() != "find" {
 		return shellCommand{}, false
@@ -195,8 +202,12 @@ func findExec(cmd shellCommand) (shellCommand, bool) {
 					break
 				}
 			}
+			dirs := cmd.dirs
+			if strings.HasSuffix(w.text, "dir") {
+				dirs = []string{unknownDir}
+			}
 			if i+1 < end {
-				return shellCommand{words: cmd.words[i+1 : end], base: cmd.base, extraArgs: true}, true
+				return shellCommand{words: cmd.words[i+1 : end], dirs: dirs, extraArgs: true}, true
 			}
 		}
 	}
@@ -630,14 +641,14 @@ func classifyCommand(cmd shellCommand) []finding {
 		return add(RuleBashDelete, "secure file overwrite")
 	case "rm":
 		if hasShortFlag(words[1:], "r") || hasShortFlag(words[1:], "R") || hasLongOption(words, "recursive") || hasLongOption(words, "dir") {
-			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: operandsOf(cmd), base: cmd.base, extraArgs: cmd.extraArgs}}
+			return []finding{{rule: RuleBashDelete, desc: "recursive delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: operandsOf(cmd), dirs: cmd.dirs, extraArgs: cmd.extraArgs}}
 		}
 	case "find":
 		if slices.Contains(words, "-delete") {
 			filtered := slices.ContainsFunc(words, func(w string) bool {
 				return slices.Contains([]string{"-name", "-iname", "-path", "-ipath", "-regex", "-iregex", "-type", "-newer", "-mtime", "-mmin", "-size", "-empty"}, w)
 			})
-			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: findStarts(cmd), base: cmd.base, filtered: filtered}}
+			return []finding{{rule: RuleBashDelete, desc: "find delete", pattern: cmd.display(), words: commandWords(cmd), scoped: true, deleteTargets: findStarts(cmd), dirs: cmd.dirs, filtered: filtered}}
 		}
 	case "git":
 		return gitFindings(cmd, add)

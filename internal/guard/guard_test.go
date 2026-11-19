@@ -254,7 +254,6 @@ func TestGuard_RecursiveDeleteTargets(t *testing.T) {
 		"find . -delete":                   true,
 		"xargs rm -rf < list":              true,
 		"find . -name x -exec rm -rf {} +": true,
-		"cd $(mktemp -d) && rm -rf build":  true,
 	}
 	for cmd, risky := range cases {
 		res := checkCall(t, g, "bash", map[string]any{"command": cmd})
@@ -334,7 +333,7 @@ func TestGuard_PathAccess_SessionAllowCaseFold(t *testing.T) {
 
 func TestExtractActionsWindowsDrivePath(t *testing.T) {
 	call := toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret.env'`})
-	acts := extractActions(call, "").actions
+	acts := newTestGuard(t, "").extractActions(call).actions
 	found := false
 	for _, act := range acts {
 		if act.Path == `C:\Users\x\secret.env` {
@@ -347,7 +346,7 @@ func TestExtractActionsWindowsDrivePath(t *testing.T) {
 	}
 
 	call = toolCall("bash", map[string]any{"command": `cat 'C:\Users\x\secret'`})
-	acts = extractActions(call, "").actions
+	acts = newTestGuard(t, "").extractActions(call).actions
 	found = false
 	for _, act := range acts {
 		if act.Path == `C:\Users\x\secret` {

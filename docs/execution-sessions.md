@@ -159,7 +159,7 @@ denies credential access.
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/std{in,out,err}`, `/dev/tty`, `/dev/fd/N` | allow | allow |
 
 Bash commands are parsed with `mvdan.cc/sh`. Launchers (`env`, `time`, `nice`,
-`nohup`, `command`, `exec`, `timeout`, `stdbuf`, `xargs`, `sudo`, `doas`,
+`nohup`, `command`, `builtin`, `exec`, `timeout`, `stdbuf`, `xargs`, `sudo`, `doas`,
 `pkexec`, `run0`), `bash`/`sh`/`zsh`/`dash`/`ksh -c` scripts and `find -exec`
 commands are unwrapped and checked as the command they run. A command table
 records which operands are patterns or messages rather than paths (`grep`,
@@ -171,8 +171,23 @@ backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
 assignments earlier in the same command line (`X=~/.ssh`, `export`,
 `declare`, `local`, `readonly`) are substituted; other expansions are
 unresolved. `for` loop items are checked as reads. A literal `eval` script is
-checked like `bash -c`. `cd`/`pushd` moves the base for later relative paths;
-a target that cannot be resolved makes later relative paths unresolved.
+checked like `bash -c`.
+
+Relative paths follow the working directory as bash does. `cd`/`pushd` move it
+logically (`cd link/..` returns to where it started), while a relative path
+resolves from the physical directory, and a target with `..` is also checked
+as `cd -P` resolves it. A statement that may fail keeps the directory it
+started in as a candidate: `cd dir; cat f` checks `f` in both directories,
+`cd dir && cat f` only in `dir`. Subshells, pipelines, command and process
+substitutions, background jobs and `bash -c` scripts restore the directory.
+`command cd`, `builtin cd`, literal `eval` scripts and calls of functions
+defined earlier in the command line change it; a function body is checked
+where it is defined and from each caller's directory, and a loop whose body
+changes directory is checked again from an unknown one. The directory becomes
+unknown after `cd -`, `popd`, `source`, an expansion, a target that is not an
+existing directory, `~user`, a bare name while `CDPATH` may be set,
+`env -C`/`--chdir` and `find -execdir`; every relative path from an unknown
+directory asks `bash.dynamic`.
 
 Boundary checks use physical paths: symlinks in the longest existing prefix
 are resolved for every file action, bash included, so a workspace symlink to
@@ -194,7 +209,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` or `bash -c` of a computed script, scripts nested too deeply to inspect, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` or `bash -c` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
