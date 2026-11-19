@@ -249,15 +249,14 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 		}
 	}
 	seen := make(map[string]bool)
-	// Writes into .git (hooks, config) run code later, so auto mode reviews them.
-	gitDir, gitWrite := filepath.Join(g.physicalWorkspace, ".git"), false
+	gitWrite := false
 	for _, act := range analysis.actions {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		phys := physicalPath(abs)
 		if denied, ok := g.denyPath(ctx, call.Name, act, abs, phys); ok {
 			return denied
 		}
-		gitWrite = gitWrite || act.Op == opWrite && g.physicalWorkspace != "" && hostpath.Within(gitDir, phys)
+		gitWrite = gitWrite || act.Op == opWrite && g.inGitDir(phys)
 		key := act.Op + "\x00" + phys
 		if seen[key] {
 			continue
@@ -275,6 +274,19 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 		result.ReadOnly, result.RuleCovered = g.bashHints(extractCommand(call.Arguments), analysis)
 	}
 	return result
+}
+
+// inGitDir reports a physical path inside a .git directory of the
+// workspace or of a repository nested in it. Writes there (hooks, config)
+// run code later, so auto mode reviews them.
+func (g *Guard) inGitDir(phys string) bool {
+	if g.physicalWorkspace == "" || !hostpath.Within(g.physicalWorkspace, phys) {
+		return false
+	}
+	rel, err := filepath.Rel(g.physicalWorkspace, phys)
+	return err == nil && slices.ContainsFunc(strings.Split(filepath.ToSlash(rel), "/"), func(part string) bool {
+		return strings.EqualFold(part, ".git")
+	})
 }
 
 // bashHints classifies an allowed bash command for auto mode routing.

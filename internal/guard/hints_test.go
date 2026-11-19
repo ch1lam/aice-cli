@@ -29,6 +29,7 @@ func TestGuardBashHints(t *testing.T) {
 		{"npm run build", false, true},     // exact Session grant
 		{"bash -c 'ls'", false, false},
 		{"echo x > .git/hooks/pre-commit", false, false},
+		{"echo x > vendor/lib/.git/hooks/post-checkout", false, false},
 		// Read-only looking commands that run code or write files.
 		{"git -c core.fsmonitor=./x status", false, false},
 		{"git --config-env=core.pager=P log", false, false},
@@ -72,5 +73,10 @@ func TestGuardBashHints(t *testing.T) {
 	// command is covered by a non-broad rule.
 	if res := checkCall(t, g, "bash", map[string]any{"command": "git push origin dev"}); res.Decision != DecisionAllow || res.ReadOnly || !res.RuleCovered {
 		t.Fatalf("git push with allow rule: %+v", res)
+	}
+	for path, want := range map[string]bool{".git/config": true, "vendor/x/.git/hooks/pre-push": true, "a.go": false, ".github/ci.yml": false} {
+		if res := checkCall(t, g, "write", map[string]any{"path": path}); res.GitWrite != want {
+			t.Errorf("write %s: GitWrite=%v, want %v", path, res.GitWrite, want)
+		}
 	}
 }

@@ -380,8 +380,8 @@ In auto mode every call is routed by the default-mode result:
 | --- | --- |
 | Deny (`credentials`, `secret-files`, `rule.deny`, MCP user deny) | deny |
 | Ask with `controlFile.write`, `bash.privileged`, `bash.disk`, `bash.fetchExec`, `rule.ask`, `mcp.connection` or `unknownTool` | a person decides; `--print` denies |
-| Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
-| Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes whose physical path is under the workspace `.git/`, however spelled (`~`, absolute or through a symlink) | classifier |
+| Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside any `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
+| Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes whose physical path is under a `.git/` directory in the workspace, nested repositories included, however spelled (`~`, absolute or through a symlink) | classifier |
 
 A command line is not read-only, and allow rules do not cover it, when it may
 run code or touch files its words do not show: an assignment to an upper-case
