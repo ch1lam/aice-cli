@@ -33,10 +33,6 @@ func Lock(ctx context.Context, path string) (unlock func() error, err error) {
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
 		return nil, fmt.Errorf("create lock directory: %w", err)
 	}
-	// Earlier AICE versions locked with an empty directory at this path.
-	if info, err := os.Stat(lock); err == nil && info.IsDir() {
-		_ = os.Remove(lock)
-	}
 	file, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock %s: %w", lock, err)

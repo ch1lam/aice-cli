@@ -201,21 +201,6 @@ func TestCuaInstallationLockCancellation(t *testing.T) {
 	}
 }
 
-// A crashed installer from an earlier version left its directory lock behind;
-// the OS lock replaces it, so setup proceeds without manual cleanup.
-func TestCuaInstallationIgnoresCrashedInstallerLock(t *testing.T) {
-	t.Parallel()
-	i, _ := syntheticCuaInstaller(t, syntheticCuaArchive(t))
-	if err := os.Mkdir(filepath.Join(i.applications, ".aice-cua-install.lock"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	if result, err := i.install(ctx); err != nil || !result.Installed {
-		t.Fatal("stale lock blocked installation", result, err)
-	}
-}
-
 // A Cua-signed App of the minimum version or later is reused; an older one is
 // rejected and kept. Only a new download must report the pinned version.
 func TestCuaInstallationVersionPolicy(t *testing.T) {
