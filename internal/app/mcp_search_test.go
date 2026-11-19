@@ -25,6 +25,7 @@ func TestMCPCatalogLexicalRetrieval(t *testing.T) {
 		{"delete synonym", "remove receipt", "Delete a receipt", "Archive a receipt"},
 		{"update stays distinct", "update inventory item", "Update an inventory item", "Create an inventory item"},
 		{"archive stays distinct", "archive receipt", "Archive a receipt", "Delete a receipt"},
+		{"wrapper text is not indexed", "server tool description", "Describe the server's tools", "Read a receipt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("wanted", tc.wanted), catalogFixtureTool("other", tc.other)}}
@@ -41,8 +42,8 @@ func TestMCPCatalogLexicalRetrieval(t *testing.T) {
 			if err != nil || len(result.Selected) == 0 || result.Selected[0].ID != mcpToolID("fixture", "wanted") {
 				t.Fatalf("retrieval=%+v err=%v", result, err)
 			}
-			if tc.name == "word boundary" && len(result.Selected) != 1 {
-				t.Fatal("substring was treated as a whole word")
+			if (tc.name == "word boundary" || tc.name == "wrapper text is not indexed") && len(result.Selected) != 1 {
+				t.Fatal("a tool matched words absent from its own name and description")
 			}
 		})
 	}

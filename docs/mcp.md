@@ -431,8 +431,9 @@ service that does not fit is never partially loaded and stays searchable. Later
 search selections can evict initial tools like any older selection.
 
 `tool_search` supports keywords, source-qualified service browsing, up to five
-exact IDs and `next_offset` paging. Search is lexical: names/descriptions,
-limited English normalization, overlapping Chinese character pairs and a small
+exact IDs and `next_offset` paging. Search is lexical over the server's own
+tool names and descriptions (not the wrapper text AICE adds), with limited
+English normalization, overlapping Chinese character pairs and a small
 fixed action vocabulary. Complete remote-name matches rank first; ties use stable
 IDs. It does not translate or infer arbitrary synonyms. Preserve original-language
 keywords, refine mismatches or browse/select exactly. Changed catalogs can move
