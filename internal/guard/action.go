@@ -49,6 +49,9 @@ type Result struct {
 	// or which an exact Session grant covers. Auto mode routes on them.
 	ReadOnly    bool
 	RuleCovered bool
+	// GitWrite reports a write whose physical path is inside the workspace's
+	// .git directory, whose hooks and config run code later.
+	GitWrite bool
 }
 
 // Approval describes one scope requiring confirmation. It cannot override a deny.

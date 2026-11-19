@@ -244,12 +244,15 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 		}
 	}
 	seen := make(map[string]bool)
+	// Writes into .git (hooks, config) run code later, so auto mode reviews them.
+	gitDir, gitWrite := filepath.Join(g.physicalWorkspace, ".git"), false
 	for _, act := range analysis.actions {
 		abs := resolveAbsolute(act.Path, g.workspace, act.ToolName)
 		phys := physicalPath(abs)
 		if denied, ok := g.denyPath(ctx, call.Name, act, abs, phys); ok {
 			return denied
 		}
+		gitWrite = gitWrite || act.Op == opWrite && g.physicalWorkspace != "" && hostpath.Within(gitDir, phys)
 		key := act.Op + "\x00" + phys
 		if seen[key] {
 			continue
@@ -262,8 +265,8 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 	if len(approvals) > 0 {
 		return Result{Decision: DecisionAsk, Approvals: approvals}
 	}
-	result := Result{Decision: DecisionAllow}
-	if call.Name == "bash" {
+	result := Result{Decision: DecisionAllow, GitWrite: gitWrite}
+	if call.Name == "bash" && !gitWrite {
 		result.ReadOnly, result.RuleCovered = g.bashHints(extractCommand(call.Arguments), analysis)
 	}
 	return result
@@ -272,13 +275,6 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 // bashHints classifies an allowed bash command for auto mode routing.
 func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered bool) {
 	readOnly = len(analysis.findings) == 0 && !analysis.hidden && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
-	// Writes into .git (hooks, config) run code later, so they always need review.
-	gitDir := filepath.Join(g.physicalWorkspace, ".git")
-	if slices.ContainsFunc(analysis.actions, func(a Action) bool {
-		return a.Op == opWrite && hostpath.Within(gitDir, physicalPath(resolveAbsolute(a.Path, g.workspace, a.ToolName)))
-	}) {
-		return false, false
-	}
 	covered = g.sessionCommands[cmd]
 	allCovered := true
 	for _, words := range analysis.commands {

@@ -109,6 +109,15 @@ func TestAutoModeRouting(t *testing.T) {
 		{"git hooks write asks the classifier", func(t *testing.T, _ string) llm.ToolCall {
 			return llm.ToolCall{Name: "write", Arguments: json.RawMessage(`{"path":".git/hooks/pre-commit","content":"x"}`)}
 		}, agent.GuardAllow, "", true},
+		{"git hooks write through a symlink asks the classifier", func(t *testing.T, workspace string) llm.ToolCall {
+			if err := os.MkdirAll(filepath.Join(workspace, ".git", "hooks"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(workspace, ".git"), filepath.Join(workspace, "meta")); err != nil {
+				t.Fatal(err)
+			}
+			return llm.ToolCall{Name: "write", Arguments: json.RawMessage(`{"path":"meta/hooks/pre-commit","content":"x"}`)}
+		}, agent.GuardAllow, "", true},
 		{"privileged stays with a person", func(t *testing.T, _ string) llm.ToolCall { return bashCall(t, "sudo ls") }, agent.GuardAsk, guard.RuleBashPrivileged, false},
 		{"control file stays with a person", func(t *testing.T, _ string) llm.ToolCall { return bashCall(t, "aice mcp approve x") }, agent.GuardAsk, guard.RuleControlFile, false},
 		{"credentials stay denied", func(t *testing.T, _ string) llm.ToolCall { return bashCall(t, "cat ~/.ssh/id_rsa") }, agent.GuardDeny, "credentials", false},

@@ -108,6 +108,7 @@ func (g *guardAdapter) checkInput(ctx context.Context, call llm.ToolCall) (agent
 type routeHints struct {
 	readOnly    bool // bash made only of read-only commands
 	ruleCovered bool // bash covered by explicit allow rules or an exact grant
+	gitWrite    bool // a write lands in the workspace's .git directory
 	mcp         bool // an MCP binding decided the call
 }
 
@@ -235,6 +236,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 				res.Decision = guard.DecisionAsk
 				res.Approvals = appendUniqueApprovals(g.inner, res.Approvals, other.Approvals)
 			}
+			res.GitWrite = res.GitWrite || other.GitWrite
 		}
 	}
 	mapped := mapGuardResult(res)
@@ -248,7 +250,7 @@ func (g *guardAdapter) evaluate(ctx context.Context, call llm.ToolCall) (agent.G
 			mapped.Decision = agent.GuardAllow
 		}
 	}
-	return mapped, routeHints{readOnly: res.ReadOnly, ruleCovered: res.RuleCovered}, nil
+	return mapped, routeHints{readOnly: res.ReadOnly, ruleCovered: res.RuleCovered, gitWrite: res.GitWrite}, nil
 }
 
 // appendUniqueApprovals adds approvals whose rule and resolved path are not
