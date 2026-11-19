@@ -140,15 +140,16 @@ type webLayer struct {
 }
 
 // extractWebValues removes the web keys from one file's values before Viper
-// sees them. Project files may not define services or credentials.
-func (l *webLayer) extractWebValues(path string, values map[string]any, isProject bool) error {
+// sees them. Project files may not define services, and only the user auth
+// file holds credentials.
+func (l *webLayer) extractWebValues(path string, values map[string]any, paths Paths) error {
 	if raw, ok := values[webSettingsKey]; ok {
 		delete(values, webSettingsKey)
 		encoded, err := json.Marshal(raw)
 		if err != nil {
 			return fmt.Errorf("config: encode web settings in %s: %w", path, err)
 		}
-		if isProject {
+		if path == paths.ProjectSettings {
 			l.project = encoded
 		} else {
 			l.user = encoded
@@ -156,8 +157,12 @@ func (l *webLayer) extractWebValues(path string, values map[string]any, isProjec
 	}
 	if raw, ok := values[webCredentialsKey]; ok {
 		delete(values, webCredentialsKey)
-		if isProject {
-			l.diagnostics = append(l.diagnostics, fmt.Sprintf("Ignored %s in project settings %s: web credentials are user-global only", webCredentialsKey, path))
+		if path != paths.GlobalAuth {
+			layer := "user settings"
+			if path == paths.ProjectSettings {
+				layer = "project settings"
+			}
+			l.diagnostics = append(l.diagnostics, fmt.Sprintf("Ignored %s in %s %s: web credentials belong only in the user auth file", webCredentialsKey, layer, path))
 			return nil
 		}
 		object, ok := raw.(map[string]any)

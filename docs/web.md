@@ -77,7 +77,9 @@ are validated strictly; unknown fields are errors.
 - `credential` is exactly one of `{"env": "NAME"}` or
   `{"auth_ref": "web_services.<id>"}`. Keys are never stored in
   `settings.json`. `auth_ref` reads the `web_services` object in
-  `~/.aice/auth.json`, which `/web` writes when you enter a key.
+  `~/.aice/auth.json`, which `/web` writes when you enter a key; a
+  `web_services` object in any `settings.json` is ignored with a startup
+  diagnostic.
 - Instance IDs match `[a-z0-9][a-z0-9_-]{0,63}`. The same provider can appear
   several times with different IDs and endpoints. Each instance has its own
   credential reference; environment references may name the same variable.

@@ -89,6 +89,19 @@ func TestWebExampleParsesAndResolvesCredentials(t *testing.T) {
 		t.Fatal(loaded.Web.ServiceIDs())
 	}
 
+	// Keys are never read from settings.json, only from the auth file.
+	writeJSON(t, paths.GlobalSettings, map[string]any{"web": settings, "web_services": map[string]any{"exa-eu": "settings-secret"}})
+	writeJSON(t, paths.GlobalAuth, map[string]any{"deepseek_api_key": "k"})
+	inSettings, err := config.LoadFiles(paths, environmentOptions(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inSettings.Web.Services["exa-eu"].SecretPresent || len(inSettings.Diagnostics) != 1 || !strings.Contains(inSettings.Diagnostics[0], "user auth file") {
+		t.Fatalf("settings credential = %+v, diagnostics = %v", inSettings.Web.Services["exa-eu"], inSettings.Diagnostics)
+	}
+	writeJSON(t, paths.GlobalSettings, map[string]any{"web": settings})
+	writeJSON(t, paths.GlobalAuth, map[string]any{"deepseek_api_key": "k", "web_services": map[string]any{"exa-eu": "eu-secret"}})
+
 	// Missing credentials keep the instance visible without inventing a key.
 	missing, err := config.LoadFiles(paths, environmentOptions(t, map[string]string{"EXA_API_KEY": ""}))
 	if err != nil {

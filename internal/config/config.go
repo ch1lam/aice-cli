@@ -355,7 +355,7 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 				return Config{}, err
 			}
 		}
-		if err := webValues.extractWebValues(path, values, path == paths.ProjectSettings); err != nil {
+		if err := webValues.extractWebValues(path, values, paths); err != nil {
 			return Config{}, err
 		}
 		kind := "user-settings"
