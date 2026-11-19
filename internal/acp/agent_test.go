@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -218,5 +219,67 @@ func TestToolStartSendsBashDescriptionAsContent(t *testing.T) {
 	}
 	if plain := toolStart(interaction.ToolDisplay{ID: "c", Name: "bash", Detail: "ls"}).ToolCall; len(plain.Content) != 0 {
 		t.Fatalf("undescribed tool start content = %+v", plain.Content)
+	}
+}
+
+type blockingRunner struct {
+	started  chan struct{}
+	finished atomic.Bool
+}
+
+func (r *blockingRunner) NewRun(context.Context, interaction.RunInput, interaction.EventSink) (interaction.ActiveRun, error) {
+	return r, nil
+}
+
+// Run outlives its cancellation, as a run persisting its interrupted turn does.
+func (r *blockingRunner) Run(ctx context.Context) error {
+	close(r.started)
+	<-ctx.Done()
+	time.Sleep(50 * time.Millisecond)
+	r.finished.Store(true)
+	return ctx.Err()
+}
+
+func (r *blockingRunner) Deliver(context.Context, interaction.Delivery) error { return nil }
+
+type stateStub struct{}
+
+func (stateStub) RuntimeState() interaction.RuntimeState { return interaction.RuntimeState{} }
+
+type hostStub struct{}
+
+func (hostStub) StartSession(context.Context) (string, error) { return "s", nil }
+func (hostStub) LoadSession(context.Context, string) (*interaction.Transcript, error) {
+	return nil, nil
+}
+
+func TestServeWaitsForCancelledPromptsBeforeReturning(t *testing.T) {
+	agentIn, clientOut := io.Pipe()
+	clientIn, agentOut := io.Pipe()
+	client := sdk.NewClientSideConnection(&updateClient{updates: make(chan sdk.SessionNotification, 8)}, clientOut, clientIn)
+	runner := &blockingRunner{started: make(chan struct{})}
+	workspace := t.TempDir()
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		frontend := interaction.Frontend{Runner: runner, State: stateStub{}}
+		_ = Serve(t.Context(), frontend, Options{Workspace: workspace, Host: hostStub{}}, agentIn, agentOut)
+	}()
+	session, err := client.NewSession(t.Context(), sdk.NewSessionRequest{Cwd: workspace, McpServers: []sdk.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_, _ = client.Prompt(context.Background(), sdk.PromptRequest{SessionId: session.SessionId, Prompt: []sdk.ContentBlock{sdk.TextBlock("hi")}})
+	}()
+	<-runner.started
+	_ = clientOut.Close()
+	select {
+	case <-served:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return")
+	}
+	if !runner.finished.Load() {
+		t.Fatal("Serve returned while the cancelled prompt was still running")
 	}
 }

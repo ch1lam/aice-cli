@@ -54,7 +54,7 @@ func Serve(ctx context.Context, frontend interaction.Frontend, options Options, 
 	case <-agent.conn.Done():
 	case <-ctx.Done():
 	}
-	agent.cancelPrompt()
+	agent.shutdown()
 	return nil
 }
 
@@ -69,6 +69,11 @@ type agent struct {
 	sessionID sdk.SessionId
 	// cancel stops the running prompt; nil while idle.
 	cancel context.CancelFunc
+	// closed refuses new prompts and Session switches once Serve is
+	// returning; prompts tracks running prompts so Serve waits for them
+	// before the caller closes the Session they write to.
+	closed  bool
+	prompts sync.WaitGroup
 }
 
 var (
@@ -158,6 +163,9 @@ func (a *agent) checkScope(cwd string, servers []sdk.McpServer) error {
 func (a *agent) switchSession(open func() (string, error)) (sdk.SessionId, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.closed {
+		return "", errClosed()
+	}
 	if a.cancel != nil {
 		return "", sdk.NewInvalidRequest(map[string]any{"error": "a prompt is running; cancel it before switching sessions"})
 	}
@@ -216,6 +224,22 @@ func (a *agent) cancelPrompt() {
 	if a.cancel != nil {
 		a.cancel()
 	}
+}
+
+// shutdown refuses further prompts, cancels the running one and waits for it
+// to return, so no run writes to a Session after Serve returns.
+func (a *agent) shutdown() {
+	a.mu.Lock()
+	a.closed = true
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.mu.Unlock()
+	a.prompts.Wait()
+}
+
+func errClosed() error {
+	return sdk.NewInvalidRequest(map[string]any{"error": "the agent is shutting down"})
 }
 
 func (a *agent) SetSessionMode(ctx context.Context, params sdk.SetSessionModeRequest) (sdk.SetSessionModeResponse, error) {

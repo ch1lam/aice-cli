@@ -51,10 +51,14 @@ func (a *agent) beginPrompt(id sdk.SessionId, cancel context.CancelFunc) error {
 	if a.sessionID == "" || id != a.sessionID {
 		return sdk.NewInvalidParams(map[string]any{"error": "session " + string(id) + " is not the current session"})
 	}
+	if a.closed {
+		return errClosed()
+	}
 	if a.cancel != nil {
 		return sdk.NewInvalidRequest(map[string]any{"error": "a prompt is already running"})
 	}
 	a.cancel = cancel
+	a.prompts.Add(1)
 	return nil
 }
 
@@ -62,6 +66,7 @@ func (a *agent) endPrompt() {
 	a.mu.Lock()
 	a.cancel = nil
 	a.mu.Unlock()
+	a.prompts.Done()
 }
 
 func stopReason(reason llm.StopReason) sdk.StopReason {
