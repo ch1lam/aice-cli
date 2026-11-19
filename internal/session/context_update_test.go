@@ -92,6 +92,10 @@ func TestContextUpdatesRetainPendingPrefixesAndCopyPayloads(t *testing.T) {
 	if err := store.AppendLeaf(t.Context(), leaf); !errors.Is(err, session.ErrIncompleteGroup) {
 		t.Fatalf("accepted incomplete checkout: %v", err)
 	}
+	targets, err := session.CheckoutTargets(snapshotOf(t, store))
+	if err != nil || len(targets) != 2 || targets[0].ID != entries[0].ID || targets[1].ID != entries[2].ID {
+		t.Fatalf("checkout targets = %+v, %v; want the prompt and the completed group", targets, err)
+	}
 	update, err := store.ContextSince(entries[0].ID)
 	if err != nil {
 		t.Fatal(err)

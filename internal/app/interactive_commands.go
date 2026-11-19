@@ -329,7 +329,7 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 		return menu
 	}
 	menu.Options[0].Current = snapshot.LeafID == ""
-	nodes, err := session.Nodes(snapshot)
+	nodes, err := session.CheckoutTargets(snapshot)
 	if err != nil {
 		return menu
 	}
@@ -342,11 +342,6 @@ func (s *interactiveSession) checkoutMenu() *interaction.CommandMenu {
 		compactions[compaction.ID] = compaction
 	}
 	for _, node := range nodes {
-		target := snapshot
-		target.LeafID = node.ID
-		if _, err := session.BuildContext(target); err != nil {
-			continue
-		}
 		description := sessionNodeDescription(node, messages, compactions)
 		if description == "" {
 			description = "Session " + string(node.Type)

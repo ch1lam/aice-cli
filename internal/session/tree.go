@@ -20,6 +20,23 @@ func Nodes(snapshot Snapshot) ([]Node, error) {
 	return nodes, nil
 }
 
+// CheckoutTargets returns, in physical append order, the nodes that end a
+// complete tool group and so may become the active leaf. One index serves
+// every node instead of deriving each node's context.
+func CheckoutTargets(snapshot Snapshot) ([]Node, error) {
+	index, err := indexSnapshot(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]Node, 0, len(snapshot.Order))
+	for _, id := range snapshot.Order {
+		if len(index.sequences[id].pending) == 0 {
+			nodes = append(nodes, index.nodes[id])
+		}
+	}
+	return nodes, nil
+}
+
 // ActiveBranch returns the root-to-leaf path selected by the latest record.
 func ActiveBranch(snapshot Snapshot) ([]Node, error) {
 	return Branch(snapshot, snapshot.LeafID)
