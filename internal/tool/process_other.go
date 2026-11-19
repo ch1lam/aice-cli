@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"errors"
 	"os/exec"
 	"time"
 )
@@ -16,6 +17,11 @@ func startProcessTree(command *exec.Cmd) (func(), error) {
 		return nil, err
 	}
 	return func() {}, nil
+}
+
+// interruptProcessTree has no graceful form here; callers kill the tree.
+func interruptProcessTree(*exec.Cmd) error {
+	return errors.ErrUnsupported
 }
 
 func supportsProcessTreeTermination() bool {

@@ -32,6 +32,14 @@ func startProcessTree(command *exec.Cmd) (func(), error) {
 	return func() {}, nil
 }
 
+// interruptProcessTree asks the command's process group to stop.
+func interruptProcessTree(command *exec.Cmd) error {
+	if command.Process == nil {
+		return os.ErrProcessDone
+	}
+	return syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+}
+
 func supportsProcessTreeTermination() bool {
 	return true
 }

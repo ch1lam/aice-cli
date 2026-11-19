@@ -17,12 +17,13 @@ import (
 const (
 	defaultBashTimeout = 120 * time.Second
 	maxBashTimeout     = 10 * time.Minute
-	bashSchema         = `{
-  "type": "object",
-  "properties": {
+	bashProperties     = `
     "command": {"type": "string", "description": "Bash command to execute"},
     "description": {"type": "string", "description": "One short sentence, in the language of the user's messages, saying why this command runs and what it does for the task; shown to the user when they confirm it"},
-    "timeout": {"type": "number", "exclusiveMinimum": 0, "maximum": 600, "description": "Timeout in seconds (default: 120, maximum: 600)"}
+    "timeout": {"type": "number", "exclusiveMinimum": 0, "maximum": 600, "description": "Timeout in seconds (default: 120, maximum: 600)"}`
+	bashBackgroundProperty = `,
+    "run_in_background": {"type": "boolean", "description": "Start the command as a background task and return its id at once, without a timeout. Use for servers, watchers and long builds instead of & or nohup."}`
+	bashSchemaEnd = `
   },
   "required": ["command", "description"],
   "additionalProperties": false
@@ -34,6 +35,8 @@ type Bash struct {
 	workspace *Workspace
 	shellPath string
 	wsl       bool
+	// tasks enables run_in_background; nil or WSL leaves it out.
+	tasks *Tasks
 }
 
 // BashShells is the caller-resolved shell selection. Native, an absolute
@@ -45,8 +48,9 @@ type BashShells struct {
 	WSL       []string
 }
 
-// NewBash constructs a bash tool.
-func NewBash(ctx context.Context, workspace *Workspace, shells BashShells) (*Bash, error) {
+// NewBash constructs a bash tool. Non-nil tasks enable background commands
+// with native Bash.
+func NewBash(ctx context.Context, workspace *Workspace, shells BashShells, tasks *Tasks) (*Bash, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -66,7 +70,11 @@ func NewBash(ctx context.Context, workspace *Workspace, shells BashShells) (*Bas
 	if !filepath.IsAbs(shells.Native) {
 		return nil, fmt.Errorf("tool: bash executable path must be absolute")
 	}
-	return &Bash{workspace: workspace, shellPath: shells.Native}, nil
+	return &Bash{workspace: workspace, shellPath: shells.Native, tasks: tasks}, nil
+}
+
+func (b *Bash) background() bool {
+	return b.tasks != nil && !b.wsl
 }
 
 // Definition returns the model-facing bash contract.
@@ -75,12 +83,23 @@ func (b *Bash) Definition() llm.ToolDefinition {
 	if b.wsl {
 		description += " Runs in WSL with the Windows workspace mapped as the working directory; use WSL paths for command arguments."
 	}
-	return llm.ToolDefinition{
+	schema := `{
+  "type": "object",
+  "properties": {` + bashProperties
+	definition := llm.ToolDefinition{
 		Name:          "bash",
 		Description:   description,
-		InputSchema:   jsonSchema(bashSchema),
 		PromptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 	}
+	if b.background() {
+		schema += bashBackgroundProperty
+		definition.PromptGuidelines = []string{
+			"Start long-running commands (servers, watchers, long builds or tests) with run_in_background instead of & or nohup; you are told when a task finishes, so do not poll it with sleep",
+			"Use task_output with wait when you need a background task's result, and stop tasks you no longer need with task_kill before finishing",
+		}
+	}
+	definition.InputSchema = jsonSchema(schema + bashSchemaEnd)
+	return definition
 }
 
 // Execute runs one command with the host process environment.
@@ -89,8 +108,9 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		Command string `json:"command"`
 		// Description is shown to the user, never executed; a missing one
 		// does not fail the call.
-		Description string  `json:"description"`
-		Timeout     float64 `json:"timeout"`
+		Description     string  `json:"description"`
+		Timeout         float64 `json:"timeout"`
+		RunInBackground bool    `json:"run_in_background"`
 	}
 	args, err := decodeArguments[arguments](ctx, call, "bash")
 	if err != nil {
@@ -98,6 +118,9 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	}
 	if strings.TrimSpace(args.Command) == "" {
 		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": command is required")
+	}
+	if args.RunInBackground {
+		return b.startTask(call, args.Command, args.Description, args.Timeout)
 	}
 	timeout := defaultBashTimeout
 	if args.Timeout < 0 {
@@ -151,6 +174,25 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		), nil
 	}
 	return llm.ToolResult{}, fmt.Errorf("tool \"bash\": execute command: %w", runErr)
+}
+
+// startTask launches a background task and returns its id immediately.
+func (b *Bash) startTask(call llm.ToolCall, command, description string, timeout float64) (llm.ToolResult, error) {
+	if !b.background() {
+		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": run_in_background is unavailable with this shell")
+	}
+	if timeout != 0 {
+		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": background tasks take no timeout; stop them with task_kill")
+	}
+	status, err := b.tasks.start(b.shellPath, b.workspace.Path(), command, description)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": %w", err)
+	}
+	return textResult(call, fmt.Sprintf(
+		"Started background task %s. Output file: %s\n"+
+			"You will be told when it finishes. Use task_output to wait for it or see recent output, and task_kill to stop it.",
+		status.ID, status.OutputPath,
+	), false), nil
 }
 
 func appendStatus(output, status string) string {

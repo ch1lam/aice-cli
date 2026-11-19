@@ -32,7 +32,7 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, questions b
 	add("write", write, err)
 	edit, err := tool.NewEdit(workspace)
 	add("edit", edit, err)
-	bash, err := tool.NewBash(ctx, workspace, hostBashShells())
+	bash, err := tool.NewBash(ctx, workspace, hostBashShells(), nil)
 	add("bash", bash, err)
 	grep, err := tool.NewGrep(workspace)
 	add("grep", grep, err)
