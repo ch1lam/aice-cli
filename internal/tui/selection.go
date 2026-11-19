@@ -80,7 +80,8 @@ type transcriptSelection struct {
 	// highlight caches the current visible window's per-row geometry and
 	// rendered output for the gesture, so each drag frame only restyles rows
 	// in that window whose selected interval changed. Scrolling to a new
-	// window rebuilds the cache for that window only.
+	// window rebuilds the cache for that window only. begin allocates it in
+	// Update so View, which runs on a model copy, fills the shared struct.
 	highlight *selectionHighlight
 }
 
@@ -121,8 +122,8 @@ func (s *transcriptSelection) begin(
 	s.moved = false
 	s.wheeled = false
 	// A press reusing this struct must not inherit the previous gesture's
-	// highlight cache: the frozen window is replaced below.
-	s.highlight = nil
+	// highlight cache: the frozen window is replaced above.
+	s.highlight = &selectionHighlight{}
 }
 
 func (s *transcriptSelection) update(position selectionPoint) bool {
@@ -454,10 +455,12 @@ func (s *transcriptSelection) highlightedView() string {
 	if len(s.frozen.items) == 0 {
 		return s.frozen.View()
 	}
+	if s.highlight == nil {
+		s.highlight = &selectionHighlight{}
+	}
 	h := s.highlight
-	if h == nil || h.winIndex != s.frozen.index || h.winPart != s.frozen.part || h.winLine != s.frozen.line {
-		h = buildSelectionHighlight(s)
-		s.highlight = h
+	if h.original == nil || h.winIndex != s.frozen.index || h.winPart != s.frozen.part || h.winLine != s.frozen.line {
+		*h = buildSelectionHighlight(s)
 	}
 
 	start, end, selected := s.selectedRange()
@@ -502,11 +505,11 @@ func (s *transcriptSelection) highlightedView() string {
 // highlight paths share: display widths, content identities and the copyable
 // code intervals. Rendering the rows themselves stays lazy so a press
 // without a drag costs one window split.
-func buildSelectionHighlight(s *transcriptSelection) *selectionHighlight {
+func buildSelectionHighlight(s *transcriptSelection) selectionHighlight {
 	view := s.frozen.View()
 	lines := strings.Split(view, "\n")
 	rows := s.frozen.visibleRows()
-	h := &selectionHighlight{
+	h := selectionHighlight{
 		winIndex:  s.frozen.index,
 		winPart:   s.frozen.part,
 		winLine:   s.frozen.line,
