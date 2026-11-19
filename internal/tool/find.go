@@ -50,7 +50,7 @@ func (f *Find) Definition() llm.ToolDefinition {
 	}
 }
 
-// Execute walks the requested directory without following directory symlinks.
+// Execute walks the requested directory without following nested directory symlinks.
 func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	type arguments struct {
 		Pattern string `json:"pattern"`
@@ -91,11 +91,17 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 	if !info.IsDir() {
 		return llm.ToolResult{}, fmt.Errorf("tool \"find\": %q is not a directory", args.Path)
 	}
+	// WalkDir does not descend into a symlinked root; walk its target but
+	// still report paths under the requested root and skip nested links.
+	walkRoot, err := filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return llm.ToolResult{}, fmt.Errorf("tool \"find\": resolve %q: %w", args.Path, err)
+	}
 
 	collector := newTextCollector(maxOutputBytes)
 	count := 0
 	entriesScanned := 0
-	err = filepath.WalkDir(rootPath, func(filePath string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(walkRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -106,7 +112,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 		if entriesScanned > maxWalkEntries {
 			return errScanLimit
 		}
-		if filePath == rootPath {
+		if filePath == walkRoot {
 			return nil
 		}
 		if entry.IsDir() {
@@ -115,7 +121,7 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			}
 			return nil
 		}
-		matchPath, relativeErr := filepath.Rel(rootPath, filePath)
+		matchPath, relativeErr := filepath.Rel(walkRoot, filePath)
 		if relativeErr != nil {
 			return relativeErr
 		}
@@ -130,9 +136,9 @@ func (f *Find) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 			return errResultLimit
 		}
 		count++
-		resultPath := filePath
+		resultPath := filepath.Join(rootPath, matchPath)
 		if !filepath.IsAbs(args.Path) {
-			resultPath, relativeErr = filepath.Rel(f.workspace.physicalPath, filePath)
+			resultPath, relativeErr = filepath.Rel(f.workspace.physicalPath, resultPath)
 			if relativeErr != nil {
 				return relativeErr
 			}

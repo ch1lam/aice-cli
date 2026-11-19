@@ -35,6 +35,27 @@ func TestFindExecuteSupportsDoubleStarAndIgnoresGit(t *testing.T) {
 	}
 }
 
+func TestFindExecuteFollowsSymlinkedRoot(t *testing.T) {
+	t.Parallel()
+	workspace, root := newWorkspace(t)
+	writeFixture(t, root, "real/a.go", "package real")
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
+		t.Skipf("os.Symlink() error = %v", err)
+	}
+	find, err := tool.NewFind(workspace)
+	if err != nil {
+		t.Fatalf("NewFind() error = %v", err)
+	}
+
+	result, err := find.Execute(t.Context(), toolCall(t, "find", map[string]any{"pattern": "*.go", "path": "linked"}))
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := resultText(t, result), "linked/a.go"; got != want {
+		t.Fatalf("Execute() text = %q, want %q", got, want)
+	}
+}
+
 func TestFindExecuteSearchesParentDirectory(t *testing.T) {
 	t.Parallel()
 
