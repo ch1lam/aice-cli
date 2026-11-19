@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/lockedfile"
 )
 
 //go:embed cua/LICENSE
@@ -133,30 +135,17 @@ func (i cuaBundleInstaller) reuse(ctx context.Context, bundle string, installati
 	return CuaInstallResult{Installation: installation, Reused: true}, nil
 }
 
+// lockCuaInstall serializes installers into directory with an OS file lock in
+// .aice-cua-install.lock. The kernel releases it when the holder exits, so a
+// crashed installer never blocks later setups; the lock file itself stays.
 func lockCuaInstall(ctx context.Context, directory string) (func() error, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	lock := filepath.Join(directory, ".aice-cua-install.lock")
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		err := os.Mkdir(lock, 0700)
-		if err == nil {
-			return func() error { return os.Remove(lock) }, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
-		// Do not guess ownership or steal a crashed/foreign installer's lock.
-		timer := time.NewTimer(100 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, fmt.Errorf("Cua installation lock is busy: %w", ctx.Err())
-		case <-timer.C:
-		}
+	unlock, err := lockedfile.Lock(ctx, filepath.Join(directory, ".aice-cua-install"))
+	if err != nil {
+		return nil, fmt.Errorf("Cua installation lock is busy: %w", err)
 	}
+	return unlock, nil
 }
 
 // The pinned full distribution holds only regular files and directories.

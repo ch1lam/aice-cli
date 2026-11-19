@@ -54,8 +54,9 @@ bounded walker: at most 4,096 entries, 256 MiB per entry and 512 MiB in total,
 relative paths only, no duplicates, links or special files. Only the selected
 executables or App are written. ripgrep and agent-browser are staged inside
 `~/.aice/bin` and published by rename, so an interrupted install never leaves a
-partial executable; concurrent agent-browser installs wait on an OS file lock
-that a crashed process releases.
+partial executable; concurrent agent-browser and Cua installs wait on an OS
+file lock that a crashed process releases. Cua's lock file,
+`.aice-cua-install.lock`, stays in the installation directory.
 
 On Windows, AICE prefers its managed Git Bash, then Git Bash beside the `git.exe`
 found on `PATH`, then standard Git for Windows installation directories. Other

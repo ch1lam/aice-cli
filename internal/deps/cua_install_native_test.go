@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -191,6 +192,8 @@ func TestCuaNativeInstallFailureCleanup(t *testing.T) {
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
+			// The OS lock file stays; its lock was released with the installer.
+			entries = slices.DeleteFunc(entries, func(entry os.DirEntry) bool { return entry.Name() == ".aice-cua-install.lock" })
 			if failure == "concurrent_destination" {
 				body, err := os.ReadFile(filepath.Join(destination, "peer"))
 				if err != nil || string(body) != "external" || len(entries) != 1 {
