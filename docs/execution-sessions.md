@@ -3,9 +3,10 @@
 ## Run resource limits
 
 AICE has no model-round or tool-step ceiling by default. Optional
-`--run-token-budget N` and `--run-timeout 30m` bound one Agent run; both default
-to zero (unlimited). They work in interactive and print modes, with the same
-configuration precedence as model settings. See [configuration](configuration.md#run-limits).
+`--run-token-budget N` and `--run-timeout 30m` bound one Agent run. They work in
+interactive and print modes, with the same configuration precedence as model
+settings. Defaults, settings keys and environment variables for every run limit
+are in the [run limits table](configuration.md#run-limits).
 
 A run includes its steering and queued follow-up inputs. Automatic compaction
 is charged to the same run. A new user-triggered run starts a fresh budget,
@@ -35,7 +36,7 @@ Guard or Project Trust.
 ### Optional turn limit
 
 `--max-turns N` optionally bounds model request attempts in each Agent run.
-The default `0` is unlimited; positive integers set a ceiling. Each call to the
+`0` is unlimited; positive integers set a ceiling. Each call to the
 model counts once, including failed attempts and retries. Tool calls do not count
 separately, and a synthetic terminal message does not consume another turn.
 
@@ -55,9 +56,10 @@ budgets as well to bound resources across compaction and the main run.
 
 ### Repeated-tool detection
 
-By default, AICE stops after 8 consecutive completed tool rounds have identical
-ordered tool names, arguments and results. Configure `--run-no-progress-limit N`
-with `N >= 2`, or `0` to disable it. JSON object key order and whitespace do not
+AICE stops after `--run-no-progress-limit N` consecutive completed tool rounds
+have identical ordered tool names, arguments and results; `N >= 2`, or `0`
+disables it. The default threshold is in the
+[run limits table](configuration.md#run-limits). JSON object key order and whitespace do not
 matter; different call IDs, timestamps or assistant commentary alone do not
 count as progress. Result content, error status, diff, truncation and structured outcome details
 participate in the comparison. Web evidence metadata does not. Repeated denials are detected too.
