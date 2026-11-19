@@ -20,7 +20,7 @@ func TestStoreCaseInsensitiveLookupOnWindows(t *testing.T) {
 	}
 
 	store := newTestStore(t)
-	if err := store.Set(`C:\Users\Foo\Project`, DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: `C:\Users\Foo\Project`, Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	entry, found, err := store.Lookup(`c:\users\foo\project`)
@@ -47,7 +47,7 @@ func TestStoreSetAndLookupExact(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/canonical/work", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical/work", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	entry, found, err := store.Lookup("/canonical/work")
@@ -66,7 +66,7 @@ func TestStoreLookupUsesNearestAncestor(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/canonical", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	entry, found, err := store.Lookup("/canonical/work")
@@ -104,10 +104,10 @@ func TestStoreSetUnknownRemovesEntry(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/canonical/work", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical/work", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
-	if err := store.Set("/canonical/work", DecisionUnknown); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical/work", Decision: DecisionUnknown}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	if _, found, err := store.Lookup("/canonical/work"); err != nil {
@@ -121,7 +121,7 @@ func TestStoreSetManyRemovesExactForParentChoice(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := store.Set("/canonical/work", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical/work", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	if err := store.SetMany([]Update{
@@ -146,10 +146,10 @@ func TestStoreWritePermissions(t *testing.T) {
 	}
 
 	store := newTestStore(t)
-	if err := store.Set("/canonical", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
-	info, err := os.Stat(store.Path())
+	info, err := os.Stat(store.path)
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
@@ -168,7 +168,7 @@ func TestStoreWritesSortedKeys(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetMany() error = %v", err)
 	}
-	data, err := os.ReadFile(store.Path())
+	data, err := os.ReadFile(store.path)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -184,7 +184,7 @@ func TestStoreRejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := os.WriteFile(store.Path(), []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(store.path, []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	if _, _, err := store.Lookup("/canonical"); err == nil {
@@ -196,7 +196,7 @@ func TestStoreRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := os.WriteFile(store.Path(), []byte(
+	if err := os.WriteFile(store.path, []byte(
 		`{"version":1,"projects":{},"surprise":true}`,
 	), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -210,7 +210,7 @@ func TestStoreRejectsNonBooleanDecision(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := os.WriteFile(store.Path(), []byte(
+	if err := os.WriteFile(store.path, []byte(
 		`{"version":1,"projects":{"/canonical":null}}`,
 	), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -224,7 +224,7 @@ func TestStoreRejectsMultipleJSONValues(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := os.WriteFile(store.Path(), []byte(
+	if err := os.WriteFile(store.path, []byte(
 		`{"version":1,"projects":{}}{"version":1}`,
 	), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -238,7 +238,7 @@ func TestStoreRejectsUnsupportedVersion(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
-	if err := os.WriteFile(store.Path(), []byte(
+	if err := os.WriteFile(store.path, []byte(
 		`{"version":99,"projects":{}}`,
 	), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -250,7 +250,7 @@ func TestStoreRejectsUnsupportedVersion(t *testing.T) {
 
 func TestStoreConcurrentWritersKeepAllEntries(t *testing.T) {
 	store := newTestStore(t)
-	if err := store.Set("/canonical", DecisionTrusted); err != nil {
+	if err := store.SetMany([]Update{{Path: "/canonical", Decision: DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	const writers = 8
@@ -263,7 +263,7 @@ func TestStoreConcurrentWritersKeepAllEntries(t *testing.T) {
 			defer wg.Done()
 			for entry := 0; entry < entriesPerWriter; entry++ {
 				path := filepath.Join("/canonical", "p", "w", strconv.Itoa(writer), strconv.Itoa(entry))
-				if err := store.Set(path, DecisionTrusted); err != nil {
+				if err := store.SetMany([]Update{{Path: path, Decision: DecisionTrusted}}); err != nil {
 					t.Errorf("Set() error = %v", err)
 					return
 				}

@@ -73,7 +73,7 @@ func TestInteractiveTrustParentPersistsParentAndClearsExact(t *testing.T) {
 
 	workspacePath := canonicalTestWorkspace(t)
 	store := trust.NewStore(filepath.Join(t.TempDir(), "trust.json"))
-	if err := store.Set(workspacePath, trust.DecisionTrusted); err != nil {
+	if err := store.SetMany([]trust.Update{{Path: workspacePath, Decision: trust.DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	runner := &interactiveSession{
@@ -203,7 +203,7 @@ func TestStartupTemporaryTrustAffectsPromptWithoutPersisting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if project.trust.Decision != decision || !project.trust.Prompted {
+			if project.trust.Decision != decision || project.trust.Source != trust.SourceInteractive {
 				t.Fatalf("startup resolution = %#v", project.trust)
 			}
 			if loaded := strings.Contains(project.systemPrompt, "temporary project guidance"); loaded != (decision == trust.DecisionTrusted) {

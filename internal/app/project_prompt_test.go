@@ -266,7 +266,7 @@ func TestResolveProjectContextStoredDenyBeatsAlways(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Canonical() error = %v", err)
 	}
-	if err := trust.NewStore(paths.GlobalTrust).Set(key, trust.DecisionUntrusted); err != nil {
+	if err := trust.NewStore(paths.GlobalTrust).SetMany([]trust.Update{{Path: key, Decision: trust.DecisionUntrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 	configuration := trustTestConfig(paths)
@@ -301,7 +301,7 @@ func TestResolveProjectContextStoredTrustLoadsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Canonical() error = %v", err)
 	}
-	if err := trust.NewStore(paths.GlobalTrust).Set(key, trust.DecisionTrusted); err != nil {
+	if err := trust.NewStore(paths.GlobalTrust).SetMany([]trust.Update{{Path: key, Decision: trust.DecisionTrusted}}); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 
@@ -352,7 +352,7 @@ func TestResolveProjectContextAskWithUIPersistsAndLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveProjectContext() error = %v", err)
 	}
-	if !project.trust.Prompted {
+	if project.trust.Source != trust.SourceInteractive {
 		t.Error("trust prompt not shown")
 	}
 	ws := testWorkspace(t, workspace)
