@@ -457,7 +457,8 @@ credentials/prompt content out of logs.
   `oldText` cannot be empty and empty `newText` deletes. Unknown/legacy fields
   and malformed entries fail before file access. All matches use the same
   original file, must be unique and non-overlapping, with BOM preservation and
-  CRLF/LF normalization only. Errors identify original entry indices. A final
+  CRLF/LF normalization only. Replacement text takes the file's dominant line
+  ending; untouched text keeps its original endings. Errors identify original entry indices. A final
   byte-identical result is a no-change error. Matching failures require rereading
   and correcting the edit, not blindly overwriting the file.
 - `write`/`edit` serialize mutations per Workspace through cleanup. They check

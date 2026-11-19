@@ -16,17 +16,17 @@ func TestEditDiffReflectsWrittenContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := edit.Execute(t.Context(), toolCall(t, "edit", map[string]any{
-		"path": "file", "edits": []map[string]string{{"oldText": "a", "newText": "A"}},
+		"path": "file", "edits": []map[string]string{{"oldText": "a", "newText": "A\nZ"}},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Replacement text takes the dominant ending; untouched mixed lines keep theirs.
 	data, err := os.ReadFile(path)
-	if err != nil || string(data) != "A\r\nb\r\nc\r\n" {
+	if err != nil || string(data) != "A\r\nZ\r\nb\nc\r\n" {
 		t.Fatalf("written = %q, %v", data, err)
 	}
-	// The real newline normalization outside the requested replacement is visible.
-	if !strings.Contains(result.Diff.Text, "-b\n") || !strings.Contains(result.Diff.Text, "+b\r\n") {
+	if !strings.Contains(result.Diff.Text, "+Z\r\n") || strings.Contains(result.Diff.Text, "-b") {
 		t.Fatalf("diff = %q", result.Diff.Text)
 	}
 	if strings.Contains(resultText(t, result), "@@") {
