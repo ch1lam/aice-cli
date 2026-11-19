@@ -131,8 +131,14 @@ func TestBrowserPresetActions(t *testing.T) {
 		s.mcp.open = func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
 			return &mcpOwnedFixture{mcpCatalogFixture: mcpCatalogFixture{items: []mcpclient.Tool{catalogFixtureTool("open", "Open a page")}}}, nil
 		}
+		resources := s.lifecycle.resourceRevision
 		if result := act("setup"); !result.Applied || !result.Ready || !strings.Contains(result.Output, "available") {
 			t.Fatalf("repeat setup = %+v", result)
+		}
+		// The rebuilt service is published, so held runs and /btw threads
+		// cannot keep the replaced MCP resources.
+		if s.lifecycle.resourceRevision == resources {
+			t.Fatal("repair published resources without invalidating held snapshots")
 		}
 		if status, _, _ := presetStatus(s.configuration, s.mcp, browserServiceKey); status != "ready · 1 tools" {
 			t.Fatalf("status after repair = %q", status)

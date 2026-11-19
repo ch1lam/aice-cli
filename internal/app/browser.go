@@ -80,7 +80,9 @@ func (s *interactiveSession) runBrowserSettings(ctx context.Context, revision *u
 	}
 	defer func() {
 		var warnings []string
-		changed := result.Committed
+		// A repair over an unchanged definition commits nothing but still
+		// publishes a rebuilt service.
+		changed := result.Committed || result.Applied
 		result.Revision, warnings = s.endSettingsOperation(changed, changed)
 		result.Warnings = append(result.Warnings, warnings...)
 	}()
