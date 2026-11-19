@@ -92,9 +92,14 @@ func Validate(img llm.ImageContent) error {
 
 // Prepare derives a model-sized view from the original, retaining exact source
 // bytes only when the view differs. Region coordinates always refer to the original.
+// An input that is already such a view for the same region is returned as is;
+// callers that accept it from outside validate it first (see interaction.ValidateImages).
 func Prepare(ctx context.Context, input llm.ImageContent, region *llm.ImageRegion) (llm.ImageContent, error) {
 	if err := ctx.Err(); err != nil {
 		return llm.ImageContent{}, err
+	}
+	if preparedView(input, region) {
+		return input.Clone(), nil
 	}
 	data, mime := input.Data, input.MIMEType
 	if input.Original != nil {
@@ -174,6 +179,25 @@ func Prepare(ctx context.Context, input llm.ImageContent, region *llm.ImageRegio
 		}
 		w, h = max(1, w*3/4), max(1, h*3/4)
 	}
+}
+
+// preparedView reports whether input is already Prepare's view of its original
+// for the same region, as with a pasted image prepared again at submission, so
+// the original is not decoded and resized a second time.
+func preparedView(input llm.ImageContent, region *llm.ImageRegion) bool {
+	if input.Original == nil || (input.Region == nil) != (region == nil) ||
+		region != nil && *input.Region != *region ||
+		input.ID != fmt.Sprintf("image:%x", sha256.Sum256(input.Original.Data)) {
+		return false
+	}
+	original, _, err := Inspect(input.Original.Data, input.Original.MIMEType)
+	if err != nil || original.Width != input.Original.Width || original.Height != input.Original.Height {
+		return false
+	}
+	view, mime, err := Inspect(input.Data, input.MIMEType)
+	return err == nil && (mime == "image/png" || mime == "image/jpeg") && len(input.Data) <= MaxViewBytes &&
+		view.Width == input.Width && view.Height == input.Height &&
+		view.Width <= MaxViewDimension && view.Height <= MaxViewDimension
 }
 
 func decode(data []byte, mime string) (image.Image, error) {

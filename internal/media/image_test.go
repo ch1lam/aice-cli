@@ -48,6 +48,10 @@ func TestImageResizeRetainsOriginalAndCrop(t *testing.T) {
 	if prepared.Width != 2000 || prepared.Height != 50 || prepared.Original == nil || !bytes.Equal(prepared.Original.Data, raw) {
 		t.Fatal("resize did not retain the original and aspect ratio")
 	}
+	again, err := media.Prepare(t.Context(), prepared, nil)
+	if err != nil || !bytes.Equal(again.Data, prepared.Data) || again.Width != prepared.Width || &again.Data[0] == &prepared.Data[0] {
+		t.Fatalf("re-preparing a prepared view = %v, want an unchanged copy", err)
+	}
 	data, err := json.Marshal(prepared)
 	if err != nil {
 		t.Fatal(err)
