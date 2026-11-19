@@ -40,9 +40,7 @@ Invocation controls such as `--workspace`, `--session`, `--approve`, and
 `--yolo` retain their separate command semantics. No remote key/value store is used.
 
 Computer Use has no settings of its own: its setup writes the ordinary MCP
-service `user:cua` (see [Computer Use](desktop.md)). The removed
-`desktop_enabled`, `desktop_control_mode` and `browser_headed` keys are
-unknown fields: loading fails until they are deleted from `settings.json`.
+service `user:cua` (see [Computer Use](desktop.md)).
 
 Project settings are protected by [Project Trust](project-trust.md).
 Until trusted, the project contributes no configuration values. The initial
@@ -78,12 +76,10 @@ The DeepSeek API catalog contains only `deepseek-flash` (V4.1-Flash) and
 `deepseek-v4-pro` (V4-Pro-0813). Only Flash accepts text/image input; Pro is
 text-only. Flash retains Responses; Pro retains Anthropic Messages. The
 OpenCode Go catalog is independent and follows the models served by its
-[endpoint](https://opencode.ai/zen/go/v1/models); it retired
-`deepseek-v4-flash` in favor of `deepseek-v4.1-flash`. Models that require a
+[endpoint](https://opencode.ai/zen/go/v1/models). Models that require a
 protocol AICE does not implement, such as Gemini 4 Argon Contributor's Google
-generative API, are omitted. Existing DeepSeek or OpenCode Go settings using
-removed model IDs must select a current catalog model; old IDs are not
-remapped.
+generative API, are omitted. A configured model ID absent from the catalog is
+not remapped; see [unavailable configured models](#unavailable-configured-models).
 DeepSeek cost estimates use official [off-peak rates](https://api-docs.deepseek.com/quick_start/pricing/);
 peak billing is twice the estimate.
 
@@ -622,10 +618,9 @@ saves the provider and a compatible model globally; `AICE_PROVIDER` and
 `Use saved credential` under the Codex login menu or select Codex in `/provider`.
 
 The compiled catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
-`gpt-5.6-terra` (default), and `gpt-5.6-luna`. These are subscription models
-checked on 2026-09-07 against
-[OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models); availability
-and usage limits depend on the account. AICE records token usage with zero
+`gpt-5.6-terra` (default), and `gpt-5.6-luna`. See
+[OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models) for the
+subscription models; availability and usage limits depend on the account. AICE records token usage with zero
 per-token API price estimates for this provider. This does not mean unlimited
 or free usage. Default context/output metadata is 272,000/128,000 tokens;
 the subscription endpoint chooses the actual output limit and AICE omits
