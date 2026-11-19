@@ -164,6 +164,12 @@ func TestGuardWorkingDirectoryCorpus(t *testing.T) {
 		{`source env.sh; cat x.txt`, RuleBashDynamic},
 		{`env -C .. cat x.txt`, RuleBashDynamic},
 		{`find . -execdir cat x.txt \;`, RuleBashDynamic},
+		// Trap actions run later, wherever the shell is then.
+		{`trap 'cat ../secret.key' EXIT`, RuleBashDynamic},
+		{`trap "cat $(dirname $PWD)/secret.key" EXIT`, RuleBashDynamic},
+		{`trap -- "rm -f /tmp/x" EXIT INT`, RuleOutsideWrite},
+		{`trap f EXIT; f() { cat x.txt; }`, RuleBashDynamic},
+		{`trap 'echo done' EXIT; trap - EXIT; trap -p`, ""},
 	}
 	for _, tc := range cases {
 		res := checkCall(t, g, "bash", map[string]any{"command": tc.command})

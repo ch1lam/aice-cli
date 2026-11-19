@@ -98,6 +98,12 @@ func (g *Guard) analyzeBash(command string) bashAnalysis {
 		cdpath: os.Getenv("CDPATH") != "",
 	}
 	a.script(command, []string{a.start}, 0)
+	// A trap may run at any later point, so its action is checked with the
+	// final functions, from an unknown directory and without variables.
+	for i := 0; i < len(a.traps); i++ {
+		a.vars = map[string]string{}
+		a.script(a.traps[i].text, []string{unknownDir}, a.traps[i].depth)
+	}
 	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands, hidden: a.hidden}
 }
 
@@ -126,6 +132,13 @@ type bashAnalyzer struct {
 	// may land elsewhere.
 	cdpath bool
 	hidden bool
+	// traps are the trap actions set, with the depth to check them at.
+	traps []trap
+}
+
+type trap struct {
+	text  string
+	depth int
 }
 
 // script checks one script from dirs and returns where it may leave the
@@ -269,7 +282,7 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 		return out, out
 	case *syntax.FuncDecl:
 		// Checking the body where it is defined also covers calls the
-		// analysis cannot see, such as from a trap.
+		// analysis cannot see.
 		if c.Name != nil {
 			a.funcs[c.Name.Value] = c.Body
 		}
@@ -431,6 +444,20 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) (ok, all []string) {
 		}
 		return ok, all
 	}
+	if cmd.name() == "trap" {
+		if action, ok := trapAction(cmd); ok {
+			a.hidden = true
+			switch {
+			case action.unresolved:
+				a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "trap of a computed action", pattern: cmd.display()})
+			case depth >= maxShellDepth:
+				a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "shell scripts nested too deeply to inspect", pattern: cmd.display()})
+			default:
+				a.traps = append(a.traps, trap{text: action.text, depth: depth + 1})
+			}
+		}
+		return in, in
+	}
 	if script, ok := shellScript(cmd); ok {
 		switch {
 		case script.unresolved:
@@ -462,6 +489,21 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) (ok, all []string) {
 		return a.stmt(body, in, depth+1)
 	}
 	return a.changeDir(cmd)
+}
+
+// trapAction returns the command a trap sets. Listing, a lone condition,
+// "-" (reset) and "" (ignore) set none.
+func trapAction(cmd shellCommand) (shellWord, bool) {
+	args := cmd.words[1:]
+	if len(args) > 0 && args[0].text == "--" {
+		args = args[1:]
+	} else if len(args) > 0 && strings.HasPrefix(args[0].text, "-") && args[0].text != "-" {
+		return shellWord{}, false
+	}
+	if len(args) < 2 || args[0].text == "-" || args[0].text == "" && !args[0].unresolved {
+		return shellWord{}, false
+	}
+	return args[0], true
 }
 
 // eval checks a literal script like `bash -c`, in this shell; anything else

@@ -190,7 +190,10 @@ changes directory is checked again from an unknown one. The directory becomes
 unknown after `cd -`, `popd`, `source`, an expansion, a target that is not an
 existing directory, `~user`, a bare name while `CDPATH` may be set,
 `env -C`/`--chdir` and `find -execdir`; every relative path from an unknown
-directory asks `bash.dynamic`.
+directory asks `bash.dynamic`. A `trap` action may run at any later point, so
+it is checked after the command line with its final functions, from an unknown
+directory and with variables unresolved; a computed action asks
+`bash.dynamic`.
 
 Boundary checks use physical paths: symlinks in the longest existing prefix
 are resolved for every file action, bash included, so a workspace symlink to
@@ -212,7 +215,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c`, `trap` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
@@ -388,7 +391,7 @@ run code or touch files its words do not show: an assignment to an upper-case
 variable other than locale, `TZ`, `NO_COLOR`, `TERM`, `COLUMNS`, `LINES` or a
 `cat` pager (`LD_PRELOAD=`, `DYLD_*`, `PATH`, `GIT_*`, including `env NAME=` and
 `export`), git `-c`, `--config-env`, `--exec-path`, `--git-dir` or
-`--work-tree`, or a path built from a command substitution (`cat $(…)`).
+`--work-tree`, a path built from a command substitution (`cat $(…)`), or a `trap` action.
 `sed` with `-i`, `-f`, an `e` command or flag or a command it does not recognize,
 `rg --pre`/`--pre-glob`, `printf -v`, `git grep -O` and git `--output` are not
 read-only either; the output operands of `uniq` and `xxd`, `tree -o` and the `less -o`/`-O`/`--log-file` log are
