@@ -62,7 +62,9 @@ disables it. The default threshold is in the
 [run limits table](configuration.md#run-limits). JSON object key order and whitespace do not
 matter; different call IDs, timestamps or assistant commentary alone do not
 count as progress. Result content, error status, diff, truncation and structured outcome details
-participate in the comparison. Web evidence metadata does not. Repeated denials are detected too.
+participate in the comparison. Web evidence metadata does not, nor does an
+auto-mode review: its reason and usage, and the text of a call it refused, vary
+between identical calls. Repeated denials are detected too.
 
 Changed tool work resets the streak. Accepted steering and natural completion
 also reset it, so queued follow-ups and new runs start fresh. Compaction does

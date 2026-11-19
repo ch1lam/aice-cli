@@ -138,6 +138,8 @@ Legacy tool errors retain their existing text-only behavior. Repetition detectio
 includes explicit outcome details, so changed structured results count as
 observable progress. The storage companion does not participate in that
 comparison; retained whitespace/HTML spelling alone does not introduce progress.
+Nor does `Review` provenance, or the text of a call an automatic review refused
+([repeated-tool detection](execution-sessions.md#repeated-tool-detection)).
 Neither result conversion nor Session recovery reruns tools.
 
 The application opts main runs into `RunInput.ResultViewTokens` and provides

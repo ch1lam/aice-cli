@@ -48,6 +48,32 @@ func TestNoProgressStopsEquivalentCallsAndKeepsActualResults(t *testing.T) {
 	}
 }
 
+// Auto mode attaches a classifier review whose reason and usage differ between
+// identical calls, and a refused call's text quotes that reason. Neither is
+// progress, so repeats are still detected.
+func TestNoProgressIgnoresVaryingAutoModeReviews(t *testing.T) {
+	t.Parallel()
+	for decision, verdict := range map[agent.GuardDecision]string{agent.GuardAllow: "allow", agent.GuardDeny: "block"} {
+		t.Run(verdict, func(t *testing.T) {
+			info := testModel()
+			model := repeatedToolModel(info, []string{`{}`, `{}`, `{}`})
+			guard := &sequenceGuard{}
+			for i := range 3 {
+				reason := fmt.Sprint("reason ", i)
+				review := &llm.ToolReview{Mode: "auto", Decision: verdict, Reason: reason, Usage: &llm.Usage{TotalTokens: int64(i + 1)}}
+				guard.results = append(guard.results, agent.GuardResult{Decision: decision, Reason: "Auto mode blocked this action: " + reason, Review: review})
+			}
+			loop, err := agent.NewLoop(model, []agent.Tool{newFakeTool("read", nil)}, agent.WithGuard(guard), agent.WithRunLimits(agent.RunLimits{NoProgress: 3}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loop.Run(t.Context(), testInput(info, mustPrompt(t, "inspect")), nil); !errors.Is(err, agent.ErrNoProgress) || len(model.requests) != 3 {
+				t.Fatalf("err=%v requests=%d", err, len(model.requests))
+			}
+		})
+	}
+}
+
 func TestNoProgressAllowsChangingWorkAndCanBeDisabled(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
