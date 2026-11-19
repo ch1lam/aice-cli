@@ -28,6 +28,16 @@ func (b *mcpGuardTestBindings) MCPBinding(ctx context.Context, name string) (llm
 	return b.binding, b.scope, name == "mcp_docs_read", nil
 }
 
+// rebindMCPService publishes a changed policy as a configuration change does:
+// the old binding and its authority are dropped first.
+func rebindMCPService(t *testing.T, g *guard.Guard, service guard.MCPService) {
+	t.Helper()
+	g.RemoveMCPService(service.Source, service.ServiceID)
+	if err := g.BindMCPService(service); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func mcpGuardTestFixture(t *testing.T, yolo bool) (*interactiveSession, *guardAdapter, guard.MCPService) {
 	t.Helper()
 	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
@@ -35,7 +45,7 @@ func mcpGuardTestFixture(t *testing.T, yolo bool) (*interactiveSession, *guardAd
 		Source: "user:/settings.json", ServiceID: "docs", ConnectionFingerprint: "connection", PermissionScope: "tools",
 		Enabled: true, Tools: []guard.MCPToolPolicy{{Name: "read", SchemaFingerprint: "schema", Allowed: true}, {Name: "other", SchemaFingerprint: "other-schema", Allowed: true}},
 	}
-	if err := session.guard.SetMCPService(service); err != nil {
+	if err := session.guard.BindMCPService(service); err != nil {
 		t.Fatal(err)
 	}
 	bindings := &mcpGuardTestBindings{
@@ -157,8 +167,8 @@ func TestMCPGuardLoopYoloPreservesDenials(t *testing.T) {
 			case "closed-run":
 				adapter.mcp.(*mcpGuardTestBindings).closed = true
 			}
-			if err := session.guard.SetMCPService(service); err != nil {
-				t.Fatal(err)
+			if failure != "revoked" {
+				rebindMCPService(t, session.guard, service)
 			}
 			if failure == "removed" {
 				session.guard.RemoveMCPService(service.Source, service.ServiceID)
@@ -187,14 +197,9 @@ func TestMCPGuardRevalidatesAfterInteractiveApproval(t *testing.T) {
 						session.guard.RevokeMCPService(service.Source, service.ServiceID)
 					case "schema":
 						service.Tools[0].SchemaFingerprint = "new-schema"
-						if err := session.guard.SetMCPService(service); err != nil {
-							t.Fatal(err)
-						}
+						rebindMCPService(t, session.guard, service)
 					case "remove-and-restore":
-						session.guard.RemoveMCPService(service.Source, service.ServiceID)
-						if err := session.guard.SetMCPService(service); err != nil {
-							t.Fatal(err)
-						}
+						rebindMCPService(t, session.guard, service)
 					case "new-session":
 						session.guard.ResetSessionGrants()
 					case "run-binding":

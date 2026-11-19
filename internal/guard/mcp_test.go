@@ -41,7 +41,7 @@ func checkMCPPolicy(t *testing.T, g *Guard, service MCPService, name string, wan
 
 func publishMCPPolicy(t *testing.T, g *Guard, service MCPService) {
 	t.Helper()
-	if err := g.SetMCPService(service); err != nil {
+	if err := g.setMCPService(service, mcpReplace); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -165,7 +165,7 @@ func TestMCPInvalidationCannotRevivePendingApprovals(t *testing.T) {
 			}
 			if kind == "revoke" {
 				checkMCPPolicy(t, g, original, "read", DecisionDeny)
-				g.RestoreMCPService(service.Source, service.ServiceID)
+				g.setMCPRevoked(service.Source, service.ServiceID, false)
 			}
 			publishMCPPolicy(t, g, original)
 			checkMCPPolicy(t, g, original, "read", DecisionAsk)
@@ -214,7 +214,7 @@ func TestMCPCancellationAndInvalidPolicy(t *testing.T) {
 		{}, {Source: "bad\x1b[0m"},
 		{Source: "s", ServiceID: "i", ConnectionFingerprint: "c", PermissionScope: "p", Tools: []MCPToolPolicy{{Name: "a", SchemaFingerprint: "s", Allowed: true}, {Name: "a", SchemaFingerprint: "s", Allowed: true}}},
 	} {
-		if err := g.SetMCPService(input); err == nil {
+		if err := g.setMCPService(input, mcpReplace); err == nil {
 			t.Fatal("invalid policy accepted")
 		}
 	}
@@ -238,10 +238,10 @@ func TestMCPConcurrentGrantRevokeAndCatalogUpdates(t *testing.T) {
 						_ = permit.Validate(t.Context())
 					}
 				case 1:
-					_ = g.SetMCPService(service)
+					_ = g.setMCPService(service, mcpReplace)
 				case 2:
 					g.RevokeMCPService(service.Source, service.ServiceID)
-					g.RestoreMCPService(service.Source, service.ServiceID)
+					g.setMCPRevoked(service.Source, service.ServiceID, false)
 				case 3:
 					g.ResetSessionGrants()
 				}
@@ -258,7 +258,7 @@ func TestMCPConcurrentGrantRevokeAndCatalogUpdates(t *testing.T) {
 		publishMCPPolicy(t, g, other)
 	}
 	service.ServiceID = "overflow"
-	if g.SetMCPService(service) == nil {
+	if g.setMCPService(service, mcpReplace) == nil {
 		t.Fatal("unbounded service storage")
 	}
 }
@@ -292,7 +292,7 @@ func TestMCPRefreshCannotReplaceExplicitDeny(t *testing.T) {
 				}
 			}
 			// Explicit management still publishes a reviewed policy replacement.
-			if err := g.SetMCPService(service); err != nil {
+			if err := g.setMCPService(service, mcpReplace); err != nil {
 				t.Fatal(err)
 			}
 			binding := mcpPolicyBinding(service, name)

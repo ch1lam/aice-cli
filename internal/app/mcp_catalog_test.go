@@ -161,9 +161,7 @@ func TestMCPCatalogRefreshCannotUndoPolicyChanges(t *testing.T) {
 				g.RemoveMCPService(policy.Source, policy.ServiceID)
 			}
 			if change != "remove" && change != "revoke" {
-				if err := g.SetMCPService(policy); err != nil {
-					t.Fatal(err)
-				}
+				rebindMCPService(t, g, policy)
 			}
 			next, err := c.Search(t.Context(), tool.ToolSearchRequest{Limit: 5})
 			if err != nil || next.Complete || len(next.Selected) != 0 || c.Check(t.Context(), first.Selected[0]) == nil {
