@@ -66,6 +66,10 @@ func TestGuardRulesPrecedence(t *testing.T) {
 			t.Errorf("%s %q: %s %q, want %s %q (%+v)", tc.tool, tc.arg, res.Decision, got, tc.want, tc.rule, res)
 		}
 	}
+	// A background command is the same command: rules apply unchanged.
+	if res := checkCall(t, g, "bash", map[string]any{"command": "curl https://example.com", "run_in_background": true}); res.Decision != DecisionDeny {
+		t.Fatalf("background curl: %+v, want deny", res)
+	}
 	// A Session grant is an allow and does not override an ask rule.
 	g.AllowPathSession(filepath.Join(workspace, "docs"), true, true)
 	if res := checkCall(t, g, "write", map[string]any{"path": "docs/a.md"}); res.Decision != DecisionAsk {

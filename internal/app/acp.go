@@ -32,6 +32,7 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	}
 	defer environment.web.closeBackend()
 	defer func() { returnErr = errors.Join(returnErr, environment.mcp.Close()) }()
+	defer func() { returnErr = errors.Join(returnErr, environment.tasks.Close()) }()
 	if !providerConfigured(a.dependencies.providers, environment.configuration) {
 		return credentialNotConfiguredError(a.dependencies.providers, environment.configuration)
 	}

@@ -8,10 +8,13 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, questions bool) ([]agent.Tool, error) {
+// newBuiltInTools builds the host tools. Non-nil tasks enable background bash
+// commands and the task tools that observe and stop them.
+func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, tasks *tool.Tasks, questions bool) ([]agent.Tool, error) {
 	if workspace == nil {
 		return nil, fmt.Errorf("app: workspace is required")
 	}
@@ -32,8 +35,14 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, questions b
 	add("write", write, err)
 	edit, err := tool.NewEdit(workspace)
 	add("edit", edit, err)
-	bash, err := tool.NewBash(ctx, workspace, hostBashShells(), nil)
+	bash, err := tool.NewBash(ctx, workspace, hostBashShells(), tasks)
 	add("bash", bash, err)
+	if err == nil && bash.SupportsBackground() {
+		output, err := tool.NewTaskOutput(tasks)
+		add("task_output", output, err)
+		kill, err := tool.NewTaskKill(tasks)
+		add("task_kill", kill, err)
+	}
 	grep, err := tool.NewGrep(workspace)
 	add("grep", grep, err)
 	find, err := tool.NewFind(workspace)
@@ -48,6 +57,17 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, questions b
 		tools = append(tools, tool.NewRequestUserInput(nil))
 	}
 	return tools, nil
+}
+
+// taskNotices tells the model about background tasks that finished since the
+// last report, with whichever tool result comes next.
+func taskNotices(tasks *tool.Tasks) agent.ToolResultNotices {
+	if tasks == nil {
+		return nil
+	}
+	return func(context.Context, llm.ToolResultMessage) []string {
+		return tasks.CompletionNotices()
+	}
 }
 
 // hostBashShells resolves the bash tool's shell: native Bash, otherwise the

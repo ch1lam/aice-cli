@@ -211,11 +211,13 @@ func commandDescription(call llm.ToolCall) string {
 
 func toolCallDetail(call llm.ToolCall) string {
 	var arguments struct {
-		Command string `json:"command"`
-		Name    string `json:"name"`
-		Path    string `json:"path"`
-		Query   string `json:"query"`
-		URL     string `json:"url"`
+		Command string   `json:"command"`
+		Name    string   `json:"name"`
+		Path    string   `json:"path"`
+		Query   string   `json:"query"`
+		URL     string   `json:"url"`
+		TaskID  string   `json:"task_id"`
+		TaskIDs []string `json:"task_ids"`
 	}
 	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
 		return ""
@@ -223,6 +225,10 @@ func toolCallDetail(call llm.ToolCall) string {
 	switch call.Name {
 	case "bash":
 		return arguments.Command
+	case "task_output":
+		return strings.Join(arguments.TaskIDs, " ")
+	case "task_kill":
+		return arguments.TaskID
 	case "skill":
 		return arguments.Name
 	case "request_user_input":

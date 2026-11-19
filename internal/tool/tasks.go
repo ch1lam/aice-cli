@@ -313,8 +313,12 @@ func (t *Tasks) TakeCompletions() []TaskStatus {
 }
 
 // KillAll terminates every task and deletes their output, leaving Tasks
-// usable. A new Session starts without tasks it cannot know about.
+// usable. A new Session starts without tasks it cannot know about. A nil
+// Tasks has nothing to stop.
 func (t *Tasks) KillAll() {
+	if t == nil {
+		return
+	}
 	t.mu.Lock()
 	tasks := make([]*task, 0, len(t.tasks))
 	for _, current := range t.tasks {
@@ -338,8 +342,11 @@ func (t *Tasks) KillAll() {
 }
 
 // Close terminates every task, waits for their supervisors and removes the
-// output directory. Later starts fail.
+// output directory. Later starts fail. A nil Tasks closes trivially.
 func (t *Tasks) Close() error {
+	if t == nil {
+		return nil
+	}
 	t.mu.Lock()
 	t.closed = true
 	t.mu.Unlock()

@@ -73,7 +73,8 @@ func NewBash(ctx context.Context, workspace *Workspace, shells BashShells, tasks
 	return &Bash{workspace: workspace, shellPath: shells.Native, tasks: tasks}, nil
 }
 
-func (b *Bash) background() bool {
+// SupportsBackground reports whether run_in_background is offered.
+func (b *Bash) SupportsBackground() bool {
 	return b.tasks != nil && !b.wsl
 }
 
@@ -91,7 +92,7 @@ func (b *Bash) Definition() llm.ToolDefinition {
 		Description:   description,
 		PromptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 	}
-	if b.background() {
+	if b.SupportsBackground() {
 		schema += bashBackgroundProperty
 		definition.PromptGuidelines = []string{
 			"Start long-running commands (servers, watchers, long builds or tests) with run_in_background instead of & or nohup; you are told when a task finishes, so do not poll it with sleep",
@@ -178,7 +179,7 @@ func (b *Bash) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, 
 
 // startTask launches a background task and returns its id immediately.
 func (b *Bash) startTask(call llm.ToolCall, command, description string, timeout float64) (llm.ToolResult, error) {
-	if !b.background() {
+	if !b.SupportsBackground() {
 		return llm.ToolResult{}, fmt.Errorf("tool \"bash\": run_in_background is unavailable with this shell")
 	}
 	if timeout != 0 {
