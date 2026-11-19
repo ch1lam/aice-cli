@@ -166,7 +166,7 @@ Bash commands are parsed with `mvdan.cc/sh`. Launchers (`env`, `time`, `nice`,
 commands are unwrapped and checked as the command they run. A command table
 records which operands are patterns or messages rather than paths (`grep`,
 `rg`, `sed`, `awk`, `jq`, `echo`, `printf`, ...), which are read and which are
-written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...).
+written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...). Files a `sed` script names are read (`r`, `R`, `-f`) or written (`w`, `W`, `s///w`), and a computed `sed` script asks `bash.dynamic`; git `--git-dir`/`--work-tree` are accessed like `-C`, and `--output`, `--output-directory` and `format-patch -o` are written.
 Commands outside the table treat path-like operands (with `/`, `~`, a dotted name, `.` or `..`) as writes; `docker`/`podman`
 bind-mount sources (`-v SRC:DST`, `--mount source=SRC`) are writes. Unquoted
 backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
@@ -212,7 +212,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval` or `bash -c` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |
@@ -389,7 +389,7 @@ variable other than locale, `TZ`, `NO_COLOR`, `TERM`, `COLUMNS`, `LINES` or a
 `cat` pager (`LD_PRELOAD=`, `DYLD_*`, `PATH`, `GIT_*`, including `env NAME=` and
 `export`), git `-c`, `--config-env`, `--exec-path`, `--git-dir` or
 `--work-tree`, or a path built from a command substitution (`cat $(…)`).
-`sed` with `-i`, `-f` or an `e`, `r`, `R`, `w` or `W` command or `s` flag,
+`sed` with `-i`, `-f`, an `e` command or flag or a command it does not recognize,
 `rg --pre`/`--pre-glob`, `printf -v`, `git grep -O` and git `--output` are not
 read-only either; the output operands of `uniq` and `xxd`, `tree -o` and the `less -o`/`-O`/`--log-file` log are
 writes.

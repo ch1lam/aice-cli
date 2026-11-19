@@ -60,6 +60,17 @@ func TestGuardBashCorpus(t *testing.T) {
 		{`ls ..`, RuleOutsideRead},
 		{`zip -r out.zip .`, allow},
 		{`less --log-file=/tmp/x a.txt`, RuleOutsideWrite},
+		// Files sed scripts and git options name are paths too.
+		{`sed '1r ~/.ssh/id_rsa' a.txt`, credentialsRuleID},
+		{`sed -n 's/x/y/w /etc/x' a.txt`, RuleOutsideWrite},
+		{`sed -i '' 'W /etc/x' a.txt`, RuleOutsideWrite},
+		{`sed -f /etc/x.sed a.txt`, RuleOutsideRead},
+		{`sed "$S" a.txt`, RuleBashDynamic},
+		{`git diff --output=/tmp/d.txt`, RuleOutsideWrite},
+		{`git format-patch -o /tmp/p HEAD~1`, RuleOutsideWrite},
+		{`git --git-dir=../other/.git status`, RuleOutsideRead},
+		{`git --work-tree ~/.ssh status`, credentialsRuleID},
+		{`git -C .. --git-dir=x/.git log`, RuleOutsideRead},
 		// Command consequences.
 		{`rm -rf .`, RuleBashDelete},
 		{`rm -rf .git`, RuleBashDelete},

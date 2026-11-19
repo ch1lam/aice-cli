@@ -377,6 +377,10 @@ func commandPaths(cmd shellCommand, movedBase bool) []pathArg {
 		}
 		out = append(out, pathArg{word: w, op: op, force: known && movedBase})
 	}
+	if name == "sed" {
+		paths, _, _ := sedEffects(cmd.words)
+		out = append(out, paths...)
+	}
 	return out
 }
 
@@ -463,7 +467,12 @@ func readOnlyCommand(words []string) bool {
 			return w == "-delete" || strings.HasPrefix(w, "-exec") || strings.HasPrefix(w, "-ok") || strings.HasPrefix(w, "-fprint") || w == "-fls"
 		})
 	case "sed":
-		return sedReadOnly(words)
+		sed := make([]shellWord, len(words))
+		for i, w := range words {
+			sed[i] = shellWord{text: w}
+		}
+		_, runs, _ := sedEffects(sed)
+		return !runs
 	case "rg":
 		return !slices.ContainsFunc(words, func(w string) bool { return strings.HasPrefix(w, "--pre") })
 	case "printf":
@@ -501,55 +510,84 @@ func inertVariable(name, value string) bool {
 	return strings.ToLower(name) == name
 }
 
-// sedReadOnly reports sed invocations whose scripts neither edit in place,
-// run commands nor read or write other files. Script files cannot be
-// inspected.
-func sedReadOnly(words []string) bool {
-	var scripts []string
-	explicit, operand := false, false
+// sedEffects returns the files a sed invocation's scripts read (r, R, -f)
+// and write (w, W, s///w). runs reports an in-place edit, a script file, a
+// command that runs a program (e, s///e) or one it does not recognize;
+// computed reports a script from an expansion.
+func sedEffects(words []shellWord) (paths []pathArg, runs, computed bool) {
+	var scripts []shellWord
+	expression, took, inPlace, operand := false, false, false, false
+	file := func(w shellWord) { paths, runs = append(paths, pathArg{word: w, op: opRead, force: true}), true }
+	script := func(w shellWord) { scripts, expression = append(scripts, w), true }
 	for i := 1; i < len(words); i++ {
 		w := words[i]
-		switch {
-		case w == "--":
+		switch t := w.text; {
+		case t == "--":
 			operand = true
-		case operand || !strings.HasPrefix(w, "-") || w == "-":
-			if !explicit {
-				scripts, explicit = append(scripts, w), true
+		case operand || !strings.HasPrefix(t, "-") || t == "-":
+			// After -i, BSD sed takes a separate suffix, so any operand may be the script.
+			if !expression && (!took || inPlace) {
+				scripts, took = append(scripts, w), true
 			}
-		case strings.HasPrefix(w, "--in-place"), w == "--file", strings.HasPrefix(w, "--file="):
-			return false
-		case w == "--expression" && i+1 < len(words):
+		case strings.HasPrefix(t, "--in-place"):
+			inPlace = true
+		case t == "--file" && i+1 < len(words):
 			i++
-			scripts, explicit = append(scripts, words[i]), true
-		case strings.HasPrefix(w, "--expression="):
-			scripts, explicit = append(scripts, strings.TrimPrefix(w, "--expression=")), true
-		case strings.HasPrefix(w, "--"):
+			file(words[i])
+		case t == "--expression" && i+1 < len(words):
+			i++
+			script(words[i])
+		case strings.HasPrefix(t, "--file="):
+			w.text = strings.TrimPrefix(t, "--file=")
+			file(w)
+		case strings.HasPrefix(t, "--expression="):
+			w.text = strings.TrimPrefix(t, "--expression=")
+			script(w)
+		case strings.HasPrefix(t, "--"):
 		default:
-			for j := 1; j < len(w); j++ {
-				switch w[j] {
-				case 'i', 'f':
-					return false
-				case 'e', 'l':
-					value := w[j+1:]
-					if value == "" && i+1 < len(words) {
+			for j := 1; j < len(t); j++ {
+				switch t[j] {
+				case 'i':
+					inPlace, j = true, len(t)
+				case 'e', 'f', 'l':
+					value := w
+					value.text = t[j+1:]
+					if value.text == "" && i+1 < len(words) {
 						i++
 						value = words[i]
 					}
-					if w[j] == 'e' {
-						scripts, explicit = append(scripts, value), true
+					switch t[j] {
+					case 'e':
+						script(value)
+					case 'f':
+						file(value)
 					}
-					j = len(w)
+					j = len(t)
 				}
 			}
 		}
 	}
-	return !slices.ContainsFunc(scripts, sedScriptHasEffects)
+	runs = runs || inPlace
+	for _, w := range scripts {
+		if w.unresolved {
+			computed = true
+			continue
+		}
+		reads, writes, r := sedScript(w.text)
+		runs = runs || r
+		for _, name := range reads {
+			paths = append(paths, pathArg{word: shellWord{text: name}, op: opRead, force: true})
+		}
+		for _, name := range writes {
+			paths = append(paths, pathArg{word: shellWord{text: name}, op: opWrite, force: true})
+		}
+	}
+	return paths, runs, computed
 }
 
-// sedScriptHasEffects reports a script that may run a command or touch
-// another file: the e, r, R, w and W commands and the s flags e and w. An
-// unrecognized command counts too.
-func sedScriptHasEffects(s string) bool {
+// sedScript scans one script for the files it reads and writes, and for
+// commands that run a program (e, s///e) or that it does not recognize.
+func sedScript(s string) (reads, writes []string, runs bool) {
 	for i := 0; i < len(s); {
 		c := s[i]
 		switch {
@@ -563,10 +601,23 @@ func sedScriptHasEffects(s string) bool {
 			i = sedSkipTo(s, i, "\n")
 		case (c == 's' || c == 'y') && i+1 < len(s):
 			i = sedSkipDelimited(s, sedSkipDelimited(s, i+2, s[i+1]), s[i+1])
-			for ; c == 's' && i < len(s) && strings.IndexByte(";\n}", s[i]) < 0; i++ {
-				if s[i] == 'e' || s[i] == 'w' {
-					return true
+			for c == 's' && i < len(s) && strings.IndexByte(";\n}", s[i]) < 0 {
+				if s[i] == 'w' {
+					var name string
+					name, i = sedFile(s, i+1)
+					writes = append(writes, name)
+					break
 				}
+				runs = runs || s[i] == 'e'
+				i++
+			}
+		case c == 'r' || c == 'R' || c == 'w' || c == 'W':
+			var name string
+			name, i = sedFile(s, i+1)
+			if c == 'r' || c == 'R' {
+				reads = append(reads, name)
+			} else {
+				writes = append(writes, name)
 			}
 		case c == 'a' || c == 'i' || c == 'c':
 			// Text runs to the end of the line; backslash-newline continues it.
@@ -580,10 +631,16 @@ func sedScriptHasEffects(s string) bool {
 		case strings.IndexByte("pdDnNgGhHxzF=PlLqQ", c) >= 0:
 			i++
 		default:
-			return true
+			return reads, writes, true
 		}
 	}
-	return false
+	return reads, writes, runs
+}
+
+// sedFile returns the file name that runs to the end of the line.
+func sedFile(s string, i int) (string, int) {
+	end := sedSkipTo(s, i, "\n")
+	return strings.TrimLeft(s[i:end], " \t"), end
 }
 
 // sedSkipDelimited returns the index after the next unescaped delim.
@@ -653,7 +710,33 @@ func gitPaths(cmd shellCommand) []pathArg {
 	if dir != nil {
 		out = append(out, pathArg{word: *dir, op: op, force: true})
 	}
-	for _, w := range args {
+	// valued adds the value of option, attached with = or in the next word;
+	// a relative one is under -C.
+	valued := func(words []shellWord, i int, option, op string) {
+		w := words[i]
+		if value, ok := strings.CutPrefix(w.text, option+"="); ok {
+			w.text = value
+		} else if w.text != option || i+1 == len(words) {
+			return
+		} else {
+			w = words[i+1]
+		}
+		if dir != nil && !isRootedWord(w.text) {
+			w.text, w.unresolved = filepath.Join(dir.text, w.text), w.unresolved || dir.unresolved
+		}
+		out = append(out, pathArg{word: w, op: op, force: true})
+	}
+	global := cmd.words[1 : len(cmd.words)-len(args)]
+	for i := range global {
+		valued(global, i, "--git-dir", op)
+		valued(global, i, "--work-tree", op)
+	}
+	for i, w := range args {
+		valued(args, i, "--output", opWrite)
+		valued(args, i, "--output-directory", opWrite)
+		if sub == "format-patch" {
+			valued(args, i, "-o", opWrite)
+		}
 		if !strings.HasPrefix(w.text, "-") && isRootedWord(w.text) {
 			out = append(out, pathArg{word: w, op: op})
 		}
@@ -797,6 +880,11 @@ func classifyCommand(cmd shellCommand) []finding {
 		}
 	case "git":
 		return gitFindings(cmd, add)
+	case "sed":
+		// A computed script can read or write any file.
+		if _, _, computed := sedEffects(cmd.words); computed {
+			return []finding{{rule: RuleBashDynamic, desc: "sed script from a variable or substitution", pattern: cmd.display()}}
+		}
 	case "curl":
 		if curlUploads(words) {
 			return add(RuleBashOutbound, "HTTP upload")
