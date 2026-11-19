@@ -25,13 +25,6 @@ func (s *interactiveSession) runMCPSettings(ctx context.Context, revision *uint6
 	if len(fields) > 1 {
 		op.Key = fields[1]
 	}
-	if len(fields) == 0 && request.Auth != nil {
-		var err error
-		op.Action, err = mcpPrompt(ctx, request.Auth, interaction.AuthPrompt{Title: "MCP services", Menu: mcpMenu()})
-		if err != nil {
-			return result, err
-		}
-	}
 	if !mcpActionKnown(op.Action) {
 		return result, fmt.Errorf("unknown MCP action; use /mcp to choose an action")
 	}
