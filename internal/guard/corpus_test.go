@@ -55,6 +55,10 @@ func TestGuardBashCorpus(t *testing.T) {
 		{`cp a.txt /tmp/b.txt`, RuleOutsideWrite},
 		{`echo x 2>/etc/x`, RuleOutsideWrite},
 		{`echo x &>/etc/x`, RuleOutsideWrite},
+		{`tar -C .. -cf out.tar .ssh`, RuleOutsideWrite},
+		{`zip -r out.zip ..`, RuleOutsideWrite},
+		{`ls ..`, RuleOutsideRead},
+		{`zip -r out.zip .`, allow},
 		// Command consequences.
 		{`rm -rf .`, RuleBashDelete},
 		{`rm -rf .git`, RuleBashDelete},

@@ -153,7 +153,7 @@ func maybePathLike(s string) bool {
 	// Heuristic: contains "/" or "."
 	// or starts with "~". Also recognizes Windows "\" paths and drive letters
 	// without treating a single escape like "\d" as a path.
-	if strings.HasPrefix(s, "~") {
+	if strings.HasPrefix(s, "~") || s == "." || s == ".." {
 		return true
 	}
 	if strings.Contains(s, "/") {

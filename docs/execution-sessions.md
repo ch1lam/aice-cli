@@ -167,7 +167,7 @@ commands are unwrapped and checked as the command they run. A command table
 records which operands are patterns or messages rather than paths (`grep`,
 `rg`, `sed`, `awk`, `jq`, `echo`, `printf`, ...), which are read and which are
 written (`cp`/`mv` destinations, `curl -o`, `sed -i`, `go build -o`, ...).
-Commands outside the table treat path-like operands as writes; `docker`/`podman`
+Commands outside the table treat path-like operands (with `/`, `~`, a dotted name, `.` or `..`) as writes; `docker`/`podman`
 bind-mount sources (`-v SRC:DST`, `--mount source=SRC`) are writes. Unquoted
 backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
 assignments earlier in the same command line (`X=~/.ssh`, `export`,

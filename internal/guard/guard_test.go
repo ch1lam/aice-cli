@@ -171,6 +171,8 @@ func TestMaybePathLike(t *testing.T) {
 		{name: "slash", in: `foo/bar`, want: true},
 		{name: "dotfile", in: `.env`, want: true},
 		{name: "number", in: `3.14`, want: false},
+		{name: "current directory", in: `.`, want: true},
+		{name: "parent directory", in: `..`, want: true},
 		{name: "plain", in: `plain`, want: false},
 	}
 	for _, tt := range tests {
