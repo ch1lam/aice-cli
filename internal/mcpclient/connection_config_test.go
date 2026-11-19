@@ -28,7 +28,7 @@ func TestExactProtocolPinIsPerConnection(t *testing.T) {
 				return strings.Replace(fixtureInit, "2025-11-25", version, 1)
 			}, gets: make(chan string, 1)}
 			c := openFixture(t, f, func(c *Config) { c.ProtocolVersion = version })
-			if c.Info().ProtocolVersion != version || c.StdioPID() != 0 {
+			if c.Info().ProtocolVersion != version || c.child != nil {
 				t.Fatal("incorrect connection identity")
 			}
 			assertRoundTrip(t, c)

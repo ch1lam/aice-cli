@@ -176,15 +176,6 @@ func (c *Client) Info() Info                 { return c.info }
 func (c *Client) ToolGeneration() uint64     { return c.toolGeneration.Load() }
 func (c *Client) ResourceGeneration() uint64 { return c.resourceGeneration.Load() }
 
-// StdioPID identifies this connection's owned child for diagnostics. It is zero
-// for HTTP and does not establish that the child is still alive.
-func (c *Client) StdioPID() int {
-	if c.child == nil {
-		return 0
-	}
-	return c.child.cmd.Process.Pid
-}
-
 func (c *Client) Close() error {
 	c.once.Do(func() {
 		close(c.closed)
@@ -271,15 +262,11 @@ func jsonObject(raw json.RawMessage) bool {
 	return len(raw) > 1 && raw[0] == '{' && json.Valid(raw) && utf8.Valid(raw)
 }
 
-// Call performs exactly one SDK call. It neither discovers a tool nor grants
-// execution authority; the caller must check the current identity and Guard.
-func (c *Client) Call(ctx context.Context, name string, arguments json.RawMessage) (Result, error) {
-	return c.CallChecked(ctx, name, arguments, nil)
-}
-
-// CallChecked additionally revalidates application-owned assumptions after
-// waiting for this connection's queue and immediately before protocol dispatch.
-// check must be local, bounded, side-effect-free and must not reenter this client.
+// CallChecked performs exactly one SDK call. It neither discovers a tool nor
+// grants execution authority; the caller must check the current identity and
+// Guard. A non-nil check revalidates application-owned assumptions after waiting
+// for this connection's queue and immediately before protocol dispatch; it must
+// be local, bounded, side-effect-free and must not reenter this client.
 func (c *Client) CallChecked(ctx context.Context, name string, arguments json.RawMessage, check func(context.Context) error) (Result, error) {
 	result := Result{State: llm.ExecutionNotDispatched}
 	if !validName(name) || len(arguments) > maxArgumentBytes || !jsonObject(arguments) {
@@ -323,14 +310,10 @@ func (c *Client) CallChecked(ctx context.Context, name string, arguments json.Ra
 	return result, nil
 }
 
-// ReadResource explicitly reads one URI from this server; links in its result
-// are not followed. Resource reads require application authorization too.
-func (c *Client) ReadResource(ctx context.Context, uri string) (Result, error) {
-	return c.ReadResourceChecked(ctx, uri, nil)
-}
-
-// ReadResourceChecked revalidates after the serialized connection queue, just
-// like CallChecked. A rejected check never dispatches or replays the read.
+// ReadResourceChecked explicitly reads one URI from this server; links in its
+// result are not followed. Resource reads require application authorization
+// too. A check runs after the serialized connection queue, as in CallChecked;
+// a rejected check never dispatches or replays the read.
 func (c *Client) ReadResourceChecked(ctx context.Context, uri string, check func(context.Context) error) (Result, error) {
 	result := Result{State: llm.ExecutionNotDispatched}
 	if !validName(uri) {

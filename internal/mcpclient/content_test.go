@@ -39,9 +39,9 @@ func TestSDKContentMapping(t *testing.T) {
 			var result Result
 			var err error
 			if tc.read {
-				result, err = c.ReadResource(t.Context(), "fixture://read")
+				result, err = c.ReadResourceChecked(t.Context(), "fixture://read", nil)
 			} else {
-				result, err = c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+				result, err = c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 			}
 			if err != nil || len(result.Content) != 1 || result.State != llm.ExecutionReturned {
 				t.Fatalf("result=%+v err=%v", result, err)
@@ -70,7 +70,7 @@ func TestSDKDecodeFailureIsNotRescuedOrReplayed(t *testing.T) {
 					return fixtureResult(req)
 				}}
 				c := openFixture(t, f, nil)
-				result, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+				result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 				if !errors.Is(err, ErrProtocol) || !result.IsError || result.State != llm.ExecutionReturned || result.Loss == "" ||
 					len(result.Content) != 0 || len(result.StructuredContent) != 0 || f.calls.Load() != 1 {
 					t.Fatalf("result=%+v err=%v calls=%d", result, err, f.calls.Load())
@@ -87,7 +87,7 @@ func TestSDKResourceDecodeFailure(t *testing.T) {
 		}
 		return fixtureResult(req)
 	}}, nil)
-	result, err := c.ReadResource(t.Context(), "fixture://one")
+	result, err := c.ReadResourceChecked(t.Context(), "fixture://one", nil)
 	if !errors.Is(err, ErrProtocol) || !result.IsError || result.State != llm.ExecutionReturned || len(result.Content) != 0 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}

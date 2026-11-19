@@ -69,7 +69,7 @@ func TestUnsupportedCapabilitiesAndInvalidInitialization(t *testing.T) {
 	if _, err := c.Resources(t.Context()); !errors.Is(err, ErrUnsupported) {
 		t.Fatal(err)
 	}
-	if _, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`)); !errors.Is(err, ErrUnsupported) {
+	if _, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil); !errors.Is(err, ErrUnsupported) {
 		t.Fatal(err)
 	}
 	if f.calls.Load() != 0 {

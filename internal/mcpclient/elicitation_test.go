@@ -64,7 +64,7 @@ func TestElicitationAnswersLegacyAndCurrentProtocols(t *testing.T) {
 			}
 			defer c.Close()
 			ctx := context.WithValue(t.Context(), elicitationContextKey{}, "run")
-			result, err := c.Call(ctx, tc.tool, json.RawMessage(`{}`))
+			result, err := c.CallChecked(ctx, tc.tool, json.RawMessage(`{}`), nil)
 			if err != nil || result.State != llm.ExecutionReturned || len(result.Content) != 1 || result.Content[0].Text != tc.want {
 				t.Fatalf("result = %#v, %v", result, err)
 			}

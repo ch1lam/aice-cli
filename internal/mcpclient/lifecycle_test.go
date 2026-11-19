@@ -26,7 +26,7 @@ func TestStdioBlockedWriteIsCancelable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	start := time.Now()
-	result, err := c.Call(t.Context(), "echo", json.RawMessage(`{"large":"`+strings.Repeat("x", 900000)+`"}`))
+	result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{"large":"`+strings.Repeat("x", 900000)+`"}`), nil)
 	if !errors.Is(err, context.DeadlineExceeded) || result.State != llm.ExecutionUnknown || time.Since(start) > 5*time.Second {
 		t.Fatalf("blocked pipe result=%+v err=%v elapsed=%v", result, err, time.Since(start))
 	}
@@ -43,7 +43,7 @@ func TestQueuedCancellationAndConcurrentClose(t *testing.T) {
 	f := &httpFixture{onCall: func(w http.ResponseWriter, r *http.Request, _ fixtureRequest) { close(started); <-r.Context().Done() }}
 	c := openFixture(t, f, nil)
 	done := make(chan Result, 1)
-	go func() { result, _ := c.Call(t.Context(), "echo", json.RawMessage(`{}`)); done <- result }()
+	go func() { result, _ := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil); done <- result }()
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -51,7 +51,7 @@ func TestQueuedCancellationAndConcurrentClose(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	queued, err := c.Call(ctx, "echo", json.RawMessage(`{}`))
+	queued, err := c.CallChecked(ctx, "echo", json.RawMessage(`{}`), nil)
 	if !errors.Is(err, context.Canceled) || queued.State != llm.ExecutionNotDispatched {
 		t.Fatalf("queued: %+v %v", queued, err)
 	}
@@ -121,7 +121,7 @@ func TestHTTPHungCleanupClosesLocalConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Call(t.Context(), "echo", json.RawMessage(`{}`)); err != nil {
+	if _, err := client.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
@@ -152,7 +152,7 @@ func TestHTTPHungCleanupClosesLocalConnection(t *testing.T) {
 	if err := client.Close(); !errors.Is(err, ErrTransport) {
 		t.Fatalf("repeated Close lost the original failure: %v", err)
 	}
-	result, err := client.Call(t.Context(), "echo", json.RawMessage(`{}`))
+	result, err := client.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 	if !errors.Is(err, ErrClosed) || result.State != llm.ExecutionNotDispatched || fixture.calls.Load() != 1 || deletes.Load() != 1 {
 		t.Fatalf("failed close allowed dispatch or repeated cleanup: result=%+v err=%v calls=%d deletes=%d", result, err, fixture.calls.Load(), deletes.Load())
 	}
@@ -171,7 +171,7 @@ func TestHTTPAuthDoesNotCrossRedirectOrLeakErrors(t *testing.T) {
 		_, _ = fmt.Fprint(w, "secret-value")
 	}}
 	c := openFixture(t, f, func(c *Config) { c.HTTP.Headers = map[string]string{"Authorization": "Bearer secret-value"} })
-	_, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+	_, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 	var status *HTTPError
 	if !errors.As(err, &status) || status.StatusCode != 307 || strings.Contains(err.Error(), "secret-value") || leaked.Load() != 0 {
 		t.Fatalf("error=%v destination calls=%d", err, leaked.Load())
@@ -267,7 +267,7 @@ func TestUnsupportedReverseRequestDoesNotHang(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	result, err := c.Call(t.Context(), "echo", json.RawMessage(`{}`))
+	result, err := c.CallChecked(t.Context(), "echo", json.RawMessage(`{}`), nil)
 	if err != nil || result.State != llm.ExecutionReturned {
 		t.Fatalf("call outcome=%s err=%v", result.State, err)
 	}
@@ -289,7 +289,7 @@ func TestEscapedArgumentsStillTrackDispatch(t *testing.T) {
 	f := &httpFixture{onCall: func(w http.ResponseWriter, r *http.Request, _ fixtureRequest) { w.WriteHeader(http.StatusUnauthorized) }}
 	c := openFixture(t, f, nil)
 	args := json.RawMessage(`{"text":"` + strings.Repeat("<", 300000) + `"}`)
-	result, err := c.Call(t.Context(), "echo", args)
+	result, err := c.CallChecked(t.Context(), "echo", args, nil)
 	var failure *HTTPError
 	if result.State != llm.ExecutionUnknown || !errors.As(err, &failure) || failure.StatusCode != 401 || f.calls.Load() != 1 {
 		t.Fatalf("outcome=%s err=%v calls=%d", result.State, err, f.calls.Load())
@@ -314,7 +314,7 @@ func TestHTTPRotatingAuthorizationDoesNotReplayOrRedirect(t *testing.T) {
 			header.Store("Bearer initial-private")
 			c := openFixture(t, f, func(c *Config) { c.HTTP.Authorization = func() string { return header.Load().(string) } })
 			header.Store("Bearer rotated-private")
-			result, err := c.Call(t.Context(), "echo", []byte(`{}`))
+			result, err := c.CallChecked(t.Context(), "echo", []byte(`{}`), nil)
 			var httpError *HTTPError
 			if !errors.As(err, &httpError) || httpError.StatusCode != status || result.State != llm.ExecutionUnknown || f.calls.Load() != 1 || destinationCalls.Load() != 0 {
 				t.Fatal("dynamic credential replayed or crossed redirect", err)
@@ -329,7 +329,7 @@ func TestHTTPRotatingAuthorizationRejectsInvalidHeaderBeforeDispatch(t *testing.
 	f := &httpFixture{}
 	c := openFixture(t, f, func(c *Config) { c.HTTP.Authorization = func() string { return header.Load().(string) } })
 	header.Store("invalid\r\nprivate")
-	result, err := c.Call(t.Context(), "echo", []byte(`{}`))
+	result, err := c.CallChecked(t.Context(), "echo", []byte(`{}`), nil)
 	if err == nil || strings.Contains(err.Error(), "private") || result.State != llm.ExecutionNotDispatched || f.calls.Load() != 0 {
 		t.Fatal("invalid rotating header reached transport", err)
 	}
