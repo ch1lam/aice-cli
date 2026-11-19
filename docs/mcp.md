@@ -147,7 +147,8 @@ The guard panel shows the source, the resolved executable with its arguments
 and directory or the endpoint, and offers **Allow this connection while AICE is
 running**, **Always allow this exact connection** (saved as the `allow`
 decision for the current fingerprint) or **Deny**. Any other reply denies.
-Prompts are serialized, so concurrent discovery asks once per service. Allow
+Prompts are serialized, so concurrent discovery asks once per service; work on
+services that need no approval proceeds while a prompt is open. Allow
 and Deny answers are remembered for that exact fingerprint until the process
 exits; a changed command, endpoint or credential asks again, and a cancelled
 prompt records nothing. A later saved allow, such as `/mcp approve`, clears an

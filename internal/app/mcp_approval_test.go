@@ -72,6 +72,33 @@ func TestMCPOwnerAsksForConnectionOncePerFingerprint(t *testing.T) {
 	}
 }
 
+func TestMCPConnectionPromptDoesNotBlockApprovedServices(t *testing.T) {
+	c := ownerTestApprove(t, ownerTestConfig(t, 2), "user:service1", config.MCPConnectionAllow)
+	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), false, func(context.Context, mcpclient.Config) (mcpOwnedConnection, error) {
+		return &mcpOwnedFixture{}, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	asked, answer := make(chan struct{}), make(chan struct{})
+	ctx := withMCPConnectionApprover(t.Context(), func(context.Context, config.MCPServer) (bool, error) {
+		close(asked)
+		<-answer
+		return true, nil
+	})
+	pending := make(chan error, 1)
+	go func() { _, err := o.Connections()["user:service0"].Tools(ctx); pending <- err }()
+	<-asked
+	if _, err := o.Connections()["user:service1"].Tools(ctx); err != nil {
+		t.Fatal("approved service waited for another service's prompt:", err)
+	}
+	close(answer)
+	if err := <-pending; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMCPConnectionPromptOffersOnlyExplicitAllows(t *testing.T) {
 	c := ownerTestConfig(t, 1)
 	c.Paths.GlobalTrust, c.Paths.BinDir = filepath.Join(t.TempDir(), "trust.json"), t.TempDir()
