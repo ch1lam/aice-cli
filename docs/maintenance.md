@@ -146,6 +146,17 @@ procedure above.
 
 ## Known discrepancies
 
+### Request rebuild in tool-catalog runs
+
+The Loop fits output tokens to a full context estimate, ignoring earlier
+provider usage, when result views changed the projection or the run has a tool
+catalog. [`RebuildRequest`](../internal/session/run_config.go) recovers the
+first condition from the Session, but no record says a catalog was present.
+In an MCP-enabled run whose context has no bounded result view, a request near
+the context window can therefore rebuild with a different output limit.
+Recording the catalog flag in `run_config` would close the gap; it changes the
+record content and is undecided.
+
 ### Self-update OpenPGP dependency warning
 
 `github.com/creativeprojects/go-selfupdate` imports the unmaintained
