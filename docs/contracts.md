@@ -266,6 +266,16 @@ retain the short content summary; Session keeps the additive metadata.
   error text, and `IsError=true`. These results follow the same recording,
   tool-end event, and next-model-request path as successful results. A tool
   argument error alone does not terminate the run; the model can correct it.
+- `WithToolResultNotices` installs an optional caller-owned source of notices
+  for tool results. The Loop calls it once for each result that enters model
+  context, after the outcome is final (executed, failed, Guard-denied,
+  declined or not dispatched) and before the result is retained, recorded or
+  displayed. Each non-empty notice is prepended as a text part, so Session
+  history, `Result.ModelRounds`, events and the next request carry the same
+  message, and bounded result views, which keep leading content in order,
+  retain it. Notices cannot change the tool's own content, `IsError` or call
+  pairing. Results recorded outside model context (calls left unexecuted by a
+  failed model request) receive none. The source must return promptly.
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.
