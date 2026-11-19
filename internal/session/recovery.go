@@ -25,11 +25,10 @@ func (s *Store) RecoverInterrupted(ctx context.Context) error {
 		return err
 	}
 	for _, call := range sequence.pending {
-		const unknownOutcome = "Execution outcome unknown; this tool may have produced effects. " +
-			"Inspect the current state before retrying."
+		// No text of its own: the model projection of the unknown state
+		// (llm.ToolResultModelContent) carries the uncertainty notice once.
 		message, err := llm.NewToolResultMessage(llm.ToolResult{
 			CallID: call.ID, Name: call.Name, IsError: true,
-			Content: []llm.ContentPart{llm.NewTextContent(unknownOutcome).Part()},
 			Details: &llm.ToolResultDetails{State: llm.ExecutionUnknown},
 		})
 		if err != nil {

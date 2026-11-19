@@ -239,7 +239,7 @@ func TestInteractiveSessionKeepsUncertainDiskPrefixAfterToolResultSaveFails(t *t
 		t.Fatalf("recovered history = %#v", history)
 	}
 	recovered, ok := history[2].(llm.ToolResultMessage)
-	if !ok || !recovered.IsError || !strings.Contains(strings.ToLower(recovered.Content[0].Text), "unknown") {
+	if !ok || !recovered.IsError || recovered.Details == nil || recovered.Details.State != llm.ExecutionUnknown {
 		t.Fatalf("recovery must report uncertain outcome: %#v", history[2])
 	}
 	if err := reopened.Close(); err != nil {

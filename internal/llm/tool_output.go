@@ -230,6 +230,10 @@ func (d *ToolResultDetails) Validate() error {
 	return nil
 }
 
+// UnknownOutcomeNotice is the model projection's notice for an unknown
+// execution state. A display may show it for a result that has no text.
+const UnknownOutcomeNotice = "Execution outcome unknown; the tool may have produced effects. Inspect current state before deciding whether to retry. Cancellation does not undo external effects."
+
 // ToolResultModelContent projects a result without mutating source history.
 // Adapters keep the original block order and append JSON/status as text when
 // their protocol has no equivalent structured result field. Binding identity
@@ -249,7 +253,7 @@ func ToolResultModelContent(content []ContentPart, details *ToolResultDetails, i
 	case ExecutionNotDispatched:
 		projected = append(projected, NewTextContent("Execution was not dispatched.").Part())
 	case ExecutionUnknown:
-		projected = append(projected, NewTextContent("Execution outcome unknown; the tool may have produced effects. Inspect current state before deciding whether to retry. Cancellation does not undo external effects.").Part())
+		projected = append(projected, NewTextContent(UnknownOutcomeNotice).Part())
 	}
 	if details.Loss != "" {
 		projected = append(projected, NewTextContent("Result data was not saved and cannot be recovered: "+details.Loss).Part())

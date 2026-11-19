@@ -866,8 +866,11 @@ Session, and the format rejection alone does not establish whether its remaining
 records are intact.
 
 Before execution resumes, AICE appends an error result for each outstanding tool
-call on the active branch. The result says the outcome is unknown and the tool
-may have produced effects; inspect the current state before retrying. Existing
+call on the active branch. The result has no text of its own and records the
+`unknown` execution state; its model view carries the single notice that the
+tool may have produced effects and the current state should be inspected before
+retrying ([structured tool outcomes](contracts.md#structured-tool-outcomes)).
+The transcript shows the same notice as the call's output. Existing
 results remain unchanged, recovery is idempotent, and AICE never replays the
 interrupted call itself. Tree inspection does not append recovery messages.
 

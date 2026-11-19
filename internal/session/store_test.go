@@ -309,8 +309,16 @@ func TestStoreRecoveryOnlyCompletesMissingResults(t *testing.T) {
 		t.Fatal("existing results replaced")
 	}
 	recovered := snapshot.Messages[3].Message.(llm.ToolResultMessage)
-	if recovered.ToolCallID != "call-2" || !recovered.IsError || !strings.Contains(recovered.Content[0].Text, "may have produced effects") {
+	if recovered.ToolCallID != "call-2" || !recovered.IsError {
 		t.Fatalf("recovery=%#v", recovered)
+	}
+	// The model sees the uncertainty notice exactly once.
+	var projected strings.Builder
+	for _, part := range llm.ToolResultModelContent(recovered.Content, recovered.Details, recovered.IsError) {
+		projected.WriteString(part.Text)
+	}
+	if got := strings.Count(projected.String(), "may have produced effects"); got != 1 {
+		t.Fatalf("model projection states the unknown outcome %d times: %q", got, projected.String())
 	}
 	after := fileBytes(t, path)
 	if err := reopened.RecoverInterrupted(t.Context()); err != nil {
