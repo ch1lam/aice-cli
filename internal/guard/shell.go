@@ -16,6 +16,8 @@ import (
 type shellWord struct {
 	text       string
 	unresolved bool
+	// substituted reports a command or process substitution in the word.
+	substituted bool
 }
 
 // shellCommand is one simple command after wrapper unwrapping.
@@ -78,6 +80,10 @@ type bashAnalysis struct {
 	findings []finding
 	// commands lists every command as rules see it, launchers included.
 	commands [][]string
+	// hidden reports effects the command words do not show: code a command
+	// may run through an environment variable or git option, or a path
+	// computed by a command substitution. Such a line is never read-only.
+	hidden bool
 }
 
 // maxShellDepth bounds nested `bash -c`, eval and function call parsing.
@@ -92,7 +98,7 @@ func (g *Guard) analyzeBash(command string) bashAnalysis {
 		cdpath: os.Getenv("CDPATH") != "",
 	}
 	a.script(command, []string{a.start}, 0)
-	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands}
+	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands, hidden: a.hidden}
 }
 
 // bashAnalyzer follows the shell's working directory as a set of candidate
@@ -119,6 +125,7 @@ type bashAnalyzer struct {
 	// cdpath reports that CDPATH may be set, so cd to a bare relative name
 	// may land elsewhere.
 	cdpath bool
+	hidden bool
 }
 
 // script checks one script from dirs and returns where it may leave the
@@ -170,6 +177,7 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 	case *syntax.CallExpr:
 		for _, assign := range c.Assigns {
 			a.substitutions(assign, dirs, depth)
+			a.environment(assign)
 		}
 		if len(c.Args) == 0 {
 			for _, assign := range c.Assigns {
@@ -186,9 +194,11 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 	case *syntax.DeclClause:
 		for _, assign := range c.Args {
 			a.substitutions(assign, dirs, depth)
-			if !assign.Naked {
-				a.assign(assign)
+			if assign.Naked && assign.Name != nil {
+				continue
 			}
+			a.environment(assign)
+			a.assign(assign)
 		}
 	case *syntax.Block:
 		return a.stmts(c.Stmts, dirs, depth)
@@ -334,6 +344,16 @@ func (a *bashAnalyzer) assign(assign *syntax.Assign) {
 	a.vars[assign.Name.Value] = value.text
 }
 
+// environment marks an assignment that may change which code later
+// commands run, such as PATH, LD_PRELOAD or GIT_CONFIG_COUNT.
+func (a *bashAnalyzer) environment(assign *syntax.Assign) {
+	if assign.Name == nil {
+		a.hidden = true
+		return
+	}
+	a.hidden = a.hidden || !inertVariable(assign.Name.Value, a.literalWord(assign.Value).text)
+}
+
 // redirect records file effects of redirections. Descriptor duplication and
 // here-documents carry no path.
 func (a *bashAnalyzer) redirect(r *syntax.Redirect, dirs []string, depth int) {
@@ -386,6 +406,13 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) (ok, all []string) {
 		if !ok {
 			break
 		}
+		if cmd.name() == "env" {
+			for _, w := range cmd.words[1 : len(cmd.words)-len(inner.words)] {
+				if name, value, ok := strings.Cut(w.text, "="); ok && !strings.HasPrefix(name, "-") {
+					a.hidden = a.hidden || !inertVariable(name, value)
+				}
+			}
+		}
 		if name := cmd.name(); name != "command" && name != "builtin" {
 			inShell = false
 		}
@@ -419,6 +446,7 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) (ok, all []string) {
 		a.simple(nested, depth)
 	}
 	a.findings = append(a.findings, classifyCommand(cmd)...)
+	a.hidden = a.hidden || gitRunsConfiguredCode(cmd)
 	for _, arg := range commandPaths(cmd, len(cmd.dirs) != 1 || cmd.dirs[0] != a.start) {
 		a.path(arg.word, arg.op, cmd.dirs, arg.force)
 	}
@@ -564,6 +592,7 @@ func resolveBase(dir, start, workspace string) string {
 // path records one candidate from each directory it may be relative to.
 // Non-forced words must look like paths.
 func (a *bashAnalyzer) path(w shellWord, op string, dirs []string, force bool) {
+	a.hidden = a.hidden || w.substituted
 	if w.text == "" || !force && !maybePathLike(w.text) || neutralDevice(w.text) {
 		return
 	}
@@ -683,7 +712,15 @@ func expandWord(w *syntax.Word, vars map[string]string) shellWord {
 			unresolved = true
 		}
 	}
-	return shellWord{text: b.String(), unresolved: unresolved}
+	substituted := false
+	syntax.Walk(w, func(n syntax.Node) bool {
+		switch n.(type) {
+		case *syntax.CmdSubst, *syntax.ProcSubst:
+			substituted = true
+		}
+		return !substituted
+	})
+	return shellWord{text: b.String(), unresolved: unresolved, substituted: substituted}
 }
 
 // unescape removes the backslashes of an unquoted literal.

@@ -236,10 +236,10 @@ var readSpec = argSpec{op: opRead}
 
 var argSpecs = map[string]argSpec{
 	"cat": readSpec, "less": readSpec, "more": readSpec, "wc": readSpec, "ls": {op: opRead, valueFlags: "IwT"},
-	"stat": {op: opRead, valueFlags: "cf"}, "file": readSpec, "tree": {op: opRead, valueFlags: "LIP"}, "du": {op: opRead, valueFlags: "dB"},
-	"df": readSpec, "nl": readSpec, "od": readSpec, "xxd": readSpec, "hexdump": readSpec, "strings": readSpec,
+	"stat": {op: opRead, valueFlags: "cf"}, "file": readSpec, "tree": {op: opRead, valueFlags: "LIPo", flagPaths: map[string]string{"-o": opWrite}}, "du": {op: opRead, valueFlags: "dB"},
+	"df": readSpec, "nl": readSpec, "od": readSpec, "xxd": {op: opRead, dstLast: true, valueFlags: "cglosn"}, "hexdump": readSpec, "strings": readSpec,
 	"md5": readSpec, "md5sum": readSpec, "shasum": {op: opRead, valueFlags: "a"}, "sha256sum": readSpec,
-	"cmp": readSpec, "diff": {op: opRead, valueFlags: "UCLIx"}, "uniq": readSpec, "paste": {op: opRead, valueFlags: "d"},
+	"cmp": readSpec, "diff": {op: opRead, valueFlags: "UCLIx"}, "uniq": {op: opRead, dstLast: true, valueFlags: "fsw", longValues: []string{"--skip-fields", "--skip-chars", "--check-chars"}}, "paste": {op: opRead, valueFlags: "d"},
 	"column": {op: opRead, valueFlags: "st"}, "fold": {op: opRead, valueFlags: "w"}, "fmt": readSpec, "rev": readSpec, "tac": readSpec,
 	"realpath": readSpec, "readlink": readSpec, "cd": readSpec, "pushd": readSpec, "source": readSpec, ".": readSpec, "bat": readSpec,
 	"head": {op: opRead, valueFlags: "nc"}, "tail": {op: opRead, valueFlags: "nc"},
@@ -351,13 +351,13 @@ func commandPaths(cmd shellCommand, movedBase bool) []pathArg {
 			value, attached = words[i].text, true
 			w = words[i]
 		} else if attached {
-			w = shellWord{text: value, unresolved: w.unresolved}
+			w.text = value
 		}
 		switch {
 		case isPath && attached:
-			out = append(out, pathArg{word: shellWord{text: value, unresolved: w.unresolved}, op: op, force: true})
+			out = append(out, pathArg{word: w, op: op, force: true})
 		case !known && attached && isRootedWord(value):
-			out = append(out, pathArg{word: shellWord{text: value, unresolved: w.unresolved}, op: spec.op})
+			out = append(out, pathArg{word: w, op: spec.op})
 		}
 	}
 	if spec.noPaths {
@@ -437,12 +437,16 @@ var gitReadOnly = map[string]bool{
 }
 
 // readOnlyCommand reports whether rule words name a read-only command.
-// find with an action, sed -i and branch changes are not.
+// Options and scripts that run programs or write files are not: find
+// actions, sed -i and sed e/r/w commands, rg --pre, printf -v, git grep -O,
+// git --output and branch changes.
 func readOnlyCommand(words []string) bool {
 	name := words[0]
 	switch name {
 	case "git":
-		if len(words) < 2 {
+		if len(words) < 2 || slices.ContainsFunc(words[2:], func(w string) bool {
+			return strings.HasPrefix(w, "--output") || strings.HasPrefix(w, "--open-files-in-pager") || words[1] == "grep" && strings.HasPrefix(w, "-O")
+		}) {
 			return false
 		}
 		if words[1] == "branch" {
@@ -456,9 +460,147 @@ func readOnlyCommand(words []string) bool {
 			return w == "-delete" || strings.HasPrefix(w, "-exec") || strings.HasPrefix(w, "-ok") || strings.HasPrefix(w, "-fprint") || w == "-fls"
 		})
 	case "sed":
-		return !hasShortFlag(words[1:], "i") && !hasLongOption(words, "in-place")
+		return sedReadOnly(words)
+	case "rg":
+		return !slices.ContainsFunc(words, func(w string) bool { return strings.HasPrefix(w, "--pre") })
+	case "printf":
+		return len(words) < 2 || !strings.HasPrefix(words[1], "-v")
 	}
 	return readOnlyCommands[name]
+}
+
+// gitRunsConfiguredCode reports git global options that choose the
+// configuration or programs git runs, such as -c core.fsmonitor=CMD or
+// --git-dir of another repository.
+func gitRunsConfiguredCode(cmd shellCommand) bool {
+	if cmd.name() != "git" {
+		return false
+	}
+	_, _, args := gitInvocation(cmd)
+	return slices.ContainsFunc(cmd.words[1:len(cmd.words)-len(args)], func(w shellWord) bool {
+		return w.text == "-c" || slices.ContainsFunc([]string{"--config-env", "--exec-path", "--git-dir", "--work-tree"}, func(o string) bool {
+			return strings.HasPrefix(w.text, o)
+		})
+	})
+}
+
+// inertVariable reports assignments that cannot change which code a
+// command runs: lower-case shell variables, locale and display settings,
+// and a pager of cat. Upper-case names such as PATH, LD_PRELOAD, DYLD_*,
+// GIT_* or LESSOPEN may.
+func inertVariable(name, value string) bool {
+	switch {
+	case name == "PAGER" || name == "GIT_PAGER":
+		return value == "" || value == "cat"
+	case name == "LANG", name == "LANGUAGE", name == "TZ", name == "NO_COLOR", name == "TERM", name == "COLUMNS", name == "LINES", strings.HasPrefix(name, "LC_"):
+		return true
+	}
+	return strings.ToLower(name) == name
+}
+
+// sedReadOnly reports sed invocations whose scripts neither edit in place,
+// run commands nor read or write other files. Script files cannot be
+// inspected.
+func sedReadOnly(words []string) bool {
+	var scripts []string
+	explicit, operand := false, false
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "--":
+			operand = true
+		case operand || !strings.HasPrefix(w, "-") || w == "-":
+			if !explicit {
+				scripts, explicit = append(scripts, w), true
+			}
+		case strings.HasPrefix(w, "--in-place"), w == "--file", strings.HasPrefix(w, "--file="):
+			return false
+		case w == "--expression" && i+1 < len(words):
+			i++
+			scripts, explicit = append(scripts, words[i]), true
+		case strings.HasPrefix(w, "--expression="):
+			scripts, explicit = append(scripts, strings.TrimPrefix(w, "--expression=")), true
+		case strings.HasPrefix(w, "--"):
+		default:
+			for j := 1; j < len(w); j++ {
+				switch w[j] {
+				case 'i', 'f':
+					return false
+				case 'e', 'l':
+					value := w[j+1:]
+					if value == "" && i+1 < len(words) {
+						i++
+						value = words[i]
+					}
+					if w[j] == 'e' {
+						scripts, explicit = append(scripts, value), true
+					}
+					j = len(w)
+				}
+			}
+		}
+	}
+	return !slices.ContainsFunc(scripts, sedScriptHasEffects)
+}
+
+// sedScriptHasEffects reports a script that may run a command or touch
+// another file: the e, r, R, w and W commands and the s flags e and w. An
+// unrecognized command counts too.
+func sedScriptHasEffects(s string) bool {
+	for i := 0; i < len(s); {
+		c := s[i]
+		switch {
+		case strings.IndexByte(" \t\n;{}!,$~+0123456789", c) >= 0:
+			i++
+		case c == '/':
+			i = sedSkipDelimited(s, i+1, '/')
+		case c == '\\' && i+1 < len(s):
+			i = sedSkipDelimited(s, i+2, s[i+1])
+		case c == '#':
+			i = sedSkipTo(s, i, "\n")
+		case (c == 's' || c == 'y') && i+1 < len(s):
+			i = sedSkipDelimited(s, sedSkipDelimited(s, i+2, s[i+1]), s[i+1])
+			for ; c == 's' && i < len(s) && strings.IndexByte(";\n}", s[i]) < 0; i++ {
+				if s[i] == 'e' || s[i] == 'w' {
+					return true
+				}
+			}
+		case c == 'a' || c == 'i' || c == 'c':
+			// Text runs to the end of the line; backslash-newline continues it.
+			for i++; i < len(s) && s[i] != '\n'; i++ {
+				if s[i] == '\\' {
+					i++
+				}
+			}
+		case c == ':' || c == 'b' || c == 't' || c == 'T':
+			i = sedSkipTo(s, i+1, ";\n")
+		case strings.IndexByte("pdDnNgGhHxzF=PlLqQ", c) >= 0:
+			i++
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+// sedSkipDelimited returns the index after the next unescaped delim.
+func sedSkipDelimited(s string, i int, delim byte) int {
+	for ; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case delim:
+			return i + 1
+		}
+	}
+	return len(s)
+}
+
+func sedSkipTo(s string, i int, stops string) int {
+	for i < len(s) && strings.IndexByte(stops, s[i]) < 0 {
+		i++
+	}
+	return i
 }
 
 // isLauncher reports commands that only run another command; the inner

@@ -383,6 +383,17 @@ In auto mode every call is routed by the default-mode result:
 | Read-only bash (`cat`, `rg`, `git status`, … with no writes or findings), bash covered by explicit non-broad allow rules or an exact Session grant, read tools, workspace `write`/`edit` outside `.git/`, MCP calls an explicit permission or Session grant allows | allow without review |
 | Any other ask (`path.outside.*`, `bash.delete`/`loseWork`/`outbound`/`dynamic`/`permissions`, `mcp.tool`), any other bash, `web_fetch`, `web_search`, writes under `.git/` | classifier |
 
+A command line is not read-only, and allow rules do not cover it, when it may
+run code or touch files its words do not show: an assignment to an upper-case
+variable other than locale, `TZ`, `NO_COLOR`, `TERM`, `COLUMNS`, `LINES` or a
+`cat` pager (`LD_PRELOAD=`, `DYLD_*`, `PATH`, `GIT_*`, including `env NAME=` and
+`export`), git `-c`, `--config-env`, `--exec-path`, `--git-dir` or
+`--work-tree`, or a path built from a command substitution (`cat $(…)`).
+`sed` with `-i`, `-f` or an `e`, `r`, `R`, `w` or `W` command or `s` flag,
+`rg --pre`/`--pre-glob`, `printf -v`, `git grep -O` and git `--output` are not
+read-only either; the output operands of `uniq` and `xxd` and `tree -o` are
+writes.
+
 Broad allow rules that permit arbitrary code (`bash(python *)`, `bash(npm run *)`,
 `bash(make *)`, `bash(git *)` and similar) do not count as coverage in auto
 mode; those commands go to the classifier. `@file` attachments are never

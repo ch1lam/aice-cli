@@ -271,7 +271,7 @@ func (g *Guard) checkActions(ctx context.Context, call llm.ToolCall, analysis ba
 
 // bashHints classifies an allowed bash command for auto mode routing.
 func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered bool) {
-	readOnly = len(analysis.findings) == 0 && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
+	readOnly = len(analysis.findings) == 0 && !analysis.hidden && !slices.ContainsFunc(analysis.actions, func(a Action) bool { return a.Op == opWrite })
 	// Writes into .git (hooks, config) run code later, so they always need review.
 	gitDir := filepath.Join(g.physicalWorkspace, ".git")
 	if slices.ContainsFunc(analysis.actions, func(a Action) bool {
@@ -291,7 +291,7 @@ func (g *Guard) bashHints(cmd string, analysis bashAnalysis) (readOnly, covered 
 			allCovered = false
 		}
 	}
-	return readOnly, covered || allCovered && len(analysis.commands) > 0
+	return readOnly, covered || allCovered && !analysis.hidden && len(analysis.commands) > 0
 }
 
 // denyPath applies hard denials to the spelled and the physical path.
