@@ -100,8 +100,12 @@ func TestMCPSettingsReconnectRevocationAndExit(t *testing.T) {
 		if _, err := s.RunSettingsAction(ctx, read.Revision, interaction.CommandRequest{Name: "mcp", Arguments: "status"}); !errors.Is(err, interaction.ErrSettingsStale) {
 			t.Fatal("accepted stale panel", err)
 		}
+		resources := s.lifecycle.resourceRevision
 		if _, err := act("connect"); err != nil {
 			t.Fatal(err)
+		}
+		if s.lifecycle.resourceRevision != resources {
+			t.Fatal("a connection test invalidated held runs and /btw threads")
 		}
 		_, oldRun, err := s.mcp.bindRun(ctx, llm.Model{})
 		if err != nil {
