@@ -98,6 +98,9 @@ gate. File policies and path access do not apply to it.
 `tool_result_read` is a known tool that reads retained tool results on the
 active ancestry (see [MCP readback](mcp.md#model-views-and-result-readback));
 Check allows it without path policy.
+`task_output` and `task_kill` are known tools that act only on
+[background tasks](#background-tasks) this process started for the current
+Session, whose bash command the gate already checked; Check allows them.
 `tool_search`, `mcp_resource_list` and `mcp_server_info` are known discovery tools.
 Their application catalog uses only explicitly supplied service bindings and
 checks current eligibility. The lazy connection owner requires a separate saved
@@ -545,6 +548,41 @@ credentials/prompt content out of logs.
   a Job Object; optional WSL uses a Linux process group and stdin lifetime channel,
   with bounded launcher cleanup, without shutting down the distribution. See
   [runtime helpers](installation.md#runtime-helpers).
+
+### Background tasks
+
+`bash` with `run_in_background` starts the command as a background task and
+returns its ID (`bg-` and six random hex digits) and output file at once.
+The Guard checks the command exactly like a foreground one, so rules and
+`--yolo` behave the same. A background task takes no `timeout`; it ends when
+it exits, `task_kill` stops it, it runs for 10 hours, its output exceeds
+64 MiB, the Session changes (`/new` or resume) or AICE exits. Cancelling the
+run or tool call that started it does not stop it. Stopping sends SIGTERM to
+the process group and SIGKILL after 2 seconds; Windows terminates the Job
+Object. At most 8 tasks run at once and 16 are retained; starting more fails
+instead of stopping an existing task.
+
+stdout and stderr go to one file in a private directory created per process
+(`aice-tasks-*` under the temporary directory, mode 0700) and removed on exit.
+The directory is a Guard read-only root, so `read` and `grep` inspect full
+output without an ask, also under `--print`. `task_output` takes 1–8 IDs,
+optionally waits up to 600 seconds for all of them to finish, and reports
+each status with the last 4 KiB of output. `task_kill` reports how the task
+ended; stopping a finished task is not an error.
+
+A finished task is reported once. Unless `task_output` or `task_kill` already
+reported it, the next tool result of the run starts with a notice carrying its
+status and last 2 KiB of output, through
+[tool result notices](contracts.md#agent-loop). A task that finishes after the
+model's final answer is reported with the first tool result of a later run of
+the same Session; AICE does not start a run on its own. The interactive TUI
+shows the running count beside the model name.
+
+Tasks are not recorded in Session history: calls and results are, and a
+resumed Session refers to IDs that no longer exist. Background tasks need
+native Bash; with WSL `bash` does not offer `run_in_background` and the task
+tools are absent. If AICE is killed outright, Unix process groups of running
+tasks survive; Windows Job Objects end them.
 
 ### Directory listings
 

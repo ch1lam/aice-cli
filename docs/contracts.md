@@ -275,7 +275,9 @@ retain the short content summary; Session keeps the additive metadata.
   message, and bounded result views, which keep leading content in order,
   retain it. Notices cannot change the tool's own content, `IsError` or call
   pairing. Results recorded outside model context (calls left unexecuted by a
-  failed model request) receive none. The source must return promptly.
+  failed model request) receive none. The source must return promptly; the
+  application uses it for [background task](execution-sessions.md#background-tasks)
+  completions.
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.
@@ -473,6 +475,12 @@ The runtime boundary preserves these ownership rules:
 - App owns each BTW thread's frozen context and private history. TUI controllers
   route events by source and cancel/join all thread runs on shutdown. Side
   execution never mutates main history, usage, settings or its mailbox.
+- `tool.Tasks`, owned by the run environment, owns background task processes,
+  output files and one supervising goroutine per task; tasks outlive the tool
+  call and run that started them. Session reset stops and joins the current
+  tasks; environment close stops and joins all of them. Completions reach the
+  Loop only through tool result notices, and the TUI polls the running count
+  through `BackgroundTaskCounter` only while tasks run.
 - `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
   cancellable exchanges. Replies are bound to the current request and validated;
   cancellation wins racing submissions. Q&A publishes only a complete explicit
