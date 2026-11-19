@@ -619,7 +619,7 @@ func (s *stream) startItem(
 		}}, nil
 	case responses.ResponseFunctionToolCall:
 		state.Type = llm.ContentTypeToolCall
-		state.Arguments = value.Arguments
+		state.Arguments.WriteString(value.Arguments)
 		state.ToolCall = llm.ToolCall{
 			ID:        value.CallID,
 			Name:      value.Name,
@@ -686,7 +686,7 @@ func (s *stream) toolCallDelta(
 			outputIndex,
 		)
 	}
-	state.Arguments += delta
+	state.Arguments.WriteString(delta)
 	return []llm.Event{{
 		Type:         llm.EventTypeToolCallDelta,
 		ContentIndex: state.Index,
@@ -707,21 +707,24 @@ func (s *stream) toolCallArgumentsDone(
 			outputIndex,
 		)
 	}
-	var events []llm.Event
-	if strings.HasPrefix(arguments, state.Arguments) {
-		delta := strings.TrimPrefix(arguments, state.Arguments)
-		if delta != "" {
-			events = append(events, llm.Event{
-				Type:         llm.EventTypeToolCallDelta,
-				ContentIndex: state.Index,
-				ToolCallDelta: &llm.ToolCallDelta{
-					ArgumentsDelta: delta,
-				},
-			})
-		}
+	delta, extends := strings.CutPrefix(arguments, state.Arguments.String())
+	if !extends {
+		// The final arguments replace what was streamed; no delta can express it.
+		state.Arguments.Reset()
+		state.Arguments.WriteString(arguments)
+		return nil, nil
 	}
-	state.Arguments = arguments
-	return events, nil
+	if delta == "" {
+		return nil, nil
+	}
+	state.Arguments.WriteString(delta)
+	return []llm.Event{{
+		Type:         llm.EventTypeToolCallDelta,
+		ContentIndex: state.Index,
+		ToolCallDelta: &llm.ToolCallDelta{
+			ArgumentsDelta: delta,
+		},
+	}}, nil
 }
 
 func (s *stream) finishItem(
@@ -799,7 +802,7 @@ func (s *stream) finishItem(
 		}
 		arguments := value.Arguments
 		if arguments == "" {
-			arguments = state.Arguments
+			arguments = state.Arguments.String()
 		}
 		state.ToolCall.ID = value.CallID
 		state.ToolCall.Name = value.Name
