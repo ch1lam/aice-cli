@@ -7,7 +7,6 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func (g *guardAdapter) checkGrepPaths(
@@ -28,7 +27,7 @@ func (g *guardAdapter) checkGrepPaths(
 			return result, nil, err
 		}
 	}
-	workspace, err := tool.NewWorkspace(g.inner.Workspace())
+	workspace, err := g.toolWorkspace()
 	if err != nil {
 		return result, nil, err
 	}

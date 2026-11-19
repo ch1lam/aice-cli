@@ -40,9 +40,12 @@ type Guard struct {
 	// checks compare physical paths.
 	physicalWorkspace string
 	// bashDir is the directory bash starts in, spelled like its $PWD.
-	bashDir         string
-	readOnlyRoots   []string
+	bashDir       string
+	readOnlyRoots []string
+	// credentialFiles and credentialDirs are denied; built-in home stores
+	// are joined to the home directory once.
 	credentialFiles []string
+	credentialDirs  []string
 	controlFiles    []string
 	// rules are explicit settings rules; AddRule appends under mu.
 	rules ruleSet
@@ -75,6 +78,7 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	if err != nil {
 		return nil, err
 	}
+	credentialFiles, credentialDirs := credentialPaths(cfg.CredentialFiles)
 	bashDir := workspace
 	if cfg.BashDirectory != "" {
 		bashDir = filepath.Clean(cfg.BashDirectory)
@@ -85,7 +89,8 @@ func New(workspace string, cfg Config) (*Guard, error) {
 		physicalWorkspace:   physicalWorkspace(workspace),
 		bashDir:             bashDir,
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
-		credentialFiles:     cleanPaths(cfg.CredentialFiles),
+		credentialFiles:     credentialFiles,
+		credentialDirs:      credentialDirs,
 		controlFiles:        cleanPaths(cfg.ControlFiles),
 		sessionAllowedTools: map[string]bool{},
 		sessionCommands:     map[string]bool{},
