@@ -172,7 +172,10 @@ bind-mount sources (`-v SRC:DST`, `--mount source=SRC`) are writes. Unquoted
 backslash escapes are removed (`\rm` is `rm`). `$HOME`, `$TMPDIR` and literal
 assignments earlier in the same command line (`X=~/.ssh`, `export`,
 `declare`, `local`, `readonly`) are substituted; other expansions are
-unresolved. `for` loop items are checked as reads. A literal `eval` script is
+unresolved. A variable that `if`/`case` branches, `&&`/`||` or loops may leave
+with different values keeps all of them, and a command is checked once for
+each; more than 16 combinations, or a loop whose values keep changing, asks
+`bash.dynamic`. `for` loop items are checked as reads. A literal `eval` script is
 checked like `bash -c`.
 
 Relative paths follow the working directory as bash does, starting from
@@ -215,7 +218,7 @@ severe rule:
 | `bash.privileged` | `sudo`, `su`, `doas`, `pkexec`, `run0`, `docker`/`podman` `run`/`create --privileged` |
 | `bash.disk` | `dd of=/dev/...`, `mkfs*`, `wipefs`, `blkdiscard`, `fdisk`/`sfdisk`/`cfdisk`, `parted`/`sgdisk`, `diskutil erase*`/`partition*` |
 | `bash.fetchExec` | downloaded content piped or substituted into a shell or interpreter, such as `curl URL \| sh` or `bash <(curl URL)` |
-| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c`, `trap` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, git aliases (`git config alias.*`, `git -c alias.*`) |
+| `bash.dynamic` | a command name from a variable or substitution (`$CMD push`), `eval`, `bash -c`, `trap` or `sed` of a computed script, scripts or functions nested too deeply to inspect, a relative path from an unknown working directory, variables with too many possible values or that a loop keeps changing, git aliases (`git config alias.*`, `git -c alias.*`) |
 | `bash.permissions` | `chmod -R 777` and equivalents, `chown -R`, `chgrp -R` |
 | `bash.delete` | `shred`; a recursive delete whose target is unresolved, a glob at the workspace root, the workspace itself, `.git` or below, outside the workspace, or supplied by `xargs`/`find -exec`; `find -delete` at the workspace root without a test such as `-name` |
 | `bash.loseWork` | `git reset --hard`, `git clean -f`, `git checkout .`/`git restore .`, `git stash drop`/`clear`, `git branch -D` |

@@ -52,6 +52,7 @@ func TestGuardBashHints(t *testing.T) {
 		{"LC_ALL=C grep -n x a.txt", true, true},
 		{"GIT_PAGER=cat git log -1", true, true},
 		{"f=go.mod; cat $f", true, true},
+		{"if test -f a; then f=a; else f=go.mod; fi; cat $f", true, true},
 		{"uniq a.txt b.txt", false, true},
 		{"tree -o out.txt", false, true},
 		{"less -o log.txt a.txt", false, true},

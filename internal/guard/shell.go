@@ -86,22 +86,30 @@ type bashAnalysis struct {
 	hidden bool
 }
 
-// maxShellDepth bounds nested `bash -c`, eval and function call parsing.
+// maxShellDepth bounds nested `bash -c`, eval and function call parsing,
+// and loop passes.
 const maxShellDepth = 4
+
+// unsetValue is a variable value the analysis does not know.
+const unsetValue = "\x00"
+
+// maxCombinations bounds how many times one statement is checked for the
+// values its variables may have.
+const maxCombinations = 16
 
 // analyzeBash parses command and returns its file actions and command
 // findings. Unparseable input falls back to whitespace tokenization.
 func (g *Guard) analyzeBash(command string) bashAnalysis {
 	a := &bashAnalyzer{
 		command: command, workspace: g.workspace, start: g.bashDir,
-		vars: map[string]string{}, funcs: map[string]*syntax.Stmt{}, bases: map[string]string{},
+		vars: map[string][]string{}, funcs: map[string]*syntax.Stmt{}, bases: map[string]string{},
 		cdpath: os.Getenv("CDPATH") != "",
 	}
 	a.script(command, []string{a.start}, 0)
 	// A trap may run at any later point, so its action is checked with the
 	// final functions, from an unknown directory and without variables.
 	for i := 0; i < len(a.traps); i++ {
-		a.vars = map[string]string{}
+		a.vars = map[string][]string{}
 		a.script(a.traps[i].text, []string{unknownDir}, a.traps[i].depth)
 	}
 	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands, hidden: a.hidden}
@@ -120,9 +128,11 @@ type bashAnalyzer struct {
 	actions   []Action
 	findings  []finding
 	commands  [][]string
-	// vars holds literal shell assignments seen so far, so `X=~/.ssh; cat
-	// $X/id` resolves. Subshells restore it; other scoping is ignored.
-	vars map[string]string
+	// vars holds the values literal shell assignments seen so far may have
+	// given each name, so `X=~/.ssh; cat $X/id` resolves; unsetValue stands
+	// for any other value. Branches merge it, subshells restore it, and other
+	// scoping is ignored.
+	vars map[string][]string
 	// funcs are the functions defined so far; a call checks the body from the
 	// caller's directory.
 	funcs map[string]*syntax.Stmt
@@ -170,7 +180,31 @@ func (a *bashAnalyzer) stmts(list []*syntax.Stmt, dirs []string, depth int) (ok,
 	return ok, all
 }
 
+// stmt checks a statement once for each combination of values its words
+// may expand to.
 func (a *bashAnalyzer) stmt(s *syntax.Stmt, dirs []string, depth int) (ok, all []string) {
+	combos := a.combinations(s)
+	if combos == nil {
+		return a.stmtOnce(s, dirs, depth)
+	}
+	runs := make([]func(), len(combos))
+	for i, combo := range combos {
+		runs[i] = func() {
+			for name, value := range combo {
+				a.vars[name] = []string{value}
+				if value == unsetValue {
+					delete(a.vars, name)
+				}
+			}
+			o, l := a.stmtOnce(s, dirs, depth)
+			ok, all = dirUnion(ok, o), dirUnion(all, l)
+		}
+	}
+	a.branches(runs...)
+	return ok, all
+}
+
+func (a *bashAnalyzer) stmtOnce(s *syntax.Stmt, dirs []string, depth int) (ok, all []string) {
 	for _, r := range s.Redirs {
 		a.redirect(r, dirs, depth)
 	}
@@ -225,14 +259,18 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 		a.subshell(func() { a.stmt(c.Stmt, dirs, depth) })
 	case *syntax.BinaryCmd:
 		switch c.Op {
-		case syntax.AndStmt:
+		case syntax.AndStmt, syntax.OrStmt:
 			xok, xall := a.stmt(c.X, dirs, depth)
-			yok, yall := a.stmt(c.Y, xok, depth)
+			from := xok
+			if c.Op == syntax.OrStmt {
+				from = xall
+			}
+			var yok, yall []string
+			a.branches(func() { yok, yall = a.stmt(c.Y, from, depth) }, func() {})
+			if c.Op == syntax.OrStmt {
+				return dirUnion(xok, yok), dirUnion(xall, yall)
+			}
 			return yok, dirUnion(xall, yall)
-		case syntax.OrStmt:
-			xok, xall := a.stmt(c.X, dirs, depth)
-			yok, yall := a.stmt(c.Y, xall, depth)
-			return dirUnion(xok, yok), dirUnion(xall, yall)
 		}
 		// Pipeline parts run in subshells, except the last one under lastpipe.
 		a.subshell(func() { a.stmt(c.X, dirs, depth) })
@@ -267,18 +305,12 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 		return out, out
 	case *syntax.CaseClause:
 		a.substitutions(c.Word, dirs, depth)
-		out, prev := dirs, []string(nil)
 		for _, item := range c.Items {
 			for _, pattern := range item.Patterns {
 				a.substitutions(pattern, dirs, depth)
 			}
-			// ;& and ;;& continue into the next item.
-			_, body := a.stmts(item.Stmts, dirUnion(dirs, prev), depth)
-			out, prev = dirUnion(out, body), nil
-			if item.Op != syntax.Break {
-				prev = body
-			}
 		}
+		out := a.caseItems(c.Items, dirs, depth)
 		return out, out
 	case *syntax.FuncDecl:
 		// Checking the body where it is defined also covers calls the
@@ -295,24 +327,145 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 	return dirs, dirs
 }
 
+// ifClause runs the then branch or the else part; a plain else has no
+// condition and always runs.
 func (a *bashAnalyzer) ifClause(c *syntax.IfClause, dirs []string, depth int) []string {
-	_, cond := a.stmts(c.Cond, dirs, depth)
-	_, then := a.stmts(c.Then, cond, depth)
-	if c.Else == nil {
-		return dirUnion(cond, then)
+	if len(c.Cond) == 0 {
+		_, out := a.stmts(c.Then, dirs, depth)
+		return out
 	}
-	return dirUnion(then, a.ifClause(c.Else, cond, depth))
+	_, cond := a.stmts(c.Cond, dirs, depth)
+	then, other := []string(nil), cond
+	a.branches(func() { _, then = a.stmts(c.Then, cond, depth) }, func() {
+		if c.Else != nil {
+			other = a.ifClause(c.Else, cond, depth)
+		}
+	})
+	return dirUnion(then, other)
+}
+
+// caseItems runs whichever of items matches first, if any.
+func (a *bashAnalyzer) caseItems(items []*syntax.CaseItem, dirs []string, depth int) []string {
+	out := dirs
+	runs := []func(){func() {}}
+	for i, item := range items {
+		runs = append(runs, func() {
+			_, body := a.stmts(item.Stmts, dirs, depth)
+			switch item.Op {
+			case syntax.Fallthrough: // ;& runs the next body too.
+				if i+1 < len(items) {
+					_, body = a.stmts(items[i+1].Stmts, body, depth)
+				}
+			case syntax.Resume: // ;;& tests the following patterns.
+				body = a.caseItems(items[i+1:], body, depth)
+			}
+			out = dirUnion(out, body)
+		})
+	}
+	a.branches(runs...)
+	return out
 }
 
 // loop checks a loop body once from dirs. When the pass may change
 // directory, a second pass starts from every directory a later iteration
 // may see, unknownDir included.
 func (a *bashAnalyzer) loop(dirs []string, pass func([]string) []string) []string {
-	out := dirUnion(dirs, pass(dirs))
-	if slices.Equal(out, dirUnion(dirs)) {
-		return out
+	in := dirUnion(dirs)
+	for i := 0; ; i++ {
+		before := a.vars
+		var out []string
+		a.branches(func() { out = dirUnion(in, pass(in)) }, func() {})
+		moved := !slices.Equal(out, in)
+		if !moved && maps.EqualFunc(before, a.vars, slices.Equal) {
+			return out
+		}
+		if i == maxShellDepth {
+			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "loop whose variables do not settle", pattern: a.command})
+			return dirUnion(out, []string{unknownDir})
+		}
+		in = out
+		if moved {
+			in = dirUnion(out, []string{unknownDir})
+		}
 	}
-	return dirUnion(out, pass(dirUnion(out, []string{unknownDir})))
+}
+
+// branches runs alternatives from the same variables and then leaves each
+// name with every value some branch gives it.
+func (a *bashAnalyzer) branches(runs ...func()) {
+	start := a.vars
+	ends := make([]map[string][]string, len(runs))
+	for i, run := range runs {
+		a.vars = maps.Clone(start)
+		run()
+		ends[i] = a.vars
+	}
+	a.vars = map[string][]string{}
+	for _, end := range ends {
+		for name := range end {
+			if _, ok := a.vars[name]; ok {
+				continue
+			}
+			var values []string
+			for _, other := range ends {
+				values = append(values, other[name]...)
+				if other[name] == nil {
+					values = append(values, unsetValue)
+				}
+			}
+			slices.Sort(values)
+			a.vars[name] = slices.Compact(values)
+		}
+	}
+}
+
+// combinations lists the values of the names with several possible values
+// that the words of s expand, nested statements and substitutions aside;
+// nil when there are none. Too many to check asks.
+func (a *bashAnalyzer) combinations(s *syntax.Stmt) []map[string]string {
+	nodes := []syntax.Node{}
+	for _, r := range s.Redirs {
+		nodes = append(nodes, r)
+	}
+	switch c := s.Cmd.(type) {
+	case *syntax.CallExpr, *syntax.DeclClause:
+		nodes = append(nodes, c)
+	case *syntax.ForClause:
+		nodes = append(nodes, c.Loop)
+	}
+	var names []string
+	for _, node := range nodes {
+		syntax.Walk(node, func(n syntax.Node) bool {
+			switch n := n.(type) {
+			case *syntax.CmdSubst, *syntax.ProcSubst:
+				return false
+			case *syntax.ParamExp:
+				if n.Param != nil && len(a.vars[n.Param.Value]) > 1 && !slices.Contains(names, n.Param.Value) {
+					names = append(names, n.Param.Value)
+				}
+			}
+			return true
+		})
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	combos := []map[string]string{{}}
+	for _, name := range names {
+		var next []map[string]string
+		for _, combo := range combos {
+			for _, value := range a.vars[name] {
+				c := maps.Clone(combo)
+				c[name] = value
+				next = append(next, c)
+			}
+		}
+		if combos = next; len(combos) > maxCombinations {
+			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "variables with too many possible values", pattern: a.command})
+			return nil
+		}
+	}
+	return combos
 }
 
 // subshell runs fn and then restores the shell state, as `( )`, pipelines,
@@ -354,7 +507,7 @@ func (a *bashAnalyzer) assign(assign *syntax.Assign) {
 		delete(a.vars, assign.Name.Value)
 		return
 	}
-	a.vars[assign.Name.Value] = value.text
+	a.vars[assign.Name.Value] = []string{value.text}
 }
 
 // environment marks an assignment that may change which code later
@@ -722,7 +875,7 @@ func (a *bashAnalyzer) literalWord(w *syntax.Word) shellWord {
 	return expandWord(w, a.vars)
 }
 
-func expandWord(w *syntax.Word, vars map[string]string) shellWord {
+func expandWord(w *syntax.Word, vars map[string][]string) shellWord {
 	if w == nil {
 		return shellWord{}
 	}
@@ -786,13 +939,13 @@ func unescape(lit string) string {
 }
 
 // knownVariable substitutes a plain recorded variable, $HOME or $TMPDIR.
-func knownVariable(part syntax.WordPart, vars map[string]string) (string, bool) {
+func knownVariable(part syntax.WordPart, vars map[string][]string) (string, bool) {
 	p, ok := part.(*syntax.ParamExp)
 	if !ok || p.Param == nil || p.Exp != nil || p.Slice != nil || p.Repl != nil || p.Index != nil || p.Length || p.Width || p.Excl {
 		return "", false
 	}
-	if value, ok := vars[p.Param.Value]; ok {
-		return value, true
+	if values, ok := vars[p.Param.Value]; ok {
+		return values[0], len(values) == 1 && values[0] != unsetValue
 	}
 	switch p.Param.Value {
 	case "HOME":
