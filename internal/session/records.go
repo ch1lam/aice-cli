@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
@@ -297,20 +298,26 @@ func (e MessageEntry) Validate() error {
 	if e.CreatedAt <= 0 {
 		return fmt.Errorf("session: message creation time must be positive")
 	}
-	switch e.Message.(type) {
-	case llm.UserMessage, llm.AssistantMessage, llm.ToolResultMessage:
-	default:
-		return fmt.Errorf("session: source message has unsupported or derived type %T", e.Message)
-	}
-	if assistant, ok := e.Message.(llm.AssistantMessage); ok {
-		switch assistant.StopReason {
+	// Structural validation only: encoding happens once, when the record is
+	// written, and replay validates what it decoded.
+	var err error
+	switch message := e.Message.(type) {
+	case llm.UserMessage:
+		err = message.Validate()
+	case llm.ToolResultMessage:
+		err = message.Validate()
+	case llm.AssistantMessage:
+		switch message.StopReason {
 		case llm.StopReasonStop, llm.StopReasonLength, llm.StopReasonToolUse,
 			llm.StopReasonPause, llm.StopReasonRefusal, llm.StopReasonError, llm.StopReasonAborted:
 		default:
-			return fmt.Errorf("session: source assistant has no valid terminal stop reason %q", assistant.StopReason)
+			return fmt.Errorf("session: source assistant has no valid terminal stop reason %q", message.StopReason)
 		}
+		err = message.Validate()
+	default:
+		return fmt.Errorf("session: source message has unsupported or derived type %T", e.Message)
 	}
-	if _, err := llm.MarshalAgentMessages([]llm.AgentMessage{e.Message}); err != nil {
+	if err != nil {
 		return fmt.Errorf("session: validate message: %w", err)
 	}
 	return nil
@@ -321,15 +328,11 @@ func (e MessageEntry) MarshalJSON() ([]byte, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	messages, err := llm.MarshalAgentMessages([]llm.AgentMessage{e.Message})
+	message, err := json.Marshal(e.Message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("session: encode source message: %w", err)
 	}
-	var raw []json.RawMessage
-	if err := json.Unmarshal(messages, &raw); err != nil {
-		return nil, err
-	}
-	return json.Marshal(messageJSON{Type: e.Type, ID: e.ID, ParentID: e.ParentID, CreatedAt: e.CreatedAt, Message: raw[0]})
+	return json.Marshal(messageJSON{Type: e.Type, ID: e.ID, ParentID: e.ParentID, CreatedAt: e.CreatedAt, Message: message})
 }
 
 // UnmarshalJSON restores the source message, rejecting unknown record fields.
@@ -341,11 +344,10 @@ func (e *MessageEntry) UnmarshalJSON(data []byte) error {
 	if err := jsonutil.DecodeStrict(data, &raw); err != nil {
 		return fmt.Errorf("session: decode message: %w", err)
 	}
-	array, err := json.Marshal([]json.RawMessage{raw.Message})
-	if err != nil {
-		return err
+	if len(raw.Message) == 0 {
+		return fmt.Errorf("session: decode message: source message is missing")
 	}
-	messages, err := llm.UnmarshalAgentMessages(array)
+	messages, err := llm.UnmarshalAgentMessages(slices.Concat([]byte{'['}, raw.Message, []byte{']'}))
 	if err != nil {
 		return fmt.Errorf("session: decode source message: %w", err)
 	}
