@@ -6,7 +6,6 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
-	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSnapshot, error) {
@@ -28,53 +27,36 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 		Context:      s.contextSnapshotFor(settings.model, settings.configuration, settings.systemPrompt),
 		WindowSource: contextWindowInformation(settings.model, settings.configuration), CostStatus: "Unavailable",
 		Scope: "Recorded usage across all branches and compactions; excludes temporary BTW answers. Interrupted requests may be unreported.", Throughput: throughput}
-	s.conversation.historySyncMu.Lock()
-	defer s.conversation.historySyncMu.Unlock()
-	store := s.conversation.store
+	// The preparation reservation excludes a Session switch, so the current
+	// Store stays open without holding the commit lock.
+	store := s.conversation.currentStore()
 	if store == nil {
 		return result, nil
 	}
-	snapshot, err := store.Snapshot()
+	info, err := store.Info()
 	if err != nil {
 		return result, err
 	}
-	result.SessionID, result.Path, result.LeafID = snapshot.Header.ID, store.Path(), snapshot.LeafID
-	result.Directory, result.CreatedAt = snapshot.Header.WorkingDirectory, snapshot.Header.CreatedAt
-	result.Nodes, result.Messages, result.Compactions = len(snapshot.Messages)+len(snapshot.Compactions), len(snapshot.Messages), len(snapshot.Compactions)
-	total := session.TotalUsage(snapshot)
-	result.Usage = newDisplayUsage(total)
-	result.ReasoningTokens = total.ReasoningTokens
-	records, priced := 0, 0
-	count := func(u llm.Usage) {
-		records++
-		if u.Cost != nil {
-			priced++
-		}
+	summary, err := store.Usage()
+	if err != nil {
+		return result, err
 	}
-	for _, entry := range snapshot.Messages {
-		if a, ok := entry.Message.(llm.AssistantMessage); ok {
-			count(a.Usage)
-			if llm.ContextTokens(a.Usage) > 0 {
-				result.LastCall = newDisplayUsage(a.Usage)
-			}
-		}
+	if result.LeafID, err = store.LeafID(); err != nil {
+		return result, err
 	}
-	for _, entry := range snapshot.Compactions {
-		count(entry.Usage)
+	result.SessionID, result.Path = info.Header.ID, store.Path()
+	result.Directory, result.CreatedAt = info.Header.WorkingDirectory, info.Header.CreatedAt
+	result.Nodes, result.Messages, result.Compactions = summary.Messages+summary.Compactions, summary.Messages, summary.Compactions
+	result.Usage = newDisplayUsage(summary.Total)
+	result.ReasoningTokens = summary.Total.ReasoningTokens
+	if llm.ContextTokens(summary.LastCall) > 0 {
+		result.LastCall = newDisplayUsage(summary.LastCall)
 	}
-	var reviews llm.Usage
-	for _, entry := range snapshot.Messages {
-		if r, ok := entry.Message.(llm.ToolResultMessage); ok && r.Details != nil && r.Details.Review != nil {
-			result.Reviews++
-			if u := r.Details.Review.Usage; u != nil {
-				reviews = llm.AddUsage(reviews, *u)
-			}
-		}
-	}
-	result.ReviewUsage = newDisplayUsage(reviews)
-	if priced > 0 {
+	result.Reviews = summary.Reviews
+	result.ReviewUsage = newDisplayUsage(summary.ReviewUsage)
+	if summary.Priced > 0 {
 		result.CostStatus = "Partial estimate"
-		if priced == records {
+		if summary.Priced == summary.Records {
 			result.CostStatus = "Estimate"
 		}
 	}

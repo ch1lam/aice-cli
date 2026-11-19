@@ -125,16 +125,66 @@ type Snapshot struct {
 // TotalUsage returns all model usage billed while producing the session,
 // including abandoned branches and compaction summaries.
 func TotalUsage(snapshot Snapshot) llm.Usage {
-	var total llm.Usage
-	for _, message := range snapshot.Messages {
-		if assistant, ok := message.Message.(llm.AssistantMessage); ok {
-			total = llm.AddUsage(total, assistant.Usage)
+	return summarizeUsage(snapshot.Messages, snapshot.Compactions).Total
+}
+
+// UsageSummary is the usage recorded across every branch, including
+// abandoned branches and compaction summaries.
+type UsageSummary struct {
+	Total llm.Usage
+	// LastCall is the latest assistant usage that reported context tokens.
+	LastCall llm.Usage
+	// Records counts assistant messages and compactions; Priced counts those
+	// that reported a cost.
+	Records, Priced int
+	// Reviews counts automatic permission decisions; ReviewUsage is what
+	// deciding them cost.
+	Reviews     int
+	ReviewUsage llm.Usage
+	// Messages and Compactions count the recorded tree nodes.
+	Messages, Compactions int
+}
+
+// Usage summarizes recorded usage under the Store lock without copying the
+// transcript.
+func (s *Store) Usage() (UsageSummary, error) {
+	if s == nil {
+		return UsageSummary{}, fmt.Errorf("session: store is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return summarizeUsage(s.messages, s.compactions), nil
+}
+
+func summarizeUsage(messages []MessageEntry, compactions []Compaction) UsageSummary {
+	summary := UsageSummary{Messages: len(messages), Compactions: len(compactions)}
+	count := func(usage llm.Usage) {
+		summary.Total = llm.AddUsage(summary.Total, usage)
+		summary.Records++
+		if usage.Cost != nil {
+			summary.Priced++
 		}
 	}
-	for _, compaction := range snapshot.Compactions {
-		total = llm.AddUsage(total, compaction.Usage)
+	for _, entry := range messages {
+		switch message := entry.Message.(type) {
+		case llm.AssistantMessage:
+			count(message.Usage)
+			if llm.ContextTokens(message.Usage) > 0 {
+				summary.LastCall = cloneUsage(message.Usage)
+			}
+		case llm.ToolResultMessage:
+			if message.Details != nil && message.Details.Review != nil {
+				summary.Reviews++
+				if usage := message.Details.Review.Usage; usage != nil {
+					summary.ReviewUsage = llm.AddUsage(summary.ReviewUsage, *usage)
+				}
+			}
+		}
 	}
-	return total
+	for _, compaction := range compactions {
+		count(compaction.Usage)
+	}
+	return summary
 }
 
 // NewID returns a cryptographically random identifier suitable for sessions

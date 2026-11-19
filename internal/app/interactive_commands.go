@@ -702,9 +702,8 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	var total *llm.Usage
 	if store := s.conversation.currentStore(); store != nil {
-		if snapshot, err := store.Snapshot(); err == nil {
-			usage := session.TotalUsage(snapshot)
-			total = &usage
+		if summary, err := store.Usage(); err == nil {
+			total = &summary.Total
 		}
 	}
 	s.stateMu.Lock()
