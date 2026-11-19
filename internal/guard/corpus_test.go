@@ -161,6 +161,32 @@ func TestGuardWorkingDirectoryCorpus(t *testing.T) {
 	}
 }
 
+// TestGuardBashStartsInLogicalDirectory pins that cd .. leaves a symlinked
+// workspace the way bash does, from the spelled path, not its target.
+func TestGuardBashStartsInLogicalDirectory(t *testing.T) {
+	root := t.TempDir()
+	physical, logical := filepath.Join(root, "a", "real"), filepath.Join(root, "b", "link")
+	if err := os.MkdirAll(physical, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(logical), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(physical, logical); err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(physical, Config{BashDirectory: logical, CredentialFiles: []string{filepath.Join(root, "b", "secret.key")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := checkCall(t, g, "bash", map[string]any{"command": "cd .. && cat secret.key"}); res.Decision != DecisionDeny || res.RuleID != credentialsRuleID {
+		t.Fatalf("cd .. from the logical workspace: %+v want credentials deny", res)
+	}
+	if res := checkCall(t, g, "bash", map[string]any{"command": "cat ../real/x.txt && cd . && cat y.txt"}); res.Decision != DecisionAllow {
+		t.Fatalf("relative paths from the workspace: %+v want allow", res)
+	}
+}
+
 func TestGuardControlFileIgnoresGrants(t *testing.T) {
 	workspace := t.TempDir()
 	settings := filepath.Join(workspace, ".aice", "settings.json")

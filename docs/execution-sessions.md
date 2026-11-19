@@ -141,9 +141,11 @@ documents should link here instead of restating these lists.
 ### Policies
 
 `internal/app` constructs the gate through `newExecutionGuard` and
-`executionGuardConfig`, passing the physical workspace, discovered skill
-directories as `ReadOnlyRoots`, AICE credential stores, AICE control files
-and the [permission rules](#permission-rules) from settings. The built-in
+`executionGuardConfig`, passing the physical workspace, the workspace as
+spelled as `BashDirectory` (where the bash tool starts, keeping a symlinked
+`$PWD`), discovered skill directories as `ReadOnlyRoots`, AICE credential
+stores, AICE control files and the [permission rules](#permission-rules)
+from settings. The built-in
 policies below are fixed in `internal/guard`.
 
 The default permission mode works like accept-edits inside the workspace:
@@ -173,8 +175,9 @@ assignments earlier in the same command line (`X=~/.ssh`, `export`,
 unresolved. `for` loop items are checked as reads. A literal `eval` script is
 checked like `bash -c`.
 
-Relative paths follow the working directory as bash does. `cd`/`pushd` move it
-logically (`cd link/..` returns to where it started), while a relative path
+Relative paths follow the working directory as bash does, starting from
+`BashDirectory`. `cd`/`pushd` move it logically (`cd link/..` returns to where
+it started, and `cd ..` leaves a symlinked workspace for the link's parent), while a relative path
 resolves from the physical directory, and a target with `..` is also checked
 as `cd -P` resolves it. A statement that may fail keeps the directory it
 started in as a candidate: `cd dir; cat f` checks `f` in both directories,

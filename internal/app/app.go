@@ -641,11 +641,11 @@ func (a *application) prepareRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
-	g, adapter, err := newExecutionGuard(
-		workspace.PhysicalPath(),
-		executionGuardConfig(configured.configuration, workspace.PhysicalPath(), skillReadOnlyRoots(discovery.catalog)),
-		yolo,
-	)
+	guardConfig := executionGuardConfig(configured.configuration, workspace.PhysicalPath(), skillReadOnlyRoots(discovery.catalog))
+	// Bash starts in the workspace as spelled, so its logical `cd ..` can
+	// leave a symlinked workspace for a different parent.
+	guardConfig.BashDirectory = workspace.Path()
+	g, adapter, err := newExecutionGuard(workspace.PhysicalPath(), guardConfig, yolo)
 	if err != nil {
 		return nil, err
 	}

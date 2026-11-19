@@ -75,11 +75,15 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	if err != nil {
 		return nil, err
 	}
+	bashDir := workspace
+	if cfg.BashDirectory != "" {
+		bashDir = filepath.Clean(cfg.BashDirectory)
+	}
 	return &Guard{
 		rules:               rules,
 		workspace:           workspace,
 		physicalWorkspace:   physicalWorkspace(workspace),
-		bashDir:             workspace,
+		bashDir:             bashDir,
 		readOnlyRoots:       resolveReadOnlyRoots(cfg.ReadOnlyRoots, workspace),
 		credentialFiles:     cleanPaths(cfg.CredentialFiles),
 		controlFiles:        cleanPaths(cfg.ControlFiles),
