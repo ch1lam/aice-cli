@@ -535,8 +535,8 @@ func (s *interactiveSession) slashCompact(
 // next accepted prompt starts a fresh one through ensureSessionStore. The
 // previous file is left untouched when it recorded messages; a previous file
 // that never recorded anything is removed instead of lingering as a
-// header-only stub. The TUI discards the visible transcript through the
-// same sessionChanged channel as /checkout.
+// header-only stub. Like a Session switch it clears BTW threads and temporary
+// Guard grants, and publishes an empty transcript.
 func (s *interactiveSession) slashNew(
 	ctx context.Context,
 	request interaction.CommandRequest,
@@ -549,12 +549,7 @@ func (s *interactiveSession) slashNew(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.installStore(nil, nil, "", false)
-	s.guard.ResetSessionGrants()
-	s.stateMu.Lock()
-	s.totalUsage = llm.Usage{}
-	s.throughput = interaction.DisplayThroughput{}
-	s.sessionChanged = true
-	s.stateMu.Unlock()
+	s.resetSessionScope(llm.Usage{}, &interaction.Transcript{})
 	if previous == nil {
 		return "Started new session", nil
 	}

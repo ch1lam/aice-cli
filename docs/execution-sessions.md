@@ -842,8 +842,8 @@ recorded messages is left untouched and stays resumable with `--session`.
 Once detached, a failure to close or remove the previous file is reported as a
 warning; the switch still completes. `/clear` only clears the visible
 transcript. `/new` does not rebuild the process environment: prompt files and
-skill discovery are reused. Dynamic Guard
-grants are cleared. Browser state belongs to the browser MCP service and is
+skill discovery are reused. Like a Session switch, `/new` clears BTW threads
+and dynamic Guard grants and empties the visible transcript. Browser state belongs to the browser MCP service and is
 neither reset nor restored from history; see [Browser automation](browser.md#lifetime-and-concurrency). Restart AICE
 to reload prompt files or Skills.
 

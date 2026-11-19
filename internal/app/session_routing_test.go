@@ -68,6 +68,10 @@ func TestConversationRoutingLifecycle(t *testing.T) {
 	if _, err := h.session.slashNew(t.Context(), interaction.CommandRequest{}); err != nil {
 		t.Fatal(err)
 	}
+	// /new clears BTW threads like a Session switch and tells the frontend.
+	if threads, state := h.session.SideThreads(), h.session.RuntimeState(); len(threads) != 0 || state.Transcript == nil || !state.Transcript.ResetSideThreads {
+		t.Fatalf("after /new: %d side threads, transcript %+v", len(threads), state.Transcript)
+	}
 	if err := runInteractive(t.Context(), h.session, "new", nil); err != nil {
 		t.Fatal(err)
 	}

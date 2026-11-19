@@ -46,7 +46,7 @@ and Guard after model/Trust loading. `Interactive` owns their process lifetime
 and closes the conversation's current Store after the frontend stops. Provider
 changes rebuild the Loop; ordinary model selection reuses it unless recovering
 an unavailable model. Both retain the Session Guard. `/new` detaches the Store
-and clears transient grants.
+and, like a Session switch, clears BTW threads and transient grants.
 
 `NewRun` creates an input mailbox and lazily starts storage. `beginMainRun`
 freezes settings and registers one transcript owner. The Loop accepts inputs,

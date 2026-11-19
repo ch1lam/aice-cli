@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 )
 
@@ -57,18 +58,7 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 		return "", errors.Join(err, store.Close())
 	}
 	previous := c.installStore(store, history, snapshot.LeafID, true)
-	s.sideMu.Lock()
-	clear(s.sideThreads)
-	s.sideMu.Unlock()
-	view.ResetSideThreads = true
-	if s.guard != nil {
-		s.guard.ResetSessionGrants()
-	}
-	s.stateMu.Lock()
-	s.totalUsage = session.TotalUsage(snapshot)
-	s.throughput = interaction.DisplayThroughput{}
-	s.stateMu.Unlock()
-	s.publishTranscript(view)
+	s.resetSessionScope(session.TotalUsage(snapshot), view)
 	// Once installed, cleanup failures are warnings, not a failed switch.
 	cleanupErr := closeInteractiveStore(previous)
 	output := "Resumed session " + shortSessionID(snapshot.Header.ID)
@@ -76,6 +66,24 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 		output += "\nCleanup warning: " + cleanupErr.Error()
 	}
 	return output, nil
+}
+
+// resetSessionScope drops what belonged to the previous Session after a switch
+// or /new: BTW threads, temporary Guard grants and measured throughput. It
+// publishes view, which tells the frontend to discard its side threads too.
+func (s *interactiveSession) resetSessionScope(usage llm.Usage, view *interaction.Transcript) {
+	s.sideMu.Lock()
+	clear(s.sideThreads)
+	s.sideMu.Unlock()
+	if s.guard != nil {
+		s.guard.ResetSessionGrants()
+	}
+	view.ResetSideThreads = true
+	s.stateMu.Lock()
+	s.totalUsage = usage
+	s.throughput = interaction.DisplayThroughput{}
+	s.stateMu.Unlock()
+	s.publishTranscript(view)
 }
 
 func (s *interactiveSession) publishTranscript(view *interaction.Transcript) {
