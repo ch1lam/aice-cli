@@ -20,6 +20,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | Auto mode routing and classifier | [auto_mode.go](../internal/app/auto_mode.go), [classifier_model.go](../internal/app/classifier_model.go), [classify](../internal/classify) | [auto_mode_test.go](../internal/app/auto_mode_test.go), [classify_test.go](../internal/classify/classify_test.go), [classifier_eval_integration_test.go](../internal/app/classifier_eval_integration_test.go) |
 | Permission checks and replies | [guard_bridge.go](../internal/app/guard_bridge.go), [guard.go](../internal/guard/guard.go), [command.go](../internal/guard/command.go) | [app_guard_test.go](../internal/app/app_guard_test.go), [guard_test.go](../internal/guard/guard_test.go) |
 | Trust, prompts, Skills | [project_trust.go](../internal/app/project_trust.go), [project_prompt.go](../internal/app/project_prompt.go), [skills.go](../internal/app/skills.go), [skill/discover.go](../internal/skill/discover.go) | [project_prompt_test.go](../internal/app/project_prompt_test.go), [skills_test.go](../internal/app/skills_test.go), [resource_test.go](../internal/trust/resource_test.go) |
+| Settings and Usage | [config/settings_schema.go](../internal/config/settings_schema.go), [config/settings_patch.go](../internal/config/settings_patch.go), [app/settings_apply.go](../internal/app/settings_apply.go), [app/settings_lifecycle.go](../internal/app/settings_lifecycle.go), [app/usage.go](../internal/app/usage.go), [tui/settings_panel.go](../internal/tui/settings_panel.go); see [lifecycle contracts](contracts.md#settings-and-usage-capabilities) | [app/settings_test.go](../internal/app/settings_test.go), [app/settings_tui_test.go](../internal/app/settings_tui_test.go), [config/settings_patch_test.go](../internal/config/settings_patch_test.go), [tui/settings_panel_test.go](../internal/tui/settings_panel_test.go), [app/usage_test.go](../internal/app/usage_test.go) |
 | Interactive commands and `/new` | [interactive_commands.go](../internal/app/interactive_commands.go), [tui/command.go](../internal/tui/command.go), [tui/command_flow.go](../internal/tui/command_flow.go) | [interactive_commands_test.go](../internal/app/interactive_commands_test.go), [command_test.go](../internal/tui/command_test.go), [command_flow_test.go](../internal/tui/command_flow_test.go) |
 | Transcript folds and mouse input | [tui/fold.go](../internal/tui/fold.go), [tui/fold_mouse.go](../internal/tui/fold_mouse.go), [tui/transcript_viewport.go](../internal/tui/transcript_viewport.go), [app/display_output.go](../internal/app/display_output.go) | [fold_test.go](../internal/tui/fold_test.go), [fold_mouse_test.go](../internal/tui/fold_mouse_test.go), [display_output_test.go](../internal/app/display_output_test.go) |
 | Side conversations | [app/side_thread.go](../internal/app/side_thread.go), [tui/side_thread.go](../internal/tui/side_thread.go) | [side_thread_lifecycle_test.go](../internal/app/side_thread_lifecycle_test.go), [tui/side_thread_test.go](../internal/tui/side_thread_test.go) |
@@ -87,7 +88,12 @@ owns durable conversation publication and concurrent side snapshots. Preserve
 these differences. Lifecycle admission, transcript ownership and TUI delivery
 previews also have different authority and must not be merged merely to reduce
 state. GUI, remote transport and simultaneous frontend control are not implemented.
-MCP acceptance remains scoped by the domain guides below.
+
+Domain guides own their verification scope and live-service or platform gaps:
+[MCP](mcp.md#verification-evidence), [Computer Use](desktop.md#verification),
+[Browser](browser.md#verification) and [Web](web.md#exa-adapter). Commands to
+reproduce them are in [Verification and collaboration](collaboration.md). Do not
+infer live-service, real-model or cross-platform acceptance from local tests.
 
 ## Resolving discrepancies
 
@@ -133,57 +139,22 @@ see [configuration lifetimes](configuration.md#configuration-lifetimes). Apply
 these clarity rules to Chinese prose without English word-count rules or a claim
 of STE compliance. Clear wording does not verify implementation behavior.
 
-The [root-command documentation tests](../internal/cli/root_documentation_test.go)
-compare documented flag names/shorthands with Cobra and the run-limit table with
-Cobra defaults and `config.SettingDefinitions`. Run them without starting AICE:
-
-```sh
-go test ./internal/cli -run '^TestRootCommandDocumentation' -count=1
-```
-
-The existing Go test job runs these checks in CI. They cover these facts only;
-behavior, permissions and platform acceptance still need their owning tests and
-the discrepancy procedure above. When changing a check, temporarily change a
-covered default, flag or environment name, confirm that the check fails, then
-restore the file and confirm it passes. Do not update prose to conceal a regression.
-
-## Settings and Usage verification
-
-Config owns typed fields, frozen sources and partial writes; app owns resource
-publication; TUI owns navigation and drafts. Start at `config/settings_schema.go`,
-`app/settings_apply.go`, `app/settings_lifecycle.go` and `tui/settings_panel.go`.
-Tests cover stale requests, partial commits, main/BTW exclusion, modal layouts,
-attachments and the actual CLI/Bubble Tea flow. Native IME/physical mouse,
-Linux/Windows desktop behavior and live provider/OAuth calls require separate
-acceptance; synthetic terminal events do not establish those results.
+[Verification](collaboration.md#documentation-checks) owns the checks that
+compare documented CLI flags and run limits with the code. They cover only
+those facts; behavior still needs its owning tests and the discrepancy
+procedure above.
 
 ## Known discrepancies
 
-### MCP verification limits
-
-[MCP verification](mcp.md#verification-evidence) owns service and platform scope.
-Deterministic connection/discovery/permission tests do not establish broad model
-task quality. Search is lexical and does not translate languages; models must
-retain original-language keywords or browse/refine. Cross-process settings
-changes do not immediately revoke a frozen Run because there is no watcher.
-Remote close errors do not prove remote session deletion.
-
-### Computer Use integration
-
-Computer Use is the ordinary MCP service `user:cua`; Cua owns runtime, input
-and platform behavior. Earlier AICE-run native acceptance of the managed path
-does not carry over. Real-model desktop tasks and Linux/Windows setup are
-unverified in this design; see [Computer Use verification](desktop.md#verification).
-
 ### Self-update OpenPGP dependency warning
 
-A prior `govulncheck ./...` run reported [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)
-because `github.com/creativeprojects/go-selfupdate v1.6.0` imports the
-unmaintained `golang.org/x/crypto/openpgp` package. The pinned dependency still
-imports it. AICE's [`newClient`](../internal/update/update.go) configures only `ChecksumValidator` (SHA-256); it does not configure a
-`PGPValidator` or parse PGP keys or signatures. The prior scan included package
-initialization and shared error types; this audit did not rerun the scanner
-or establish exploitability.
+`github.com/creativeprojects/go-selfupdate` imports the unmaintained
+`golang.org/x/crypto/openpgp` package for its optional PGP validator
+([GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)), so the package is linked
+into `cmd/aice` and `govulncheck ./...` can report it. AICE's
+[`newClient`](../internal/update/update.go) configures only
+`ChecksumValidator` (SHA-256); it does not configure a `PGPValidator` or parse
+PGP keys or signatures. Exploitability has not been established.
 
 Keep the finding visible until an upstream release removes or replaces this
 dependency, or a separately reviewed updater change does so. Preserve checksum
@@ -196,9 +167,9 @@ Composer clicks do not position the editing caret. The real terminal caret from
 `textarea.Cursor()` remains the IME anchor. [Composer mouse handling](../internal/tui/composer_mouse.go)
 and [file-label rendering](../internal/tui/composer_file_view.go) are the owners.
 
-The pinned Bubbles textarea exposes coordinate APIs, but prior diagnostics found
-per-rune hit testing and wrapping that split emoji/combining graphemes, incomplete
-wrapped-CJK cursor traversal, and viewport sharing after shallow copies.
+The pinned Bubbles textarea exposes coordinate APIs, but its hit testing and
+wrapping work per rune and split emoji/combining graphemes, wrapped-CJK cursor
+traversal is incomplete, and shallow copies share the viewport.
 Reassess these dependency limits on upgrade; do not codify them as desired
 regressions. File styling uses `PositionAt(0, y)` for row starts and measures whole
 segments, avoiding horizontal per-rune hit testing.
@@ -207,25 +178,3 @@ Any future click positioning must preserve file/paste attachment identities and
 verify wrapping, scrolling, trailing spaces, CJK, combining sequences, emoji and
 real-caret/IME alignment. `SetValue` clears file-reference spans and is not a
 cursor-only operation. No dependency fork or replacement editor is maintained.
-
-### `web_fetch` hostname resolution
-
-The `web_fetch` use of standard proxy/DNS transport is intentional:
-commit `c748cc41` replaced pinned direct dialing, and `6390df7` removed extra Web
-approval. Its literal-address policy does not block hostnames resolving to
-private addresses. See [fetch limits](web.md#web_fetch-limits); do not restore the
-superseded plan's stronger SSRF guarantee as a description of current code.
-
-### Web search acceptance gaps
-
-Existing evidence covers offline HTTP fixtures and the app fake backend.
-Live Exa, public-page fetch and native `/web` terminal acceptance remain
-unrecorded; the [opt-in Exa test](collaboration.md#web-checks) is the live-service
-entry. Do not infer live-service or cross-platform acceptance from local tests.
-
-### Browser acceptance gaps
-
-Browser automation is the ordinary MCP service `user:browser`; agent-browser
-owns its runtime. Real-model browsing, external CDP connection and Linux are
-unverified in this design, and Windows remains unavailable; see
-[Browser verification](browser.md#verification).

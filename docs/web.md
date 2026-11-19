@@ -214,6 +214,8 @@ recorded as an upstream cost in USD; a missing value stays unknown, never zero.
 
 Default tests use local fixtures. A real request requires the `integration`
 tag and explicit opt-in; see [Verification](collaboration.md#web-checks).
+Live Exa, public-page fetch and native `/web` terminal acceptance are not
+recorded.
 Implementation: [binding](../internal/app/web.go),
 [configuration](../internal/config/web.go),
 [Exa](../internal/web/exa/client.go), and
