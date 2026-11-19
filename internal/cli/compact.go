@@ -56,9 +56,6 @@ func newCompactCommand(compactor Compactor) *cobra.Command {
 			return nil
 		},
 	}
-	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return newUsageError(err)
-	})
 	command.Flags().StringVar(
 		&options.workspace,
 		"workspace",

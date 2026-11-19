@@ -26,18 +26,15 @@ type searchResponse struct {
 	Results     *[]searchResult `json:"results"`
 	CostDollars *costDollars    `json:"costDollars"`
 	Error       json.RawMessage `json:"error"`
-	Tag         string          `json:"tag"`
 }
 
 type searchResult struct {
-	Title           string    `json:"title"`
-	URL             string    `json:"url"`
-	PublishedDate   string    `json:"publishedDate"`
-	Author          *string   `json:"author"`
-	Text            string    `json:"text"`
-	Highlights      []string  `json:"highlights"`
-	HighlightScores []float64 `json:"highlightScores"`
-	Summary         string    `json:"summary"`
+	Title         string   `json:"title"`
+	URL           string   `json:"url"`
+	PublishedDate string   `json:"publishedDate"`
+	Text          string   `json:"text"`
+	Highlights    []string `json:"highlights"`
+	Summary       string   `json:"summary"`
 }
 
 type costDollars struct {
@@ -47,7 +44,6 @@ type costDollars struct {
 // errorResponse is the documented error envelope: a human-readable "error"
 // string and an open-ended machine tag.
 type errorResponse struct {
-	RequestID string          `json:"requestId"`
-	Error     json.RawMessage `json:"error"`
-	Tag       string          `json:"tag"`
+	Error json.RawMessage `json:"error"`
+	Tag   string          `json:"tag"`
 }

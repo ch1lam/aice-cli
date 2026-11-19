@@ -101,9 +101,6 @@ func newSessionStatsCommand(navigator SessionNavigator) *cobra.Command {
 			return nil
 		},
 	}
-	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return newUsageError(err)
-	})
 	return command
 }
 
@@ -201,9 +198,6 @@ func addSessionFlags(
 	workspace *string,
 	session *string,
 ) {
-	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return newUsageError(err)
-	})
 	command.Flags().StringVar(
 		workspace,
 		"workspace",

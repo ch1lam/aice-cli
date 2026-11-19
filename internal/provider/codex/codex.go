@@ -25,7 +25,6 @@ type Provider struct {
 	paths   config.Paths
 	auth    AuthClient
 	baseURL string
-	client  *http.Client
 }
 
 func (p *Provider) ProviderID() llm.ProviderID      { return ProviderID }
@@ -102,11 +101,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	if err != nil {
 		return nil, fmt.Errorf("codex: resolve credentials: %w", err)
 	}
-	client := &http.Client{}
-	if p.client != nil {
-		*client = *p.client
-	}
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	adapter, err := openairesponses.New(openairesponses.Config{
 		APIKey: credential.AccessToken, BaseURL: p.baseURL, HTTPClient: client, Codex: true,
 		Headers: http.Header{

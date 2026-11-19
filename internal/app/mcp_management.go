@@ -72,7 +72,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 	}
 	server, exists := current.MCP.Servers[key]
 	if request.Action == "import" {
-		return importMCPServers(ctx, current, owner, request.Definition)
+		return importMCPServers(ctx, current, request.Definition)
 	}
 	if request.Action != "status" && request.Action != "add" && !exists {
 		return current, result, fmt.Errorf("MCP service key is not configured; use a source-qualified key from status")
@@ -289,7 +289,7 @@ func executeMCPManagement(ctx context.Context, current config.Config, owner *mcp
 
 // importMCPServers adds every representable new server from a portable document.
 // Existing IDs are never replaced; skipped entries are reported as warnings.
-func importMCPServers(ctx context.Context, current config.Config, owner *mcpOwner, document []byte) (config.Config, interaction.MCPResult, error) {
+func importMCPServers(ctx context.Context, current config.Config, document []byte) (config.Config, interaction.MCPResult, error) {
 	result := interaction.MCPResult{}
 	servers, skipped, err := config.ParseMCPServers(document)
 	if err != nil {

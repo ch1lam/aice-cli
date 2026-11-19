@@ -27,7 +27,7 @@ func (s *interactiveSession) loginClaudeAccount(ctx context.Context, request int
 	credential, err := s.application.dependencies.claudeInteractiveLogin(ctx, claudesubscription.LoginInteraction{
 		Input: request.Auth.Input,
 		Notify: func(ctx context.Context, prompt claudesubscription.LoginPrompt) error {
-			display := interaction.AuthPrompt{Title: "Login to Claude Pro/Max", URL: prompt.URL, Code: prompt.Code,
+			display := interaction.AuthPrompt{Title: "Login to Claude Pro/Max", URL: prompt.URL,
 				Instructions: prompt.Instructions, AllowInput: prompt.AllowInput}
 			if err := request.Auth.Notify(ctx, display); err != nil {
 				return err

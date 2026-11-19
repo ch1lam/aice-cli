@@ -33,7 +33,6 @@ const (
 	maxHighlightBytes   = 2 * 1024
 	maxDocumentBytes    = 8 * 1024
 	maxSummaryBytes     = 2 * 1024
-	maxUpstreamResults  = 100
 )
 
 // Options are the user-configurable request options for one instance. Unknown

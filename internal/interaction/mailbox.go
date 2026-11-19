@@ -135,8 +135,8 @@ func (m *Mailbox) TakeFollowUp() (Delivery, bool) {
 	return next, true
 }
 
-// Seal rejects future deliveries. Existing entries remain available to the
-// owner for diagnostics but are never consumed by a completed run.
+// Seal rejects future deliveries. Existing entries are never consumed by a
+// completed run.
 func (m *Mailbox) Seal() {
 	if m == nil {
 		return

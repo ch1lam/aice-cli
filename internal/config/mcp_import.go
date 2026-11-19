@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/jsonutil"
@@ -71,7 +73,9 @@ func ParseMCPServers(raw []byte) (map[string]MCPServerSettings, []string, error)
 	}
 	servers := make(map[string]MCPServerSettings)
 	var skipped []string
-	for name, entry := range entries {
+	// Sorted names make duplicate-ID resolution deterministic.
+	for _, name := range slices.Sorted(maps.Keys(entries)) {
+		entry := entries[name]
 		id := portableMCPID(name)
 		if id == "" {
 			skipped = append(skipped, fmt.Sprintf("%q: name cannot be used as a server ID", name))

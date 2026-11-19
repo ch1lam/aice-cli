@@ -50,8 +50,7 @@ type Request struct {
 
 // UserTurn is text the user typed, before attachments were inlined.
 type UserTurn struct {
-	Text string `json:"text"`
-	Kind string `json:"kind,omitempty"` // prompt, steer or follow-up
+	Text string
 }
 
 // PastAction is an earlier tool call on the active branch, without output.
@@ -98,9 +97,7 @@ type Verdict struct {
 	// Reason explains a block to the agent and the user, or why no
 	// judgement was made.
 	Reason string
-	// Rule is the block rule ID the classifier cited, if any.
-	Rule  string
-	Stage int
+	Stage  int
 	// Classifier is "<model>@<prompt version>".
 	Classifier string
 	Usage      llm.Usage
@@ -186,7 +183,7 @@ func (c *Classifier) Classify(ctx context.Context, req Request) (Verdict, error)
 	text, usage, err := c.complete(ctx, c.fastTimeout, Completion{
 		System: system, Prompt: prefix + fastInstruction, MaxTokens: fastMaxTokens, Thinking: llm.ThinkingLevelOff,
 	})
-	addUsage(&verdict.Usage, usage)
+	verdict.Usage = llm.AddUsage(verdict.Usage, usage)
 	if ctx.Err() != nil {
 		return finish()
 	}
@@ -199,7 +196,7 @@ func (c *Classifier) Classify(ctx context.Context, req Request) (Verdict, error)
 	text, usage, err = c.complete(ctx, c.reasonTimeout, Completion{
 		System: system, Prompt: prefix + reasonInstruction, MaxTokens: reasonMaxTokens, Thinking: llm.ThinkingLevelLow,
 	})
-	addUsage(&verdict.Usage, usage)
+	verdict.Usage = llm.AddUsage(verdict.Usage, usage)
 	if ctx.Err() != nil {
 		return finish()
 	}
@@ -207,7 +204,7 @@ func (c *Classifier) Classify(ctx context.Context, req Request) (Verdict, error)
 		verdict.Decision, verdict.Reason = Unavailable, "classifier unavailable: "+err.Error()
 		return finish()
 	}
-	verdict.Decision, verdict.Rule, verdict.Reason = parseReasoned(text)
+	verdict.Decision, verdict.Reason = parseReasoned(text)
 	return finish()
 }
 
@@ -215,13 +212,4 @@ func (c *Classifier) complete(ctx context.Context, timeout time.Duration, req Co
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return c.model.Complete(ctx, req)
-}
-
-func addUsage(total *llm.Usage, u llm.Usage) {
-	total.InputTokens += u.InputTokens
-	total.OutputTokens += u.OutputTokens
-	total.ReasoningTokens += u.ReasoningTokens
-	total.CacheReadTokens += u.CacheReadTokens
-	total.CacheWriteTokens += u.CacheWriteTokens
-	total.TotalTokens += u.TotalTokens
 }

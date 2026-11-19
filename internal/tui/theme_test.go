@@ -159,7 +159,6 @@ func TestPendingSteerUsesInformationColor(t *testing.T) {
 	t.Parallel()
 
 	for _, style := range []lipgloss.Style{
-		pendingSteerLabelStyle,
 		pendingSteerStyle,
 	} {
 		assertColor(

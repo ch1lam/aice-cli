@@ -82,10 +82,7 @@ receive a [text notice](contracts.md#structured-tool-outcomes) instead.
 
 Offline tests cover the definition and the Settings setup flow with synthetic
 install and grant functions ([preset](../internal/desktop/preset_test.go),
-[Settings TUI](../internal/app/settings_tui_test.go)). On macOS 2026-10-24,
-`cua-driver mcp` 0.30.4 initialized over stdio with protocol `2025-06-18`,
-started the CuaDriver.app daemon and listed 58 tools with 1.6 KB of server
-instructions. The 0.38.0 archives passed the signature and file-hash gates in
-[Verification](collaboration.md#computer-use-checks), but its runtime was not
-installed here. Real-model desktop tasks, Linux and Windows remain unverified in
-this design; Cua's own platform limits apply.
+[Settings TUI](../internal/app/settings_tui_test.go)). Installer artifact checks
+are in [Verification](collaboration.md#computer-use-checks). Real-model desktop
+tasks, Linux and Windows remain unverified in this design; Cua's own platform
+limits apply.

@@ -65,6 +65,10 @@ func (m model) openSettingsPanel(usage bool) (model, tea.Cmd, bool) {
 	styles.Focused.Prompt, styles.Blurred.Prompt = mutedStyle, mutedStyle
 	input.SetStyles(styles)
 	m.settings = &settingsPanel{generation: m.settingsGeneration, input: input, positions: m.settingsPositions, tab: m.settingsTab, usage: usage}
+	if usage {
+		// Usage tabs keep their own positions; Settings remembers only its own.
+		m.settings.positions, m.settings.tab = nil, 0
+	}
 	if m.settings.positions == nil {
 		m.settings.positions = map[int]int{}
 	}
@@ -608,11 +612,9 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 		var command tea.Cmd
 		previous := p.input.Value()
 		p.input, command = p.input.Update(message)
-		if p.search {
+		if p.search && p.input.Value() != previous {
 			p.selection = 0
-			if p.input.Value() != previous {
-				p.searchCollapsed = nil
-			}
+			p.searchCollapsed = nil
 		}
 		return m, m.scopeInputCommand(command)
 	}

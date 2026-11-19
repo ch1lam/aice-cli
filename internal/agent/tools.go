@@ -83,9 +83,7 @@ func (e *runExecution) executeTools(
 		if err := e.acceptToolResult(ctx, message, true); err != nil {
 			return err
 		}
-		if !message.IsError {
-			e.pendingSelection = append(e.pendingSelection, e.proposal...)
-		}
+		e.pendingSelection = append(e.pendingSelection, e.proposal...)
 		if err := e.emit(ctx, AgentEvent{
 			Type:       EventTypeToolExecutionEnd,
 			TurnNumber: turnNumber,

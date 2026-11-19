@@ -143,7 +143,7 @@ func (k *keyMap) bindings() []*key.Binding {
 	return []*key.Binding{
 		&k.sessions, &k.turns, &k.send, &k.queue, &k.newline, &k.scrollUp, &k.scrollDown,
 		&k.process, &k.code, &k.editor, &k.paste, &k.commands, &k.historyUp, &k.historyDown,
-		&k.help, &k.clear, &k.interrupt, &k.quit, &k.close,
+		&k.help, &k.mode, &k.clear, &k.interrupt, &k.quit, &k.close,
 	}
 }
 

@@ -133,7 +133,7 @@ func (s *interactiveSession) CompleteFiles(ctx context.Context, query string) ([
 
 func (s *interactiveSession) completionPathAllowed(ctx context.Context, path string) bool {
 	args, _ := json.Marshal(map[string]string{"path": path})
-	result, err := s.guardAdapter.Check(ctx, llm.ToolCall{Name: "read", Arguments: args})
+	result, err := s.guardAdapter.checkInput(ctx, llm.ToolCall{Name: "read", Arguments: args})
 	return err == nil && result.Decision == agent.GuardAllow
 }
 

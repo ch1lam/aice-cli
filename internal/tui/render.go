@@ -542,17 +542,7 @@ func truncateTerminalText(value string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if lipgloss.Width(value) <= width {
-		return value
-	}
-	if width == 1 {
-		return "…"
-	}
-	runes := []rune(value)
-	for len(runes) > 0 && lipgloss.Width(string(runes)) > width-1 {
-		runes = runes[:len(runes)-1]
-	}
-	return string(runes) + "…"
+	return ansi.Truncate(value, width, "…")
 }
 
 func (m model) hasPendingSteer() bool {

@@ -471,8 +471,8 @@ func readGrepLines(path string) ([]string, error) {
 	if len(data) > maxReadBytes {
 		return nil, fmt.Errorf("file exceeds %d bytes", maxReadBytes)
 	}
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
+	// Only LF ends a line, as for ripgrep; CR is dropped like normalizeGrepLine.
+	text := strings.ReplaceAll(string(data), "\r", "")
 	return strings.Split(text, "\n"), nil
 }
 

@@ -78,12 +78,11 @@ const (
 )
 
 const (
-	settingsKeyProvider            = "provider"
-	settingsKeyModel               = "model"
-	smallModelKey                  = "small_model"
-	settingsKeyThinking            = "thinking"
-	settingsKeyDefaultProjectTrust = "default_project_trust"
-	settingsKeyCustomBaseURL       = "custom_base_url"
+	settingsKeyProvider      = "provider"
+	settingsKeyModel         = "model"
+	smallModelKey            = "small_model"
+	settingsKeyThinking      = "thinking"
+	settingsKeyCustomBaseURL = "custom_base_url"
 )
 
 // Setting identifies one setting that can be persisted by a command.
@@ -319,6 +318,12 @@ func LoadFiles(paths Paths, options LoadOptions) (Config, error) {
 				return Config{}, err
 			}
 			diagnostics = append(diagnostics, fmt.Sprintf("Ignored unparseable configuration %s", path))
+			if path == paths.ProjectSettings {
+				// The project .mcp.json is a separate file and stays available.
+				if err := mcpValues.readProjectFile(context.Background(), paths.ProjectMCP()); err != nil {
+					return Config{}, err
+				}
+			}
 			continue
 		}
 		// Nested service collections retain their identity outside Viper's deep merge.

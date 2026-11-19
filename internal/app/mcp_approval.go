@@ -7,6 +7,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/utf8text"
 )
 
 const (
@@ -21,7 +22,8 @@ type mcpConnectionApproverKey struct{}
 // mcpConnectionApprover asks the user whether one exact connection may start.
 // It returns true only for an explicit allow and persists a saved choice itself.
 // Only interactive runs install one; without it (or with a nil approver, as
-// during Run preparation), needs_approval fails closed without prompting.
+// during optional-service discovery in Run preparation), needs_approval fails
+// closed without prompting.
 type mcpConnectionApprover func(context.Context, config.MCPServer) (bool, error)
 
 func withMCPConnectionApprover(ctx context.Context, approve mcpConnectionApprover) context.Context {
@@ -132,7 +134,7 @@ func mcpConnectionSummary(server config.MCPServer) string {
 		summary = strings.Join(append([]string{executable}, server.Settings.Args...), " ") + "  (in " + server.WorkingDir + ")"
 	}
 	if len(summary) > mcpConnectionApprovalCommandMaxSize {
-		summary = summary[:mcpConnectionApprovalCommandMaxSize] + "…"
+		summary = utf8text.Prefix(summary, mcpConnectionApprovalCommandMaxSize) + "…"
 	}
 	return summary
 }

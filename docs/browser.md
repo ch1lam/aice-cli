@@ -107,8 +107,5 @@ policy. agent-browser's own controls (`AGENT_BROWSER_ALLOWED_DOMAINS`,
 
 Offline tests cover the definition and every `/browser` choice through Settings
 ([preset](../internal/browser/preset_test.go),
-[actions](../internal/app/management_actions_test.go)). On macOS 2026-10-25,
-the pinned 0.37.1 `agent-browser mcp` connected as `user:browser` with 29 core
-tools; through AICE's MCP client it opened a page (returning structured
-content), returned a PNG screenshot block and closed. Real-model browsing,
+[actions](../internal/app/management_actions_test.go)). Real-model browsing,
 external CDP connection and Linux remain unverified in this design.

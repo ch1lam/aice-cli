@@ -47,7 +47,7 @@ func WithGuard(g Guard) LoopOption {
 }
 
 // WithGuardAskHandler installs the interactive Ask resolver. It is called
-// synchronously inside ExecuteTool when Guard returns Ask. A nil handler
+// synchronously inside tool execution when Guard returns Ask. A nil handler
 // fails closed by denying.
 func WithGuardAskHandler(h GuardAskHandler) LoopOption {
 	return func(l *Loop) error {

@@ -333,11 +333,11 @@ func (a *application) Print(
 		return nil
 	}
 
-	ctx, scope, err := bindRunScope(ctx, store, environment.mcp, environment.configuration, environment.model, func() []llm.AgentMessage { return sourceMessages })
+	ctx, scope, err := bindRunScope(ctx, store, environment.mcp, environment.model, func() []llm.AgentMessage { return sourceMessages })
 	if err != nil {
 		return err
 	}
-	defer func() { returnErr = errors.Join(returnErr, scope.close()) }()
+	defer scope.close()
 
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)

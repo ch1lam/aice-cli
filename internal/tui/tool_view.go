@@ -102,7 +102,7 @@ func toolDiffStats(entry transcriptEntry) string {
 			return ""
 		}
 		// Older Sessions have complete hunks but no stored counts.
-		for row := range strings.SplitSeq(writePrefix(diff.Text, 64*1024), "\n") {
+		for row := range strings.SplitSeq(diff.Text, "\n") {
 			if strings.HasPrefix(row, "+") {
 				added++
 			} else if strings.HasPrefix(row, "-") {

@@ -554,8 +554,8 @@ an active stdio operation closes that connection.
 
 HTTP requires HTTPS or loopback HTTP and rejects URL userinfo. It disables
 redirects, body replay, idempotency headers, SSE reconnect and SDK OAuth replay.
-Errors expose sanitized status/classifications. Close attempts a one-second
-session DELETE then always cancels local lifetime/idle sockets; a failed DELETE
+Errors expose sanitized status/classifications. Close cancels the connection
+lifetime, attempts a detached one-second session DELETE and closes idle sockets; a failed DELETE
 returns `ErrTransport` and does not establish remote session deletion. Repeated
 close does not retry DELETE.
 
@@ -602,7 +602,7 @@ protocols) and incomplete catalogs are fetched every time. The SDK's own
 decoded cache is never used because it would round schema numbers, and explicit
 resource reads always reach the server.
 
-Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB catalog pages,
+Default hard limits are 16 MiB per incoming JSON/SSE frame, 4 MiB per catalog (all pages),
 2,000 entries, 20 pages and 1 MiB arguments. Internal callers may raise frames to
 24 MiB or lower limits. Initialization defaults to 15 seconds and operations to
 60 seconds including queue time. SDK frame limits use the configured message
@@ -709,7 +709,6 @@ synthetic credentials. Representative boundaries are [application Loop/Guard](..
 [instructions](../internal/app/mcp_info_test.go) and
 [result readback](../internal/app/result_read_test.go). They do not establish
 external-account, real-model or native desktop acceptance.
-
 
 Recorded interoperability covers one Filesystem stdio service, one DeepWiki
 HTTP service and Linear read-only OAuth login/refresh on macOS. Filesystem and

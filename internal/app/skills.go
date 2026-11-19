@@ -213,10 +213,6 @@ func formatSkillsCommand(
 	return strings.Join(lines, "\n")
 }
 
-func formatSkillsSettings(catalog skill.Catalog, diags []skill.Diagnostic, workspace string) string {
-	return interaction.DetailsText(skillsDetails(catalog, diags, workspace))
-}
-
 func skillsDetails(catalog skill.Catalog, diags []skill.Diagnostic, workspace string) []interaction.Detail {
 	skills := catalog.Skills()
 	details := []interaction.Detail{{Text: fmt.Sprintf("%d skills loaded · %d diagnostics", len(skills), len(diags))}}
