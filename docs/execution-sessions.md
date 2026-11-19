@@ -824,6 +824,10 @@ aice session checkout --workspace . \
 aice session stats path/to/a.jsonl path/to/b.jsonl
 ```
 
+`session tree` and `session reviews` use the same read-only replay as listing:
+they work while another process holds the writer, ignore an incomplete final
+record and never repair or recover the file.
+
 `session stats` reads files without locking or repairing them, so it also
 inspects Sessions copied from other hosts such as evaluation trials. It counts
 every recorded branch: usage and cost, model requests and failed attempts, the

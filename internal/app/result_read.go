@@ -34,24 +34,31 @@ func activeEntries(store *session.Store, memory func() []llm.AgentMessage) ([]se
 		if err != nil {
 			return nil, fmt.Errorf("Session result snapshot is unavailable")
 		}
-		branch, err := session.ActiveBranch(snapshot)
-		if err != nil {
-			return nil, fmt.Errorf("Session branch is unavailable")
-		}
-		active := make(map[string]bool, len(branch))
-		for _, node := range branch {
-			active[node.ID] = true
-		}
-		for _, entry := range snapshot.Messages {
-			if active[entry.ID] {
-				entries = append(entries, entry)
-			}
-		}
+		return branchEntries(snapshot)
 	} else if memory != nil {
 		// --print without --session already retains source messages for image
 		// lookup. Reuse that run-owned history, without a second transcript.
 		for i, message := range memory() {
 			entries = append(entries, session.MessageEntry{ID: fmt.Sprintf("run-%d", i), Message: message})
+		}
+	}
+	return entries, nil
+}
+
+// branchEntries returns the source messages on the snapshot's active branch.
+func branchEntries(snapshot session.Snapshot) ([]session.MessageEntry, error) {
+	branch, err := session.ActiveBranch(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("Session branch is unavailable")
+	}
+	active := make(map[string]bool, len(branch))
+	for _, node := range branch {
+		active[node.ID] = true
+	}
+	var entries []session.MessageEntry
+	for _, entry := range snapshot.Messages {
+		if active[entry.ID] {
+			entries = append(entries, entry)
 		}
 	}
 	return entries, nil

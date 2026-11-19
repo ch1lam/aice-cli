@@ -19,7 +19,7 @@ func (a *application) SessionTree(
 	ctx context.Context,
 	request cli.SessionTreeRequest,
 	output io.Writer,
-) (returnErr error) {
+) error {
 	if ctx == nil {
 		return fmt.Errorf("app: context is required")
 	}
@@ -30,18 +30,10 @@ func (a *application) SessionTree(
 	if err != nil {
 		return fmt.Errorf("app: create workspace: %w", err)
 	}
-	store, snapshot, err := openExistingSession(
-		ctx,
-		workspace,
-		request.Session,
-	)
+	snapshot, err := readExistingSession(ctx, workspace, request.Session)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		returnErr = errors.Join(returnErr, store.Close())
-	}()
-
 	return writeSessionTree(output, snapshot)
 }
 
