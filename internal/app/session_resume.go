@@ -14,8 +14,7 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 		return "", err
 	}
 	// RunSlashCommand holds an idle settings reservation, so no main or side
-	// run can start across the switch. Side creation also acquires
-	// historySyncMu before capturing its parent snapshot.
+	// run, and no side-thread creation, can start across the switch.
 	c := &s.conversation
 	c.historySyncMu.Lock()
 	defer c.historySyncMu.Unlock()

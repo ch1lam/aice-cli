@@ -119,10 +119,10 @@ func (s *interactiveSession) CreateSideThread(
 		return interaction.SideThread{}, nil, err
 	}
 	defer s.endPreparation()
-	// Session switching and side creation share this boundary, so a new
-	// registry entry can never carry the previous Session's snapshot.
-	s.conversation.historySyncMu.Lock()
-	defer s.conversation.historySyncMu.Unlock()
+	// The preparation reservation excludes a Session switch until the thread
+	// is registered, so it can never carry the previous Session's snapshot.
+	// The snapshot reads published history only and does not hold the commit
+	// lock that main-run writes need.
 	snapshot, err := s.conversation.sideSnapshot()
 	if err != nil {
 		return interaction.SideThread{}, nil, fmt.Errorf(
