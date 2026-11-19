@@ -391,7 +391,7 @@ variable other than locale, `TZ`, `NO_COLOR`, `TERM`, `COLUMNS`, `LINES` or a
 `--work-tree`, or a path built from a command substitution (`cat $(…)`).
 `sed` with `-i`, `-f` or an `e`, `r`, `R`, `w` or `W` command or `s` flag,
 `rg --pre`/`--pre-glob`, `printf -v`, `git grep -O` and git `--output` are not
-read-only either; the output operands of `uniq` and `xxd` and `tree -o` are
+read-only either; the output operands of `uniq` and `xxd`, `tree -o` and the `less -o`/`-O`/`--log-file` log are
 writes.
 
 Broad allow rules that permit arbitrary code (`bash(python *)`, `bash(npm run *)`,

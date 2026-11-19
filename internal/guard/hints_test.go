@@ -53,6 +53,8 @@ func TestGuardBashHints(t *testing.T) {
 		{"f=go.mod; cat $f", true, true},
 		{"uniq a.txt b.txt", false, true},
 		{"tree -o out.txt", false, true},
+		{"less -o log.txt a.txt", false, true},
+		{"less -Olog.txt a.txt", false, true},
 		{"cat $(cat list.txt)", false, false},
 		{"wc -l < $(echo a.txt)", false, false},
 		{"printf -v PATH %s .", false, false},

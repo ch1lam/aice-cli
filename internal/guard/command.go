@@ -235,7 +235,10 @@ var grepLongValues = []string{
 var readSpec = argSpec{op: opRead}
 
 var argSpecs = map[string]argSpec{
-	"cat": readSpec, "less": readSpec, "more": readSpec, "wc": readSpec, "ls": {op: opRead, valueFlags: "IwT"},
+	"less": {op: opRead, valueFlags: "bhjkoOpPtTxyz", flagPaths: map[string]string{
+		"-o": opWrite, "-O": opWrite, "--log-file": opWrite, "--LOG-FILE": opWrite, "-k": opRead, "--lesskey-file": opRead,
+	}},
+	"cat": readSpec, "more": readSpec, "wc": readSpec, "ls": {op: opRead, valueFlags: "IwT"},
 	"stat": {op: opRead, valueFlags: "cf"}, "file": readSpec, "tree": {op: opRead, valueFlags: "LIPo", flagPaths: map[string]string{"-o": opWrite}}, "du": {op: opRead, valueFlags: "dB"},
 	"df": readSpec, "nl": readSpec, "od": readSpec, "xxd": {op: opRead, dstLast: true, valueFlags: "cglosn"}, "hexdump": readSpec, "strings": readSpec,
 	"md5": readSpec, "md5sum": readSpec, "shasum": {op: opRead, valueFlags: "a"}, "sha256sum": readSpec,

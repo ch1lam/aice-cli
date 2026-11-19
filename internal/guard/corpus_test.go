@@ -59,6 +59,7 @@ func TestGuardBashCorpus(t *testing.T) {
 		{`zip -r out.zip ..`, RuleOutsideWrite},
 		{`ls ..`, RuleOutsideRead},
 		{`zip -r out.zip .`, allow},
+		{`less --log-file=/tmp/x a.txt`, RuleOutsideWrite},
 		// Command consequences.
 		{`rm -rf .`, RuleBashDelete},
 		{`rm -rf .git`, RuleBashDelete},
