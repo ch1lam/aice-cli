@@ -201,7 +201,9 @@ retain the short content summary; Session keeps the additive metadata.
   larger hints stop retries. Cancellation, protocol/context errors, event-sink
   failures and configured stop reasons are not retried. A provider error event
   that arrives before the stream's `start` is classified by its cause, like one
-  after it, rather than as a protocol error. Tool execution is never
+  after it, rather than as a protocol error. An error event inside an accepted
+  stream is classified by its error code or type, not as a transport failure,
+  so only transient codes retry. Tool execution is never
   retried by this policy. [retry.go](../internal/agent/retry.go) owns classification.
   A gateway's first rejection of replayed reasoning ("`encrypted_content` …
   was not issued") is retried once immediately, even with retries disabled,

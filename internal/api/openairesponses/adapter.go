@@ -484,6 +484,12 @@ func (s *stream) Close() error {
 }
 
 func normalizeProviderError(err error) error {
+	// The SDK reports an error event inside an accepted stream as a
+	// StreamError, not an API error; it is not a transport failure.
+	var streamErr *ssestream.StreamError
+	if errors.As(err, &streamErr) {
+		return streamcore.StreamEventError(err, streamErr.Event.Data)
+	}
 	return streamcore.SDKError(err, func(apiErr *openaisdk.Error) (int, string, *http.Response) {
 		return apiErr.StatusCode, cmp.Or(apiErr.Code, apiErr.Type), apiErr.Response
 	})
