@@ -52,9 +52,10 @@ func New(configuration Config) (*Provider, error) {
 		baseURL = strings.TrimRight(strings.TrimSpace(configuration.BaseURL), "/")
 	}
 	adapter, err := openairesponses.New(openairesponses.Config{
-		APIKey:     configuration.APIKey,
-		BaseURL:    baseURL,
-		HTTPClient: configuration.HTTPClient,
+		APIKey:             configuration.APIKey,
+		BaseURL:            baseURL,
+		HTTPClient:         configuration.HTTPClient,
+		EncryptedReasoning: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("openai: configure Responses adapter: %w", err)

@@ -349,6 +349,11 @@ Costs are estimates and do not model every service tier, long-context surcharge,
 promotion or subscription quota. Offline adapter tests do not establish live
 account/model access.
 
+Responses requests are stateless (`store: false`). The `openai` and
+`openai-codex` providers request `reasoning.encrypted_content` so the next turn
+can replay reasoning items; third-party Responses gateways do not send that
+include, which some reject.
+
 OpenCode Muse Spark can reject stored encrypted reasoning after its upstream
 context changes. After an actual recognized rejection, the Loop retries once
 with reasoning history projected to plain text for the rest of that run. It

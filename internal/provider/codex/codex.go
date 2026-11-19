@@ -103,7 +103,7 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	adapter, err := openairesponses.New(openairesponses.Config{
-		APIKey: credential.AccessToken, BaseURL: p.baseURL, HTTPClient: client, Codex: true,
+		APIKey: credential.AccessToken, BaseURL: p.baseURL, HTTPClient: client, Codex: true, EncryptedReasoning: true,
 		Headers: http.Header{
 			"Chatgpt-Account-Id": {credential.AccountID}, "Originator": {"aice"},
 			"Openai-Beta": {"responses=experimental"},

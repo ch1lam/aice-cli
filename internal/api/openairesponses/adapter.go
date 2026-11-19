@@ -34,14 +34,19 @@ type Config struct {
 	Headers    http.Header
 	// Codex selects the ChatGPT subscription Responses request shape.
 	Codex bool
+	// EncryptedReasoning requests encrypted reasoning content. Requests are
+	// stateless (store=false), so a server that keeps no reasoning state can
+	// only accept replayed reasoning items that carry it.
+	EncryptedReasoning bool
 }
 
 // Adapter implements AICE's model stream contract with the official OpenAI Go
 // SDK. It constructs the Responses service directly so unrelated OPENAI_*
 // environment variables cannot override another provider's explicit settings.
 type Adapter struct {
-	client responses.ResponseService
-	codex  bool
+	client             responses.ResponseService
+	codex              bool
+	encryptedReasoning bool
 }
 
 // New constructs an OpenAI Responses adapter.
@@ -70,7 +75,11 @@ func New(config Config) (*Adapter, error) {
 	// Client identity is owned by AICE, not a provider-specific header override.
 	opts = append(opts, option.WithHeader("User-Agent", buildinfo.UserAgent()))
 
-	return &Adapter{client: responses.NewResponseService(opts...), codex: config.Codex}, nil
+	return &Adapter{
+		client:             responses.NewResponseService(opts...),
+		codex:              config.Codex,
+		encryptedReasoning: config.EncryptedReasoning,
+	}, nil
 }
 
 // Stream starts one model request. The returned stream owns the SDK response
@@ -84,6 +93,9 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	if err != nil {
 		return nil, err
 	}
+	if a.encryptedReasoning {
+		params.Include = []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent}
+	}
 	if a.codex {
 		// The subscription endpoint rejects max_output_tokens and requires
 		// instructions even for callers without a system prompt.
@@ -91,7 +103,6 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 		if request.SystemPrompt == "" {
 			params.Instructions = param.NewOpt("You are a helpful assistant.")
 		}
-		params.Include = []responses.ResponseIncludable{"reasoning.encrypted_content"}
 		params.ParallelToolCalls = param.NewOpt(true)
 		if request.Options.Thinking != llm.ThinkingLevelUnknown {
 			params.Reasoning.Summary = shared.ReasoningSummaryAuto
