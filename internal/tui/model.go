@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
@@ -306,7 +305,7 @@ func newModel(
 }
 
 func (m model) Init() tea.Cmd {
-	commands := []tea.Cmd{textarea.Blink, m.welcomeAnimation.tick()}
+	commands := []tea.Cmd{m.welcomeAnimation.tick()}
 	if m.updateCheck != nil {
 		commands = append(commands, m.updateCheck)
 	}
@@ -592,14 +591,9 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Component clocks are routed explicitly. Private paste replies arrive in
-	// inputComponentResult; unrelated messages never rebuild editor layout.
-	if _, ok := message.(cursor.BlinkMsg); ok && m.sessionPickerVisible() {
-		return m.handleSessionPicker(message)
-	}
-	if _, ok := message.(cursor.BlinkMsg); ok && m.settingsVisible() {
-		return m.handleSettings(message)
-	}
+	// Private paste replies arrive in inputComponentResult; unrelated messages,
+	// including cursor blinks (every input uses the real terminal cursor),
+	// never rebuild editor layout.
 	return m, nil
 }
 

@@ -675,18 +675,13 @@ func joinTranscriptViewParts(parts []transcriptViewPart) string {
 	return view.String()
 }
 
-func (m model) entryView(
-	entry transcriptEntry,
-	activeAssistant bool,
-) string {
+// entryView renders the entry kinds that have no assistant or tool content
+// model; transcriptEntryItem renders those two itself.
+func (m model) entryView(entry transcriptEntry) string {
 	width := m.contentWidth()
 	switch entry.kind {
 	case entryUser:
 		return m.userMessageView(entry.text)
-	case entryAssistant:
-		return m.assistantEntryContent(entry, activeAssistant, true, true, true).view
-	case entryTool:
-		return m.transcriptContentView(m.toolHeaderView(entry) + "\n\n" + m.toolBodyView(entry))
 	case entryError:
 		return m.transcriptContentView(
 			errorStyle.Render("✕ Error  " + entry.text),

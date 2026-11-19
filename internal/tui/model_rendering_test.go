@@ -99,10 +99,10 @@ func TestModelShowsReasoningWithoutRedundantLabel(t *testing.T) {
 
 	current := newModel(make(chan runRequest), make(chan struct{}))
 	current.width = 80
-	transcript := ansi.Strip(current.entryView(transcriptEntry{
+	transcript := ansi.Strip(current.transcriptEntryItem(0, transcriptEntry{
 		kind:     entryAssistant,
 		thinking: "THOUGHT_CONTENT",
-	}, false))
+	}, false, transcriptStandalone).content().view)
 
 	if !strings.Contains(transcript, "THOUGHT_CONTENT") {
 		t.Fatalf("reasoning content is missing: %q", transcript)

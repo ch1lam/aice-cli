@@ -25,7 +25,7 @@ func (m model) codeHitAt(mouse tea.Mouse) codeHit {
 		m.side.menu != nil || m.side.confirm != nil {
 		return codeHit{}
 	}
-	position, inside := m.transcriptMousePosition(mouse, false, 0)
+	position, inside := m.transcriptMousePosition(mouse)
 	if !inside {
 		return codeHit{}
 	}

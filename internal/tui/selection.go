@@ -395,31 +395,15 @@ func (m *model) copyText(text string) tea.Cmd {
 	}))
 }
 
-func (m model) transcriptMousePosition(
-	mouse tea.Mouse,
-	clampToViewport bool,
-	viewportOffset int,
-) (transcriptPosition, bool) {
-	width := m.viewport.Width()
-	height := m.viewport.Height()
-	if width <= 0 || height <= 0 {
-		return transcriptPosition{}, false
-	}
-
-	viewportTop := m.screenLayout().transcript.y
+// transcriptMousePosition maps a mouse position to a visible viewport row and
+// column, reporting false outside the viewport.
+func (m model) transcriptMousePosition(mouse tea.Mouse) (transcriptPosition, bool) {
 	x := mouse.X - m.horizontalPadding()
-	y := mouse.Y - viewportTop
-	inside := x >= 0 && x < width && y >= 0 && y < height
-	if !inside && !clampToViewport {
+	y := mouse.Y - m.screenLayout().transcript.y
+	if x < 0 || x >= m.viewport.Width() || y < 0 || y >= m.viewport.Height() {
 		return transcriptPosition{}, false
 	}
-
-	x = min(max(x, 0), width-1)
-	y = min(max(y, 0), height-1)
-	return transcriptPosition{
-		row:    viewportOffset + y,
-		column: x,
-	}, inside
+	return transcriptPosition{row: y, column: x}, true
 }
 
 // selectedColumnRange maps a content row to its selected display columns.

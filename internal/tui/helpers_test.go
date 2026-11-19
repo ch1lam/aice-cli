@@ -101,3 +101,55 @@ func activeOf(accepts bool) interaction.ActiveRun {
 	}
 	return nil
 }
+
+// YOffset approximates the scrolled row for assertions: unknown blocks count
+// as one row so measuring never renders untouched history.
+func (v transcriptViewport) YOffset() int {
+	offset := v.line
+	for i := 0; i <= v.index && i < len(v.items); i++ {
+		item := v.items[i]
+		if item.parts == nil {
+			if i < v.index {
+				offset += max(1, len(item.lines)) + item.gap
+			}
+			continue
+		}
+		for part, piece := range item.parts {
+			if i == v.index && part >= v.part {
+				break
+			}
+			offset += max(1, len(piece.lines)) + piece.gap
+		}
+	}
+	return offset
+}
+
+func (v *transcriptViewport) SetYOffset(offset int) {
+	v.GotoTop()
+	v.scroll(max(offset, 0))
+}
+
+// GetContent renders every row; production frames only render the window.
+func (v transcriptViewport) GetContent() string {
+	var lines []string
+	for i := range v.items {
+		for part, item := range v.itemParts(i) {
+			for range item.gap {
+				lines = append(lines, "")
+			}
+			lines = append(lines, v.partLines(i, part)...)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (v *transcriptViewport) SetContent(content string) {
+	v.setItems([]transcriptItem{{version: content, render: func() string { return content }}})
+	if v.AtBottom() {
+		v.GotoBottom()
+	}
+}
+
+func (m model) toolBodyView(entry transcriptEntry) string {
+	return m.toolBodyContent(entry).view
+}
