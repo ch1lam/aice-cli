@@ -364,7 +364,9 @@ remain at the auth boundary. Known credentials are redacted from results.
 ### Automatic refresh before operations
 
 After checking connection authorization and acquiring the service gate, the app
-refreshes expired credentials before opening, listing or calling. Construction,
+refreshes credentials that expire within one minute before opening, listing or
+calling, so clock skew and latency do not send a token that is rejected on
+arrival. Construction,
 status, denied work and unknown expiry do not refresh. The existing auth-file
 lock coordinates processes: adopt a prior rotation or perform one exchange
 against the saved identity binding, then persist before use. Refresh has a

@@ -351,6 +351,19 @@ func TestMCPOAuthRefreshConsumesOtherOwnersRotation(t *testing.T) {
 	}
 }
 
+func TestMCPOAuthRefreshesTokenWithinExpiryMargin(t *testing.T) {
+	f := newMCPRefreshFixture(t)
+	c := refreshFixtureConfig(t, f, time.Now().Add(mcpOAuthRefreshMargin/2))
+	o, err := newMCPOwner(c.MCP, ownerTestGuard(t), true, nil, mcpOAuthRefresh(c.Paths))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	if _, err := o.Connections()["user:service0"].Tools(t.Context()); err != nil || f.refreshes.Load() != 1 {
+		t.Fatal("a token about to expire was sent without refresh", err)
+	}
+}
+
 func TestMCPOAuthRefreshNeverReplaysRejectedTool(t *testing.T) {
 	f := newMCPRefreshFixture(t)
 	c := refreshFixtureConfig(t, f, time.Now().Add(-time.Hour))
