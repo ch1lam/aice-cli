@@ -493,8 +493,6 @@ func (a *application) checkForUpdate(
 
 	status := interaction.UpdateCheckStatusUnknown
 	switch result.Status {
-	case update.StartupStatusDisabled:
-		status = interaction.UpdateCheckStatusDisabled
 	case update.StartupStatusDevelopment:
 		status = interaction.UpdateCheckStatusDevelopment
 	case update.StartupStatusCurrent:
