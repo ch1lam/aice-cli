@@ -99,6 +99,25 @@ func TestGuardBashCorpus(t *testing.T) {
 		{`if c; then C=ls; else C=git; fi; $C push`, RuleBashOutbound},
 		{`if c; then F=a.txt; else F=b.txt; fi; cat $F`, allow},
 		{`s=; for f in a b; do s=$s.x; done; echo $s`, RuleBashDynamic},
+		// A variable set from a command or another unresolved expansion is
+		// unknown wherever a path uses it.
+		{`X=$(echo ~/.ssh/id_rsa); cat $X`, RuleBashDynamic},
+		{"X=`echo ~/.ssh/id_rsa`; cat \"$X\"", RuleBashDynamic},
+		{`X=$OTHER; cat $X/id_rsa`, RuleBashDynamic},
+		{`read X < list.txt; cat $X`, RuleBashDynamic},
+		{`printf -v X %s ~/.ssh/id_rsa; cat $X`, RuleBashDynamic},
+		{`for f in $(cat list.txt); do cat $f; done`, RuleBashDynamic},
+		{`X=(a ~/.ssh/id_rsa); cat ${X[1]}`, RuleBashDynamic},
+		{`out=$(mktemp); go test ./... > "$out"`, RuleBashDynamic},
+		{`set -- a.txt b.txt; shift; cat $1`, RuleBashDynamic},
+		{`X=a.txt; trap 'cat $X' EXIT`, RuleBashDynamic},
+		// Literal values still resolve, through loops, set and calls.
+		{`for f in a.txt ~/.ssh/id_rsa; do cat $f; done`, credentialsRuleID},
+		{`set -- ~/.ssh/id_rsa; cat $1`, credentialsRuleID},
+		{`f() { cat "$1"; }; f ~/.ssh/id_rsa`, credentialsRuleID},
+		{`f() { cat "$1"; }; f a.txt; cat "$1"`, allow},
+		{`x=a; x+=.txt; cat $x`, allow},
+		{`v=$(git rev-parse HEAD); git show $v; echo "$v"`, allow},
 		// Option values and nested scripts must not hide the real command.
 		{`git --git-dir .git push origin main`, RuleBashOutbound},
 		{`env --unset X git push`, RuleBashOutbound},

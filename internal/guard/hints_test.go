@@ -61,6 +61,8 @@ func TestGuardBashHints(t *testing.T) {
 		{"wc -l < $(echo a.txt)", false, false},
 		{"printf -v PATH %s .", false, false},
 		{"echo $(date)", true, true},
+		{"d=$(date); echo $d", true, true},
+		{"for f in a.txt go.mod; do cat $f; done", true, true},
 		{"trap 'echo done' EXIT; cat a.txt", false, false},
 	} {
 		res := checkCall(t, g, "bash", map[string]any{"command": tc.command})

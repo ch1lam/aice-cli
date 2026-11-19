@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/hostpath"
@@ -18,6 +19,9 @@ type shellWord struct {
 	unresolved bool
 	// substituted reports a command or process substitution in the word.
 	substituted bool
+	// computed reports a variable the script set from a command or another
+	// unresolved expansion.
+	computed bool
 }
 
 // shellCommand is one simple command after wrapper unwrapping.
@@ -90,12 +94,17 @@ type bashAnalysis struct {
 // and loop passes.
 const maxShellDepth = 4
 
-// unsetValue is a variable value the analysis does not know.
-const unsetValue = "\x00"
+// unsetValue is a variable value the analysis does not know, such as one
+// from the environment; computedValue is one the script set from a command
+// or another unresolved expansion, so a path built from it asks.
+const (
+	unsetValue    = "\x00"
+	computedValue = "\x01"
+)
 
 // maxCombinations bounds how many times one statement is checked for the
 // values its variables may have.
-const maxCombinations = 16
+const maxCombinations = 64
 
 // analyzeBash parses command and returns its file actions and command
 // findings. Unparseable input falls back to whitespace tokenization.
@@ -107,9 +116,12 @@ func (g *Guard) analyzeBash(command string) bashAnalysis {
 	}
 	a.script(command, []string{a.start}, 0)
 	// A trap may run at any later point, so its action is checked with the
-	// final functions, from an unknown directory and without variables.
+	// final functions, from an unknown directory and with every variable the
+	// script sets computed.
 	for i := 0; i < len(a.traps); i++ {
-		a.vars = map[string][]string{}
+		for name := range a.vars {
+			a.vars[name] = []string{computedValue}
+		}
 		a.script(a.traps[i].text, []string{unknownDir}, a.traps[i].depth)
 	}
 	return bashAnalysis{actions: a.actions, findings: a.findings, commands: a.commands, hidden: a.hidden}
@@ -289,12 +301,23 @@ func (a *bashAnalyzer) runCommand(cmd syntax.Command, dirs []string, depth int) 
 		return out, out
 	case *syntax.ForClause:
 		if iter, ok := c.Loop.(*syntax.WordIter); ok {
-			// Loop items are expanded like operands, so `for f in ~/.ssh/*` is a read.
+			// Loop items are expanded like operands, so `for f in ~/.ssh/*` is a
+			// read, and the variable takes each of them.
+			var values []string
 			for _, item := range iter.Items {
 				a.substitutions(item, dirs, depth)
-				a.path(a.literalWord(item), opRead, dirs, false)
+				w := a.literalWord(item)
+				a.path(w, opRead, dirs, false)
+				if w.unresolved {
+					w.text = computedValue
+				}
+				values = append(values, w.text)
 			}
-			delete(a.vars, iter.Name.Value)
+			if len(values) == 0 {
+				values = []string{computedValue}
+			}
+			slices.Sort(values)
+			a.vars[iter.Name.Value] = slices.Compact(values)
 		} else {
 			a.substitutions(c.Loop, dirs, depth)
 		}
@@ -496,18 +519,110 @@ func (a *bashAnalyzer) substitutions(node syntax.Node, dirs []string, depth int)
 
 // assign records a literal assignment; any other value forgets the name.
 func (a *bashAnalyzer) assign(assign *syntax.Assign) {
-	if assign.Name == nil || assign.Array != nil || assign.Index != nil {
+	if assign.Name == nil {
 		return
 	}
 	value := shellWord{}
 	if assign.Value != nil {
 		value = a.literalWord(assign.Value)
 	}
-	if value.unresolved || assign.Append {
-		delete(a.vars, assign.Name.Value)
-		return
+	if old := a.vars[assign.Name.Value]; assign.Append {
+		if len(old) != 1 || old[0] == unsetValue || old[0] == computedValue {
+			value.unresolved = true
+		}
+		value.text = old[0] + value.text
+	}
+	if value.unresolved || assign.Array != nil || assign.Index != nil {
+		value.text = computedValue
 	}
 	a.vars[assign.Name.Value] = []string{value.text}
+}
+
+// computeVariables marks the variables a builtin such as read, mapfile,
+// getopts, printf -v or shift sets as computed; for read, mapfile and
+// getopts any identifier among the words counts.
+func (a *bashAnalyzer) computeVariables(cmd shellCommand) {
+	words := cmd.words[1:]
+	var names []string
+	switch cmd.name() {
+	case "read":
+		names = []string{"REPLY"}
+	case "mapfile", "readarray":
+		names = []string{"MAPFILE"}
+	case "getopts":
+		names = []string{"OPTARG", "OPTIND"}
+	case "printf":
+		for i, w := range words {
+			if name, ok := strings.CutPrefix(w.text, "-v"); ok {
+				if name == "" && i+1 < len(words) {
+					name = words[i+1].text
+				}
+				names = append(names, name)
+			}
+		}
+		words = nil
+	case "shift":
+		for name := range a.vars {
+			if isDigits(name) {
+				names = append(names, name)
+			}
+		}
+		words = nil
+	default:
+		return
+	}
+	for _, w := range words {
+		names = append(names, w.text)
+	}
+	for _, name := range names {
+		if isIdentifier(name) || isDigits(name) {
+			a.vars[name] = []string{computedValue}
+		}
+	}
+}
+
+// positional binds $1, $2, ... to words, as `set --` and function calls do.
+func (a *bashAnalyzer) positional(words []shellWord) {
+	for name := range a.vars {
+		if isDigits(name) || name == "@" || name == "*" {
+			delete(a.vars, name)
+		}
+	}
+	for i, w := range words {
+		if w.unresolved {
+			w.text = computedValue
+		}
+		a.vars[strconv.Itoa(i+1)] = []string{w.text}
+	}
+	if len(words) > 0 {
+		a.vars["@"], a.vars["*"] = []string{computedValue}, []string{computedValue}
+	}
+}
+
+// setOperands returns the positional parameters `set` assigns, if any.
+func setOperands(cmd shellCommand) ([]shellWord, bool) {
+	args := cmd.words[1:]
+	for i := 0; i < len(args); i++ {
+		switch t := args[i].text; {
+		case t == "--":
+			return args[i+1:], true
+		case t == "-o" || t == "+o":
+			i++
+		case !strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "+") || args[i].unresolved:
+			return args[i:], true
+		}
+	}
+	return nil, false
+}
+
+func isIdentifier(s string) bool {
+	for i := range len(s) {
+		c := s[i]
+		if c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (i == 0 || c < '0' || c > '9') {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // environment marks an assignment that may change which code later
@@ -633,13 +748,27 @@ func (a *bashAnalyzer) simple(cmd shellCommand, depth int) (ok, all []string) {
 	if !inShell {
 		return in, in
 	}
+	a.computeVariables(cmd)
+	if args, ok := setOperands(cmd); ok && cmd.name() == "set" {
+		a.positional(args)
+	}
 	if body := a.funcs[cmd.words[0].text]; body != nil && direct {
 		if depth >= maxShellDepth {
 			a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "shell functions nested too deeply to inspect", pattern: cmd.display()})
 			out := dirUnion(in, []string{unknownDir})
 			return out, out
 		}
-		return a.stmt(body, in, depth+1)
+		// The call binds its arguments to $1, ...; the caller's return after it.
+		caller := maps.Clone(a.vars)
+		a.positional(cmd.words[1:])
+		ok, all = a.stmt(body, in, depth+1)
+		a.positional(nil)
+		for name, values := range caller {
+			if isDigits(name) || name == "@" || name == "*" {
+				a.vars[name] = values
+			}
+		}
+		return ok, all
 	}
 	return a.changeDir(cmd)
 }
@@ -787,7 +916,10 @@ func resolveBase(dir, start, workspace string) string {
 // path records one candidate from each directory it may be relative to.
 // Non-forced words must look like paths.
 func (a *bashAnalyzer) path(w shellWord, op string, dirs []string, force bool) {
-	a.hidden = a.hidden || w.substituted
+	a.hidden = a.hidden || w.substituted || w.computed
+	if w.computed {
+		a.findings = append(a.findings, finding{rule: RuleBashDynamic, desc: "path from a variable set by a command or expansion", pattern: a.command})
+	}
 	if w.text == "" || !force && !maybePathLike(w.text) || neutralDevice(w.text) {
 		return
 	}
@@ -880,7 +1012,7 @@ func expandWord(w *syntax.Word, vars map[string][]string) shellWord {
 		return shellWord{}
 	}
 	var b strings.Builder
-	unresolved := false
+	unresolved, computed := false, false
 	for _, part := range w.Parts {
 		switch p := part.(type) {
 		case *syntax.Lit:
@@ -895,7 +1027,7 @@ func expandWord(w *syntax.Word, vars map[string][]string) shellWord {
 					b.WriteString(value)
 				} else {
 					b.WriteString("$")
-					unresolved = true
+					unresolved, computed = true, computed || computedVariable(inner, vars)
 				}
 			}
 		default:
@@ -904,7 +1036,7 @@ func expandWord(w *syntax.Word, vars map[string][]string) shellWord {
 				continue
 			}
 			b.WriteString("$")
-			unresolved = true
+			unresolved, computed = true, computed || computedVariable(part, vars)
 		}
 	}
 	substituted := false
@@ -915,7 +1047,7 @@ func expandWord(w *syntax.Word, vars map[string][]string) shellWord {
 		}
 		return !substituted
 	})
-	return shellWord{text: b.String(), unresolved: unresolved, substituted: substituted}
+	return shellWord{text: b.String(), unresolved: unresolved, substituted: substituted, computed: computed}
 }
 
 // unescape removes the backslashes of an unquoted literal.
@@ -945,7 +1077,7 @@ func knownVariable(part syntax.WordPart, vars map[string][]string) (string, bool
 		return "", false
 	}
 	if values, ok := vars[p.Param.Value]; ok {
-		return values[0], len(values) == 1 && values[0] != unsetValue
+		return values[0], len(values) == 1 && values[0] != unsetValue && values[0] != computedValue
 	}
 	switch p.Param.Value {
 	case "HOME":
@@ -956,6 +1088,19 @@ func knownVariable(part syntax.WordPart, vars map[string][]string) (string, bool
 		return dir, dir != ""
 	}
 	return "", false
+}
+
+// computedVariable reports an expansion of a variable that may hold a
+// computed value.
+func computedVariable(part syntax.WordPart, vars map[string][]string) bool {
+	found := false
+	syntax.Walk(part, func(n syntax.Node) bool {
+		if p, ok := n.(*syntax.ParamExp); ok && p.Param != nil && slices.Contains(vars[p.Param.Value], computedValue) {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // wordToString renders w with each unknown expansion as "$".
