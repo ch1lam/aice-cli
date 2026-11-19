@@ -948,8 +948,14 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 	if s.titleUpdates != nil {
 		frontend.Titles = s
 	}
+	if s.tasks != nil {
+		frontend.Tasks = s
+	}
 	return frontend
 }
+
+// RunningTasks counts the Session's running background tasks.
+func (s *interactiveSession) RunningTasks() int { return s.tasks.Running() }
 
 // sessionTools composes the Session base tools with web and optional
 // capabilities for configuration, and assembles the matching system prompt.

@@ -183,12 +183,20 @@ type RuntimeState struct {
 	// resume and covers only main-run model calls made since then.
 	Throughput DisplayThroughput
 	Context    DisplayContext
+	// BackgroundTasks counts background tasks still running at the snapshot.
+	BackgroundTasks int
 	// SessionChanged reports that the active Session branch changed, so a
 	// frontend must discard its visible branch transcript.
 	SessionChanged bool
 	// Transcript replaces the visible branch when non-nil. Ownership transfers
 	// to the frontend; it is not repeated on ordinary run updates.
 	Transcript *Transcript
+}
+
+// BackgroundTaskCounter reports how many background tasks are running, so a
+// frontend can follow tasks that finish between runs.
+type BackgroundTaskCounter interface {
+	RunningTasks() int
 }
 
 // RuntimeStateProvider reports settings changed by an application command.

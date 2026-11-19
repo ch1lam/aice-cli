@@ -941,6 +941,7 @@ func (m model) modelStatus(width int) string {
 		thinking = "default"
 	}
 	suffix := " (" + thinking + ")"
+	tasks := backgroundTasksLabel(m.backgroundTasks)
 	prefix, prefixStyle := "", mutedStyle
 	switch m.permissionMode {
 	case permissionModeAuto:
@@ -948,8 +949,8 @@ func (m model) modelStatus(width int) string {
 	case permissionModeDefault:
 		prefix = "manual · "
 	}
-	name := truncateTerminalText(sanitizeToolDetail(m.currentModel.ID, false), max(width-lipgloss.Width(prefix+suffix), 1))
-	return prefixStyle.Render(prefix) + mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
+	name := truncateTerminalText(sanitizeToolDetail(m.currentModel.ID, false), max(width-lipgloss.Width(tasks+prefix+suffix), 1))
+	return mutedStyle.Render(tasks) + prefixStyle.Render(prefix) + mutedStyle.Render(name) + reasoningLevelStyle(m.thinking).Render(suffix)
 }
 
 func reasoningLevelStyle(level interaction.DisplayThinking) lipgloss.Style {

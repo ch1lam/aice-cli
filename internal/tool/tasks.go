@@ -291,6 +291,9 @@ func (t *Tasks) Kill(ctx context.Context, id string) (TaskStatus, error) {
 
 // Running reports how many tasks are still running.
 func (t *Tasks) Running() int {
+	if t == nil {
+		return 0
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.runningLocked()

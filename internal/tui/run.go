@@ -142,6 +142,9 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 	if frontend.State != nil {
 		initialModel.permissionMode = frontend.State.RuntimeState().PermissionMode
 	}
+	if frontend.Tasks != nil {
+		initialModel.pollTasks = backgroundTaskPoll(frontend.Tasks)
+	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured
