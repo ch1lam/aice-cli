@@ -551,8 +551,8 @@ credentials/prompt content out of logs.
 
 ### Background tasks
 
-`bash` with `run_in_background` starts the command as a background task and
-returns its ID (`bg-` and six random hex digits) and output file at once.
+`bash` with `run_in_background` starts the command as a background task, as
+`agent` does for a [background subagent](#subagents), and returns its ID (`bg-` and six random hex digits) and output file at once.
 The Guard checks the command exactly like a foreground one, so rules and
 `--yolo` behave the same. A background task takes no `timeout`; it ends when
 it exits, `task_kill` stops it, it runs for 10 hours, its output exceeds
@@ -607,7 +607,7 @@ the child, and cancelling the parent (Esc, or the run ending) cancels it.
 - The result is the report (at most 32 KiB; longer reports are cut with a
   pointer to the transcript), followed by turns, tool calls, duration and the
   transcript path. A child that stops early is an error result that keeps its
-  last report. The result's `delegation` details record the child Session ID,
+  last report. The result's `delegations` details record the child Session ID,
   usage, turns and tool calls; that usage counts toward the parent run's token
   budget and the Session's usage totals.
 - A child of a parent with a Session is recorded as an ordinary Session in
@@ -615,9 +615,34 @@ the child, and cancelling the parent (Esc, or the run ending) cancels it.
   and which never gets a title. A parent without a Session (`--print` without
   `--session`) keeps its children in memory.
 
-While a child runs, steering messages wait in the parent's mailbox until the
-`agent` call returns, and the TUI shows the call as running without the child's
-individual steps. There are no background subagents yet.
+While a synchronous child runs, steering messages wait in the parent's mailbox
+until the `agent` call returns, and the TUI shows the call as running without
+the child's individual steps.
+
+An `explore` subagent with `run_in_background` runs as a
+[background task](#background-tasks): the call returns its task ID and report
+file at once, and several run in parallel while the parent keeps working.
+Writes are never parallel: a subagent that may change files (`general`) only
+runs synchronously, while the parent waits, until writers can be physically
+isolated. A background child:
+
+- shares the background task limits, `task_output`, `task_kill` and completion
+  notices with background commands; its output file receives its report when
+  it finishes, and its notice and `task_output` show the report's first 2 KiB
+  and 4 KiB;
+- is not stopped by cancelling the run that started it; `/new`, resuming
+  another Session, `task_kill` and exit cancel it;
+- has no person to ask: asks are refused as under `--print`, while rules,
+  Session grants and auto mode decide as usual;
+- has no MCP tools or MCP discovery tools, since the parent run's MCP binding
+  ends with that run;
+- records its usage with the first result that reports its completion (the
+  notice, `task_output` or `task_kill`), counting toward that run's token
+  budget and the Session totals. A child stopped before it was reported, by
+  `/new` or exit, leaves its usage only in its own Session.
+
+Subagents are one level deep: a child has no `agent` tool, and its context
+carries no delegation, so it cannot start another subagent either way.
 
 ### Directory listings
 

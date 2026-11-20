@@ -90,7 +90,7 @@ Print 模式不弹出交互式授权提示：默认的 auto 模式由分类器�
 AICE 提供模型调用、工具执行、上下文与会话管理，通过 TUI 和非交互 CLI 使用。
 
 - **选择适合的模型。** 支持 OpenAI、Claude、DeepSeek、Kimi 等模型服务，以及自定义 OpenAI 兼容端点。详见[支持的服务与登录方式](./docs/configuration.md#credentials-and-connection-overrides)。
-- **操作代码库。** 读取、搜索和编辑文件，执行 Shell 命令、构建和测试，并可把服务或长时间构建作为[后台任务](docs/execution-sessions.md#background-tasks)运行；调研类任务可委派给只返回结论的 [subagent](docs/execution-sessions.md#subagents)。
+- **操作代码库。** 读取、搜索和编辑文件，执行 Shell 命令、构建和测试，并可把服务或长时间构建作为[后台任务](docs/execution-sessions.md#background-tasks)运行；调研类任务可委派给只返回结论的 [subagent](docs/execution-sessions.md#subagents)，只读的 subagent 可在后台并行运行。
 - **随时参与。** 引用文件、粘贴截图，执行中补充要求、排队后续任务或中断运行。
 - **随时继续工作。** 搜索和恢复历史会话，从之前的消息创建分支；自动上下文压缩支持较长的任务。
 - **扩展工作流。** 通过 [MCP](./docs/mcp.md) 接入外部工具，通过 [Agent Skills](./docs/configuration.md#agent-skills) 复用任务指令。
