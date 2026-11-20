@@ -59,7 +59,7 @@ func NewTaskKill(tasks *Tasks) (*TaskKill, error) {
 func (*TaskOutput) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_output",
-		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file; a subagent's file holds its report.",
+		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file; a subagent's file holds its report. A subagent's report arrives on its own as a notification: to wait only for subagents, end your turn instead of waiting here.",
 		InputSchema:   jsonSchema(taskOutputSchema),
 		PromptSnippet: "Check or wait for background tasks started by bash or agent",
 	}
