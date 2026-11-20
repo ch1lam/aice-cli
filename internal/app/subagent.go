@@ -23,7 +23,7 @@ const subagentPrompt = `
 
 # Subagent
 
-You are a subagent: the parent agent delegated the task in the first user message to you. No user can answer questions here; resolve what you can and state what you could not. Your final message is the report the parent receives instead of this whole conversation: give conclusions with the evidence behind them (paths, lines, commands, results), not a narrative of your steps.`
+You are a subagent: the parent agent delegated the task in the first user message to you. Do it directly and completely within its scope; if you notice something outside it, note it in one sentence instead of doing it. No user can answer questions here: make reasonable assumptions, state them, and state what you could not resolve. Your final message is the only thing the parent receives: start with the answer or outcome, then the evidence behind it (names, file paths with lines, commands and their results), then what you could not verify. If you changed files, list them and the checks you ran. Do not narrate your steps or recap code you merely read.`
 
 // sharedWriterPrompt follows the subagent section for a background writer
 // in the parent's workspace.
@@ -57,11 +57,11 @@ var mcpToolsExcluded = map[string]bool{"tool_search": true, "mcp_resource_list":
 // delegation is one main run's frozen settings for the subagents it starts.
 // A synchronous child runs inside the parent's tool call, sharing its Guard,
 // ask handler, model settings and MCP binding. A background child is a task
-// that may outlive the run: it has no MCP binding and no person to ask.
+// that may outlive the run: it has no MCP binding, and its asks reach the
+// frontend labeled with its task.
 type delegation struct {
-	// newLoop builds a child Loop; asks routes Guard asks to the frontend,
-	// otherwise they are refused.
-	newLoop   func(tools []agent.Tool, guard agent.Guard, asks bool) (*agent.Loop, error)
+	// newLoop builds a child Loop with the frontend's ask handler, if any.
+	newLoop   func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
 	compactor func(store *session.Store) agent.HistoryCompactor
 	// tasks runs background children; nil leaves only synchronous ones.
 	tasks        *tool.Tasks
@@ -81,6 +81,15 @@ type delegation struct {
 }
 
 type delegationKey struct{}
+
+// askerKey names the subagent whose Guard asks a context carries.
+type askerKey struct{}
+
+// askingAgent is the subagent label for a Guard ask, empty for the main agent.
+func askingAgent(ctx context.Context) string {
+	label, _ := ctx.Value(askerKey{}).(string)
+	return label
+}
 
 func withDelegation(ctx context.Context, d *delegation) context.Context {
 	return context.WithValue(ctx, delegationKey{}, d)
@@ -103,7 +112,7 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
-	res := d.run(ctx, request, childRun{tree: tree})
+	res := d.run(ctx, request, childRun{tree: tree, label: request.Description})
 	if tree != nil {
 		notes = append(notes, tree.finish(ctx, request.Description))
 	}
@@ -122,6 +131,8 @@ func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest)
 // childRun is how one child runs.
 type childRun struct {
 	background bool
+	// label names the child in its Guard asks.
+	label string
 	// artifacts is a background writer's own directory.
 	artifacts string
 	// tree is the child's own worktree, if it has one.
@@ -165,7 +176,7 @@ func (d *delegation) isolate(ctx context.Context, request tool.DelegateRequest, 
 // file claims.
 func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest) (tool.DelegateStart, error) {
 	if d.tasks == nil {
-		return tool.DelegateStart{}, errors.New("background subagents are unavailable in this run; run it synchronously")
+		return tool.DelegateStart{}, fmt.Errorf("%w; run it synchronously", tool.ErrNoBackground)
 	}
 	tree, notes, err := d.isolate(callCtx, request, true)
 	if err != nil {
@@ -176,7 +187,7 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 		ctx, cancel := context.WithCancel(values)
 		defer cancel()
 		defer context.AfterFunc(taskCtx, cancel)()
-		child := childRun{background: true, tree: tree}
+		child := childRun{background: true, tree: tree, label: id + " · " + request.Description}
 		if tree != nil {
 			// Settle the worktree however the run ends; its note follows the report.
 			defer func() { fmt.Fprintln(out, tree.finish(ctx, request.Description)) }()
@@ -243,7 +254,8 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 			return res
 		}
 	}
-	loop, err := d.newLoop(tools, guard, !child.background)
+	ctx = context.WithValue(ctx, askerKey{}, child.label)
+	loop, err := d.newLoop(tools, guard)
 	if err != nil {
 		res.Err = err
 		return res

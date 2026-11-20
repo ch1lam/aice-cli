@@ -200,12 +200,9 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer scope.close()
 	ctx = withDelegation(ctx, &delegation{
-		newLoop: func(tools []agent.Tool, guard agent.Guard, asks bool) (*agent.Loop, error) {
-			options := []agent.LoopOption{agent.WithGuard(guard)}
-			if asks {
-				options = append(options, agent.WithGuardAskHandler(r.session.handleGuardAsk))
-			}
-			return r.session.application.newAgentLoopWithOptions(snapshot.configuration, tools, options...)
+		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return r.session.application.newAgentLoopWithOptions(snapshot.configuration, tools,
+				agent.WithGuard(guard), agent.WithGuardAskHandler(r.session.handleGuardAsk))
 		},
 		tasks: r.session.tasks,
 		compactor: func(store *session.Store) agent.HistoryCompactor {

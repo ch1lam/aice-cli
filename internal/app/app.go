@@ -345,7 +345,7 @@ func (a *application) Print(
 	}
 	ctx = withDelegation(ctx, &delegation{
 		// Print has no person to ask, synchronous child or not.
-		newLoop: func(tools []agent.Tool, guard agent.Guard, _ bool) (*agent.Loop, error) {
+		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
 			return agent.NewLoop(configured.service, tools, agent.WithGuard(guard), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 		},
 		compactor:    func(store *session.Store) agent.HistoryCompactor { return a.historyCompactor(store, &configured, nil) },

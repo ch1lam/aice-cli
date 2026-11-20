@@ -232,7 +232,15 @@ func guardOptionNeedsReview(opt interaction.GuardOption, width int) bool {
 	return strings.ContainsAny(opt.Label, "\n\r\t") || lipgloss.Width(opt.Label)+5 > width
 }
 
+// guardTitle names what is asked, and which subagent asks.
 func guardTitle(req *interaction.GuardRequest) string {
+	if req.Agent != "" {
+		return "Subagent " + sanitizeSingleLineText(req.Agent) + ": " + guardAction(req)
+	}
+	return guardAction(req)
+}
+
+func guardAction(req *interaction.GuardRequest) string {
 	if req.Title != "" {
 		return req.Title
 	}

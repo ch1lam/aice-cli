@@ -55,7 +55,7 @@ func TestGuardAskMapsOptionsAndCancelDenies(t *testing.T) {
 			reply := make(chan interaction.GuardReply, 1)
 			done := make(chan struct{})
 			a.answerGuard(t.Context(), interaction.GuardRequest{
-				ID: "call-1", ToolName: "read", Path: "/etc/hosts",
+				ID: "call-1", Agent: "bg-000001 · probe", ToolName: "read", Path: "/etc/hosts",
 				Options: []interaction.GuardOption{{ID: "allow-once"}, {ID: "allow-run-file"}, {ID: "deny", Deny: true}},
 				Reply:   reply, Done: done,
 			})
@@ -68,8 +68,9 @@ func TestGuardAskMapsOptionsAndCancelDenies(t *testing.T) {
 			if len(kinds) != len(want) || kinds[0] != want[0] || kinds[1] != want[1] || kinds[2] != want[2] {
 				t.Fatalf("kinds = %v, want %v", kinds, want)
 			}
-			if request.ToolCall.ToolCallId != "call-1" {
-				t.Fatalf("tool call = %q", request.ToolCall.ToolCallId)
+			if request.ToolCall.ToolCallId != "call-1" || request.ToolCall.Title == nil ||
+				*request.ToolCall.Title != "[subagent bg-000001 · probe] read /etc/hosts" {
+				t.Fatalf("tool call = %q, title %v", request.ToolCall.ToolCallId, request.ToolCall.Title)
 			}
 			select {
 			case got := <-reply:

@@ -138,7 +138,7 @@ func (m *subagentModel) Stream(_ context.Context, request llm.Request) (llm.Stre
 	}
 	m.parent = append(m.parent, request)
 	if len(m.parent) == 1 {
-		return call("delegate", "agent", map[string]any{"description": "find loader", "prompt": "find the config loader", "type": "explore"}), nil
+		return call("delegate", "agent", map[string]any{"description": "find loader", "prompt": "find the config loader", "type": "explore", "run_in_background": false}), nil
 	}
 	return textEventStream(request.Model, "parent done", llm.Usage{InputTokens: 2, TotalTokens: 2}, llm.StopReasonStop), nil
 }
@@ -395,9 +395,9 @@ func TestChildContextRefusesDelegation(t *testing.T) {
 	}
 }
 
-// An interactive background child has nobody to ask: an ask is refused at
-// once instead of waiting on a prompt the TUI is not showing.
-func TestInteractiveBackgroundSubagentRefusesAsks(t *testing.T) {
+// An interactive background child's ask reaches the person, labeled with
+// its task, and their answer decides it.
+func TestInteractiveBackgroundSubagentForwardsAsks(t *testing.T) {
 	t.Parallel()
 	workspace := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.txt")
@@ -405,6 +405,7 @@ func TestInteractiveBackgroundSubagentRefusesAsks(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := &askingChildModel{outside: outside}
+	askers := make(chan string, 8)
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
@@ -412,6 +413,20 @@ func TestInteractiveBackgroundSubagentRefusesAsks(t *testing.T) {
 		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
 		userHomeDir: func() (string, error) { return t.TempDir(), nil },
 		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			go func() {
+				for {
+					select {
+					case request := <-frontend.Guards.GuardRequests():
+						select {
+						case askers <- request.Agent:
+						default:
+						}
+						request.Reply <- interaction.GuardReply{OptionID: request.Options[0].ID}
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
 			return runInteractive(ctx, frontend.Runner, "investigate", nil)
 		},
 	})
@@ -428,8 +443,11 @@ func TestInteractiveBackgroundSubagentRefusesAsks(t *testing.T) {
 	}
 	model.mu.Lock()
 	defer model.mu.Unlock()
-	if model.denied == nil || !model.denied.IsError || len(model.parent) != 3 {
+	if model.denied == nil || model.denied.IsError || !strings.Contains(model.denied.Content[0].Text, "secret") {
 		t.Fatalf("child read result = %#v after %d parent requests", model.denied, len(model.parent))
+	}
+	if asker := <-askers; asker != model.id+" · probe" {
+		t.Fatalf("ask labeled %q, want the task %s", asker, model.id)
 	}
 }
 

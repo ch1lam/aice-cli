@@ -50,6 +50,9 @@ func (a *agent) answerGuard(ctx context.Context, request interaction.GuardReques
 	if title == "" {
 		title = strings.TrimSpace(request.ToolName + " " + request.Command + request.Path)
 	}
+	if request.Agent != "" {
+		title = "[subagent " + request.Agent + "] " + title
+	}
 	promptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {

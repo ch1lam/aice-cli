@@ -503,7 +503,11 @@ type GuardReply struct {
 type GuardRequest struct {
 	ID string
 	// Title optionally replaces the prompt title derived from the fields below.
-	Title    string
+	Title string
+	// Agent names the subagent that asks, such as "bg-000002 · find callers";
+	// empty for the main agent. A background subagent may ask while no run
+	// is active.
+	Agent    string
 	ToolName string
 	Reason   string
 	RuleID   string
