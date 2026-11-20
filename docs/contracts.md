@@ -483,6 +483,11 @@ The runtime boundary preserves these ownership rules:
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only through tool result notices, and the TUI polls the running count
   through `BackgroundTaskCounter` only while tasks run.
+- A subagent's child Loop runs inside the parent's `agent` tool call, on its
+  goroutine and context, so the parent Loop is blocked and cancellation reaches
+  the child. The main run binds its frozen settings for children in the
+  context; the child owns its Session store, result reader and run counters and
+  shares the parent's Guard, ask handler and MCP run binding.
 - `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
   cancellable exchanges. Replies are bound to the current request and validated;
   cancellation wins racing submissions. Q&A publishes only a complete explicit

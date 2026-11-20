@@ -584,6 +584,41 @@ native Bash; with WSL `bash` does not offer `run_in_background` and the task
 tools are absent. If AICE is killed outright, Unix process groups of running
 tasks survive; Windows Job Objects end them.
 
+### Subagents
+
+The `agent` tool delegates a self-contained task to a subagent: a child Agent
+Loop that starts from the task prompt alone, works with the parent's tools
+until done, and returns only its final message as the report. Its steps never
+enter the parent's context. The call is synchronous: the parent's run waits for
+the child, and cancelling the parent (Esc, or the run ending) cancels it.
+
+- The child shares the parent run's model settings, system prompt (with a
+  subagent section), Guard, permission mode, Session grants and MCP binding.
+  Its asks reach the same frontend; `--print` refuses them as usual. It lacks
+  `agent` (depth is 1), `request_user_input`, `task_output` and `task_kill`,
+  and its `bash` offers no `run_in_background`. Its run has the configured
+  [run limits](configuration.md#run-limits) of its own.
+- `type: "explore"` additionally denies file writes (`write`, `edit`, bash
+  redirections), bash commands not known to be read-only, and MCP tools, whose
+  effects AICE cannot see. `general` (the default) may edit.
+- Auto mode reviews a child call against the parent Session's user turns and
+  the child's own actions. The task prompt is written by the model, so it never
+  counts as user intent.
+- The result is the report (at most 32 KiB; longer reports are cut with a
+  pointer to the transcript), followed by turns, tool calls, duration and the
+  transcript path. A child that stops early is an error result that keeps its
+  last report. The result's `delegation` details record the child Session ID,
+  usage, turns and tool calls; that usage counts toward the parent run's token
+  budget and the Session's usage totals.
+- A child of a parent with a Session is recorded as an ordinary Session in
+  `.aice/sessions/agents/<id>.jsonl`, which the Session picker does not list
+  and which never gets a title. A parent without a Session (`--print` without
+  `--session`) keeps its children in memory.
+
+While a child runs, steering messages wait in the parent's mailbox until the
+`agent` call returns, and the TUI shows the call as running without the child's
+individual steps. There are no background subagents yet.
+
 ### Directory listings
 
 `ls` lists one directory, including dotfiles. Directory names end in `/`;
@@ -704,7 +739,8 @@ from tool arguments, independently of execution and its result.
 ## Sessions
 
 Interactive runs create a version 3 JSONL Session under
-`<workspace>/.aice/sessions/` when the first prompt is accepted; a process
+`<workspace>/.aice/sessions/` when the first prompt is accepted ([subagent
+Sessions](#subagents) live in its `agents/` subdirectory); a process
 that never interacts leaves no file behind. An interactive Session that never
 records a message or compaction is removed on exit. `--print` creates or resumes a
 Session only when `--session` is supplied. An explicit `--session` path is

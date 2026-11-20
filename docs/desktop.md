@@ -69,8 +69,8 @@ operations. To narrow tools or resources, configure Cua's own capability
 manifest or permission mode; see Cua's
 [permission modes](https://cua.ai/docs/reference/cua-driver/permission-modes).
 
-Each AICE process, and each future subagent, uses its own MCP connection and
-therefore its own Cua session lifecycle. Cua does not isolate keyboard focus,
+Each AICE process uses its own MCP connection and therefore its own Cua session
+lifecycle; its subagents share the parent's connection. Cua does not isolate keyboard focus,
 physical input or single-instance apps between sessions: background delivery
 to different windows coexists, while concurrent foreground input on one desktop
 can interfere. Cua's catalog is large, so it is usually reached through

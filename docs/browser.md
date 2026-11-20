@@ -92,7 +92,7 @@ The MCP process is an ordinary owned stdio child and is closed with AICE. The
 agent-browser's idle timeout (ten minutes as configured) or Close browser
 session. `/new` and Session switching do not reset browser state, and history
 never restores it; observe the page again when resuming. All AICE processes,
-and future subagents, share the `aice` session unless a tool call passes another
+and their subagents, share the `aice` session unless a tool call passes another
 `session`; parallel use of one session can interfere.
 
 ## Screenshots and authority
