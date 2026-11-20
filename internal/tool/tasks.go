@@ -65,6 +65,8 @@ type Tasks struct {
 	// finished holds completions in the order they happened until they are
 	// reported through a notice, task_output or task_kill.
 	finished []*task
+	// changed is closed and replaced when a task finishes.
+	changed chan struct{}
 }
 
 type task struct {
@@ -120,7 +122,7 @@ func NewTasks() (*Tasks, error) {
 		return nil, fmt.Errorf("tool: create task output directory: %w", err)
 	}
 	life, stop := context.WithCancel(context.Background())
-	return &Tasks{dir: dir, life: life, stop: stop, tasks: make(map[string]*task)}, nil
+	return &Tasks{dir: dir, life: life, stop: stop, tasks: make(map[string]*task), changed: make(chan struct{})}, nil
 }
 
 // Dir is the directory holding task output files. Tools may read it; nothing
@@ -234,11 +236,24 @@ func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, erro
 	return current.status(), nil
 }
 
+// finish publishes a completion. Under Tasks.mu a task stops running exactly
+// when it joins finished, so a waiter never sees it neither running nor
+// reportable.
 func (t *Tasks) finish(current *task) {
 	t.mu.Lock()
-	t.finished = append(t.finished, current)
-	t.mu.Unlock()
+	defer t.mu.Unlock()
 	close(current.done)
+	t.finished = append(t.finished, current)
+	close(t.changed)
+	t.changed = make(chan struct{})
+}
+
+// Changed returns a channel closed when a task next finishes. Take it before
+// checking state, so a completion in between is not missed.
+func (t *Tasks) Changed() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.changed
 }
 
 // supervise waits for the task and terminates it on request, on Close, after
@@ -383,12 +398,18 @@ func (t *Tasks) Kill(ctx context.Context, id string) (TaskStatus, error) {
 
 // Running reports how many tasks are still running.
 func (t *Tasks) Running() int {
+	return t.RunningKind("")
+}
+
+// RunningKind reports how many tasks of kind, or of every kind for "", are
+// still running.
+func (t *Tasks) RunningKind(kind string) int {
 	if t == nil {
 		return 0
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.runningLocked()
+	return t.runningKindLocked(kind)
 }
 
 // TakeCompletions returns finished tasks that no result has reported yet, in

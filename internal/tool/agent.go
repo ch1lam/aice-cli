@@ -88,7 +88,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 		Description: "Delegate a self-contained task to a subagent that starts with a fresh context, works with your tools " +
 			"until done, and returns only its final report. Its intermediate steps never enter your context. " +
 			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
-			"run_in_background returns a task id at once; the report arrives with a later tool result. " +
+			"run_in_background returns a task id at once; the report arrives later as a notification, also after you end your turn. " +
 			"isolation \"worktree\" runs a general subagent in its own git worktree from the current commit: it sees no uncommitted changes, " +
 			"and its changes come back as a branch for you to review and apply. It is the default for a background general subagent in a git repository. " +
 			"Writers sharing the workspace never change the same file: a write to a file another running writer changed is denied.",
@@ -109,7 +109,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"Delegate only independent tasks whose process is long but whose conclusion is short, such as a broad search, an investigation or a review; do simple or tightly coupled work yourself",
 			"Write the prompt so it stands alone: the subagent cannot see this conversation or ask the user anything",
 			"Prefer type explore unless the task must change files; verify a subagent's claims before relying on them for edits",
-			"Run independent subagents in the background to work in parallel, keep doing your own work, and use task_output to wait only when you need a report; never start the same task twice",
+			"Run independent subagents in the background to work in parallel and keep doing your own work; when only waiting remains, end your turn and each report resumes you; never start the same task twice",
 			"Review a worktree subagent's branch before applying it, then verify the result yourself",
 			"Give writers that share your workspace disjoint files: name the files each may change, and do not edit them yourself until it finishes",
 		},
@@ -122,6 +122,20 @@ type agentArguments struct {
 	Type        string `json:"type,omitempty"`
 	Background  bool   `json:"run_in_background,omitempty"`
 	Isolation   string `json:"isolation,omitempty"`
+}
+
+// TruncateAgentReport trims a subagent report and cuts it at
+// MaxAgentReportBytes with a pointer to the child transcript.
+func TruncateAgentReport(report string) string {
+	report = strings.TrimSpace(report)
+	if len(report) <= MaxAgentReportBytes {
+		return report
+	}
+	cut := MaxAgentReportBytes
+	for cut > 0 && !utf8.RuneStart(report[cut]) {
+		cut--
+	}
+	return report[:cut] + fmt.Sprintf("\n[report truncated: %d of %d bytes shown; the child transcript has the rest]", cut, len(report))
 }
 
 // Execute runs one subagent. A child that stopped early is an error result
@@ -151,7 +165,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 			return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "agent", err)
 		}
 		text := fmt.Sprintf("Subagent started in background as task %s; its report will be written to %s.\n"+
-			"Its report arrives with a later tool result. Continue your own work; use task_output with wait only when you need the report. Do not start it again.",
+			"Its report arrives as a notification, even after you end your turn. Continue with work it does not cover, or end your turn if only waiting remains; do not poll it or start it again.",
 			started.Task.ID, started.Task.OutputPath)
 		for _, note := range started.Notes {
 			text += "\n" + note
@@ -161,14 +175,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	res := a.delegator.Delegate(ctx, request)
 
 	var text strings.Builder
-	report := strings.TrimSpace(res.Report)
-	if len(report) > MaxAgentReportBytes {
-		cut := MaxAgentReportBytes
-		for cut > 0 && !utf8.RuneStart(report[cut]) {
-			cut--
-		}
-		report = report[:cut] + fmt.Sprintf("\n[report truncated: %d of %d bytes shown; the child transcript has the rest]", cut, len(res.Report))
-	}
+	report := TruncateAgentReport(res.Report)
 	if res.Err != nil {
 		fmt.Fprintf(&text, "Subagent stopped before finishing: %v\n", res.Err)
 		if report != "" {

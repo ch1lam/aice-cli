@@ -21,7 +21,6 @@ type Loop struct {
 	retry       RetryPolicy
 	guard       Guard
 	guardAsk    GuardAskHandler
-	notices     ToolResultNotices
 }
 
 // GuardAskReply is the user's resolution of one guard Ask.
@@ -53,15 +52,6 @@ func WithGuard(g Guard) LoopOption {
 func WithGuardAskHandler(h GuardAskHandler) LoopOption {
 	return func(l *Loop) error {
 		l.guardAsk = h
-		return nil
-	}
-}
-
-// WithToolResultNotices installs the source of notices prepended to tool
-// results. A nil source adds none.
-func WithToolResultNotices(n ToolResultNotices) LoopOption {
-	return func(l *Loop) error {
-		l.notices = n
 		return nil
 	}
 }
@@ -153,6 +143,9 @@ func (l *Loop) Run(ctx context.Context, input RunInput, sink AgentEventSink) (Re
 		definitions: l.definitions,
 		selected:    slices.Clone(input.InitialTools),
 	}
+	if input.Prompt.Notice != nil {
+		execution.addDelegations(input.Prompt.Notice.Delegations)
+	}
 	stop, runErr := stepAbort, execution.recordMessage(ctx, input.Prompt)
 	if runErr == nil {
 		execution.history = append(execution.history, input.Prompt)
@@ -243,6 +236,19 @@ func (e *runExecution) run(ctx context.Context) (step, error) {
 		Message: e.input.Prompt,
 	}, InputKindUnknown); err != nil {
 		return stepAbort, err
+	}
+	// Notifications that arrived before this run follow its prompt.
+	notice, notifies, err := e.nextInput(e.input.Notifications, InputKindNotification)
+	if err != nil {
+		return stepEnd, err
+	}
+	if notifies {
+		if err := e.retainInput(ctx, notice.Message); err != nil {
+			return stepAbort, err
+		}
+		if err := e.emitInput(ctx, notice, InputKindNotification); err != nil {
+			return stepAbort, err
+		}
 	}
 
 	for {
@@ -371,24 +377,8 @@ func (e *runExecution) settleToolsAndSteering(
 		return stepEnd, runErr
 	}
 
-	steering, steers, steeringErr := e.nextInput(
-		e.input.Steering,
-		"steering",
-	)
-	if steeringErr != nil {
-		return stepEnd, steeringErr
-	}
-	if steers {
-		e.repetition = repetitionTracker{}
-		e.history = append(e.history, steering.Message)
-		e.pendingInputs = append(e.pendingInputs, steering.Message)
-		if err := e.recordMessage(ctx, steering.Message); err != nil {
-			return stepAbort, err
-		}
-		if err := e.startInputTurn(ctx, steering, InputKindSteering); err != nil {
-			return stepAbort, err
-		}
-		return stepContinue, nil
+	if next, err := e.takeSteeringAndNotification(ctx); next != stepSettled {
+		return next, err
 	}
 	if len(turn.ToolResults) == 0 {
 		e.repetition = repetitionTracker{}
@@ -407,30 +397,91 @@ func (e *runExecution) settleToolsAndSteering(
 	return stepContinue, nil
 }
 
+// takeSteeringAndNotification continues the interaction with a waiting
+// steering message and notification, in that order, in one new turn. It
+// returns stepSettled when neither is waiting.
+func (e *runExecution) takeSteeringAndNotification(ctx context.Context) (step, error) {
+	steering, steers, err := e.nextInput(e.input.Steering, InputKindSteering)
+	if err != nil {
+		return stepEnd, err
+	}
+	notice, notifies, err := e.nextInput(e.input.Notifications, InputKindNotification)
+	if err != nil {
+		return stepEnd, err
+	}
+	if !steers && !notifies {
+		return stepSettled, nil
+	}
+	e.repetition = repetitionTracker{}
+	if steers {
+		if err := e.retainInput(ctx, steering.Message); err != nil {
+			return stepAbort, err
+		}
+	}
+	if notifies {
+		if err := e.retainInput(ctx, notice.Message); err != nil {
+			return stepAbort, err
+		}
+	}
+	if err := e.beginTurn(ctx); err != nil {
+		return stepAbort, err
+	}
+	if steers {
+		if err := e.emitInput(ctx, steering, InputKindSteering); err != nil {
+			return stepAbort, err
+		}
+	}
+	if notifies {
+		if err := e.emitInput(ctx, notice, InputKindNotification); err != nil {
+			return stepAbort, err
+		}
+	}
+	return stepContinue, nil
+}
+
+// pollFollowUp starts the next interaction at a natural stop: with a
+// follow-up, or else with the next awaited notification.
 func (e *runExecution) pollFollowUp(ctx context.Context) (step, error) {
-	followUp, followsUp, followUpErr := e.nextInput(
-		e.input.FollowUp,
-		"follow-up",
-	)
+	followUp, followsUp, followUpErr := e.nextInput(e.input.FollowUp, InputKindFollowUp)
 	if followUpErr != nil {
 		return stepEnd, followUpErr
 	}
+	kind := InputKindFollowUp
 	if !followsUp {
-		return stepEnd, nil
+		if e.input.AwaitNotification == nil {
+			return stepEnd, nil
+		}
+		kind = InputKindNotification
+		input, ok, err := e.input.AwaitNotification(ctx)
+		followUp, followsUp, followUpErr = checkInput(kind, input, ok, err)
+		if followUpErr != nil || !followsUp {
+			return stepEnd, followUpErr
+		}
 	}
 
-	// Keep the follow-up pending before compaction so a failed compaction
-	// still produces a durable terminal interaction for the accepted input.
-	e.pendingInputs = append(e.pendingInputs, followUp.Message)
-	if err := e.recordMessage(ctx, followUp.Message); err != nil {
+	// Keep the input pending before compaction so a failed compaction still
+	// produces a durable terminal interaction for the accepted input.
+	if err := e.retainInput(ctx, followUp.Message); err != nil {
 		return stepAbort, err
 	}
-	e.history = append(e.history, followUp.Message)
-
-	if err := e.startInputTurn(ctx, followUp, InputKindFollowUp); err != nil {
+	if err := e.startInputTurn(ctx, followUp, kind); err != nil {
 		return stepAbort, err
 	}
 	return stepContinue, nil
+}
+
+// retainInput keeps an accepted input for the next model round and records
+// it. Delegations a notification reports count toward the run.
+func (e *runExecution) retainInput(ctx context.Context, message llm.UserMessage) error {
+	if message.Notice != nil {
+		e.addDelegations(message.Notice.Delegations)
+	}
+	e.pendingInputs = append(e.pendingInputs, message)
+	if err := e.recordMessage(ctx, message); err != nil {
+		return err
+	}
+	e.history = append(e.history, message)
+	return nil
 }
 
 // startInputTurn opens a turn with an accepted input message.
@@ -442,6 +493,15 @@ func (e *runExecution) startInputTurn(
 	if err := e.beginTurn(ctx); err != nil {
 		return err
 	}
+	return e.emitInput(ctx, input, kind)
+}
+
+// emitInput announces an accepted input in the current turn.
+func (e *runExecution) emitInput(
+	ctx context.Context,
+	input InputMessage,
+	kind InputKind,
+) error {
 	turnNumber := e.lifecycle.turn
 	if err := e.emit(ctx, AgentEvent{
 		Type:       EventTypeMessageStart,
@@ -474,36 +534,34 @@ func (e *runExecution) finishInteraction(ctx context.Context) error {
 	return nil
 }
 
-func (e *runExecution) nextInput(
-	source InputSource,
-	label string,
-) (InputMessage, bool, error) {
+func (e *runExecution) nextInput(source InputSource, kind InputKind) (InputMessage, bool, error) {
 	if source == nil {
 		return InputMessage{}, false, nil
 	}
 	input, ok, err := source()
-	if err != nil {
-		return InputMessage{}, false, fmt.Errorf(
-			"agent: receive %s message: %w",
-			label,
-			err,
-		)
-	}
-	if !ok {
+	return checkInput(kind, input, ok, err)
+}
+
+var inputLabels = map[InputKind]string{
+	InputKindSteering: "steering", InputKindFollowUp: "follow-up", InputKindNotification: "notification",
+}
+
+// checkInput checks one received input: its ID, its message, and that a
+// notification, and only a notification, carries llm.Notice.
+func checkInput(kind InputKind, input InputMessage, ok bool, err error) (InputMessage, bool, error) {
+	label := inputLabels[kind]
+	switch {
+	case err != nil:
+		return InputMessage{}, false, fmt.Errorf("agent: receive %s message: %w", label, err)
+	case !ok:
 		return InputMessage{}, false, nil
-	}
-	if strings.TrimSpace(input.ID) == "" {
-		return InputMessage{}, false, fmt.Errorf(
-			"agent: %s message id is required",
-			label,
-		)
+	case strings.TrimSpace(input.ID) == "":
+		return InputMessage{}, false, fmt.Errorf("agent: %s message id is required", label)
+	case input.Message.IsNotice() != (kind == InputKindNotification):
+		return InputMessage{}, false, fmt.Errorf("agent: %s message has the wrong origin", label)
 	}
 	if err := input.Message.Validate(); err != nil {
-		return InputMessage{}, false, fmt.Errorf(
-			"agent: validate %s message: %w",
-			label,
-			err,
-		)
+		return InputMessage{}, false, fmt.Errorf("agent: validate %s message: %w", label, err)
 	}
 	return input, true, nil
 }

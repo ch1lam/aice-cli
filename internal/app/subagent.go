@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -194,7 +193,7 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 			}
 		}
 		res := d.run(ctx, request, child)
-		report := strings.TrimSpace(res.Report)
+		report := tool.TruncateAgentReport(res.Report)
 		if report == "" {
 			report = "(the subagent finished without a report)"
 		}

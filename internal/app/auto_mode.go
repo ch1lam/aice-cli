@@ -214,7 +214,8 @@ func (a *autoMode) escalate(call llm.ToolCall, res agent.GuardResult, reason str
 
 // transcriptRequest derives the classifier's view of the conversation: the
 // text the user typed and earlier tool calls with their outcome, never tool
-// output, assistant text or compaction summaries.
+// output, assistant text, AICE notices or compaction summaries. A notice
+// reports subagent and command output, so it is never intent.
 func transcriptRequest(entries []session.MessageEntry, pending llm.ToolCall) classify.Request {
 	var req classify.Request
 	outcomes := map[string]string{}
@@ -226,6 +227,9 @@ func transcriptRequest(entries []session.MessageEntry, pending llm.ToolCall) cla
 	for _, entry := range entries {
 		switch message := entry.Message.(type) {
 		case llm.UserMessage:
+			if message.IsNotice() {
+				continue
+			}
 			if text := typedText(message); text != "" {
 				req.Intent = append(req.Intent, classify.UserTurn{Text: text})
 			}
@@ -274,13 +278,16 @@ func toolOutcome(result llm.ToolResultMessage) string {
 	return "executed"
 }
 
-// blockCounts counts classifier blocks since the latest user message: the
-// trailing streak and the total.
+// blockCounts counts classifier blocks since the user's latest message: the
+// trailing streak and the total. An AICE notice is not the user's message.
 func blockCounts(entries []session.MessageEntry) (streak, total int) {
 	counting := true
 	for i := len(entries) - 1; i >= 0; i-- {
 		switch message := entries[i].Message.(type) {
 		case llm.UserMessage:
+			if message.IsNotice() {
+				continue
+			}
 			return streak, total
 		case llm.ToolResultMessage:
 			blocked := toolOutcome(message) == "blocked"

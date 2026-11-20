@@ -60,32 +60,37 @@ func TestRunTaskReportsDelegationOnce(t *testing.T) {
 	if err != nil || again.Details != nil {
 		t.Fatalf("second report = %#v, %v; usage must be recorded once", again.Details, err)
 	}
-	if notices := tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("task_output already reported it; notices = %+v", notices)
+	if _, _, ok := tasks.TakeNotice(); ok {
+		t.Fatal("task_output already reported it, yet a notice followed")
 	}
 }
 
-// A completion nobody waited for arrives as a notice carrying the record.
+// A completion nobody waited for arrives as a notice carrying the record and
+// the whole report, which is longer than a command's preview.
 func TestRunTaskCompletionNoticeCarriesDelegation(t *testing.T) {
 	t.Parallel()
 	tasks, _, _ := newRunTasks(t)
-	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) {
+	report := strings.Repeat("evidence ", 1000) + "conclusion"
+	changed := tasks.Changed()
+	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+		fmt.Fprintln(out, report)
 		return &llm.ToolDelegation{SessionID: "child"}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if notices := tasks.CompletionNotices(); len(notices) > 0 {
-			if len(notices) != 1 || notices[0].Delegation == nil || notices[0].Delegation.SessionID != "child" ||
-				!strings.Contains(notices[0].Text, "(no report)") {
-				t.Fatalf("notices = %+v", notices)
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change signal for the finished subagent")
 	}
-	t.Fatal("no completion notice")
+	notice, _, ok := tasks.TakeNotice()
+	if !ok || notice.Notice == nil || len(notice.Notice.Delegations) != 1 || notice.Notice.Delegations[0].SessionID != "child" ||
+		!strings.Contains(notice.Content[0].Text, report) {
+		t.Fatalf("notice = %#v", notice)
+	}
+	if err := notice.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // task_kill cancels a run task's context and reports how it ended; a run

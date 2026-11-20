@@ -210,6 +210,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	input.ObserveTools = observeTools
 	input.Steering = mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model)
 	input.FollowUp = mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model)
+	input.Notifications = taskNotifications(r.session.tasks)
+	if r.session.awaitSubagents {
+		input.AwaitNotification = awaitSubagents(r.session.tasks)
+	}
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
 			return err

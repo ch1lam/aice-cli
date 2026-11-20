@@ -321,7 +321,7 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())), agent.WithToolResultNotices(taskNotices(environment.tasks)))
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -364,12 +364,12 @@ func (a *application) Print(
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
+	runInput.Notifications = taskNotifications(environment.tasks)
+	runInput.AwaitNotification = awaitSubagents(environment.tasks)
 	_, loopErr := loop.Run(ctx, runInput, func(eventCtx context.Context, event agent.AgentEvent) error {
-		// Subagent usage reaches the totals through the results that record it.
-		if event.Type == agent.EventTypeToolExecutionEnd && event.ToolResult != nil && event.ToolResult.Details != nil {
-			for _, delegation := range event.ToolResult.Details.Delegations {
-				sink.AddUsage(delegation.Usage)
-			}
+		// Subagent usage reaches the totals through the messages that record it.
+		for _, delegation := range eventDelegations(event) {
+			sink.AddUsage(delegation.Usage)
 		}
 		return sink.Accept(eventCtx, event)
 	})
@@ -381,6 +381,20 @@ func (a *application) Print(
 		)
 	}
 	return finishErr
+}
+
+// eventDelegations are the subagent runs a recorded message reports: a tool
+// result's, or a notification's.
+func eventDelegations(event agent.AgentEvent) []llm.ToolDelegation {
+	switch {
+	case event.Type == agent.EventTypeToolExecutionEnd && event.ToolResult != nil && event.ToolResult.Details != nil:
+		return event.ToolResult.Details.Delegations
+	case event.Type == agent.EventTypeMessageEnd && event.InputKind == agent.InputKindNotification:
+		if message, ok := event.Message.(llm.UserMessage); ok && message.Notice != nil {
+			return message.Notice.Delegations
+		}
+	}
+	return nil
 }
 
 // Interactive runs one multi-turn terminal session.
@@ -884,22 +898,25 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
-	mcp            *mcpOwner
-	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
-	lifecycle      settingsLifecycle
-	catalog        sessionCatalog
-	browserBin     string
-	modelErr       error
-	application    *application
-	stateMu        sync.RWMutex
-	loop           *agent.Loop
-	conversation   conversationState
-	model          llm.Model
-	options        llm.StreamOptions
-	configuration  config.Config
-	tools          []agent.Tool
-	baseTools      []agent.Tool
-	tasks          *tool.Tasks
+	mcp           *mcpOwner
+	mcpLoaded     *mcpLoadedTools // protected by stateMu; current main Run only
+	lifecycle     settingsLifecycle
+	catalog       sessionCatalog
+	browserBin    string
+	modelErr      error
+	application   *application
+	stateMu       sync.RWMutex
+	loop          *agent.Loop
+	conversation  conversationState
+	model         llm.Model
+	options       llm.StreamOptions
+	configuration config.Config
+	tools         []agent.Tool
+	baseTools     []agent.Tool
+	tasks         *tool.Tasks
+	// awaitSubagents keeps a main run going until its running subagents
+	// report, for a frontend that cannot start a run on its own.
+	awaitSubagents bool
 	web            webState
 	desktop        *desktopPreset
 	systemPrompt   string
@@ -1011,7 +1028,6 @@ func (s *interactiveSession) sessionLoop(configuration config.Config, tools []ag
 		tools,
 		agent.WithGuard(s.guardAdapter),
 		agent.WithGuardAskHandler(s.handleGuardAsk),
-		agent.WithToolResultNotices(taskNotices(s.tasks)),
 	)
 }
 

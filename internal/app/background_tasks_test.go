@@ -19,9 +19,10 @@ import (
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
-// A background task outlives its call, its completion reaches the model with
-// the next tool result, its output file is readable without a Guard ask
-// (which --print would refuse), and the run's end removes it.
+// A background task outlives its call, its completion reaches the model as a
+// notification after the next tool round, its output file is readable
+// without a Guard ask (which --print would refuse), and the run's end
+// removes it.
 func TestApplicationPrintReportsBackgroundTaskCompletion(t *testing.T) {
 	t.Parallel()
 	if _, err := deps.FindNativeBash(deps.DefaultOptions()); err != nil {
@@ -51,10 +52,15 @@ func TestApplicationPrintReportsBackgroundTaskCompletion(t *testing.T) {
 		t.Fatal("bash did not report an output file")
 	}
 
-	waited := requestToolResult(t, model.requests[2])
-	if len(waited.Content) != 2 || !strings.Contains(waited.Content[0].Text, "Background task finished") ||
-		!strings.Contains(waited.Content[0].Text, "from-task") || !strings.Contains(waited.Content[1].Text, "exit code: 0") {
-		t.Fatalf("foreground result after completion = %#v", waited.Content)
+	messages := model.requests[2].Messages
+	notice, ok := messages[len(messages)-1].(llm.UserMessage)
+	if !ok || !notice.IsNotice() || !strings.Contains(notice.Content[0].Text, "not from the user") ||
+		!strings.Contains(notice.Content[0].Text, "from-task") {
+		t.Fatalf("message after the completion = %#v", messages[len(messages)-1])
+	}
+	waited, ok := messages[len(messages)-2].(llm.ToolResultMessage)
+	if !ok || len(waited.Content) != 1 || !strings.Contains(waited.Content[0].Text, "exit code: 0") {
+		t.Fatalf("foreground result before the notification = %#v", messages[len(messages)-2])
 	}
 	read := requestToolResult(t, model.requests[3])
 	if read.IsError || !strings.Contains(read.Content[0].Text, "from-task") {

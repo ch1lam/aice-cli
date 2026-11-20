@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -134,19 +133,41 @@ func (k *TaskKill) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResu
 	return withTaskDelegations(textResult(call, taskReport(status, taskOutputPreviewBytes), false), status), nil
 }
 
-// CompletionNotices describes background tasks that finished since the last
-// report, one notice each, for the Agent Loop to show with a tool result. A
-// subagent's notice carries its delegation record.
-func (t *Tasks) CompletionNotices() []agent.ToolResultNotice {
+// noticeHeader opens a task notification so the model never takes it for
+// the user's words.
+const noticeHeader = "[AICE notification, not from the user] Background tasks finished; no need to poll them."
+
+// agentNoticeBytes shows a subagent's whole report, already bounded by
+// MaxAgentReportBytes, with the lines that follow it.
+const agentNoticeBytes = MaxAgentReportBytes + 8<<10
+
+// TakeNotice reports the background tasks that finished since the last report
+// in one notification, marks them reported and returns its input ID. It
+// carries finished subagents' delegation records; ok is false when no task
+// finished.
+func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 	completions := t.TakeCompletions()
-	notices := make([]agent.ToolResultNotice, len(completions))
-	for index, status := range completions {
-		notices[index] = agent.ToolResultNotice{
-			Text:       "Background task finished; no need to poll it.\n" + taskReport(status, taskPreviewBytes),
-			Delegation: status.Delegation,
+	if len(completions) == 0 {
+		return llm.UserMessage{}, "", false
+	}
+	reports := []string{noticeHeader}
+	notice := &llm.Notice{}
+	for _, status := range completions {
+		preview := int64(taskPreviewBytes)
+		if status.Kind == TaskAgent {
+			preview = agentNoticeBytes
+		}
+		reports = append(reports, taskReport(status, preview))
+		if status.Delegation != nil && len(notice.Delegations) < llm.MaxToolDelegations {
+			notice.Delegations = append(notice.Delegations, *status.Delegation)
 		}
 	}
-	return notices
+	return llm.UserMessage{
+		Role:      llm.RoleUser,
+		Content:   []llm.ContentPart{llm.NewTextContent(strings.Join(reports, "\n\n")).Part()},
+		Timestamp: time.Now().UnixMilli(),
+		Notice:    notice,
+	}, "notice-" + completions[0].ID, true
 }
 
 // taskReport renders a status line and a preview of the task's output: the

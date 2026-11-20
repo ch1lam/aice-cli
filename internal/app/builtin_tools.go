@@ -8,7 +8,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
-	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -59,14 +58,43 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, tasks *tool
 	return tools, nil
 }
 
-// taskNotices tells the model about background tasks that finished since the
-// last report, with whichever tool result comes next.
-func taskNotices(tasks *tool.Tasks) agent.ToolResultNotices {
+// taskNotifications reports background tasks that finished since the last
+// report, as AICE notifications the Loop takes at its next boundary.
+func taskNotifications(tasks *tool.Tasks) agent.InputSource {
 	if tasks == nil {
 		return nil
 	}
-	return func(context.Context, llm.ToolResultMessage) []agent.ToolResultNotice {
-		return tasks.CompletionNotices()
+	return func() (agent.InputMessage, bool, error) {
+		message, id, ok := tasks.TakeNotice()
+		return agent.InputMessage{ID: id, Message: message}, ok, nil
+	}
+}
+
+// awaitSubagents keeps a run that would end while subagents still run: it
+// waits for the next notification, or reports none once no subagent runs.
+// A frontend that cannot start a run on its own, such as --print or ACP,
+// would otherwise lose their reports. Background commands are not awaited:
+// a server never finishes.
+func awaitSubagents(tasks *tool.Tasks) func(context.Context) (agent.InputMessage, bool, error) {
+	if tasks == nil {
+		return nil
+	}
+	take := taskNotifications(tasks)
+	return func(ctx context.Context) (agent.InputMessage, bool, error) {
+		for {
+			changed := tasks.Changed()
+			if input, ok, err := take(); ok || err != nil {
+				return input, ok, err
+			}
+			if tasks.RunningKind(tool.TaskAgent) == 0 {
+				return agent.InputMessage{}, false, nil
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				return agent.InputMessage{}, false, ctx.Err()
+			}
+		}
 	}
 }
 
