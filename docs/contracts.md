@@ -195,7 +195,9 @@ retain the short content summary; Session keeps the additive metadata.
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - `RunLimits` are immutable configuration with per-run counters. Steering,
   follow-ups and automatic compaction share token/time budgets; compaction has
-  its own turn counter. Resource/turn/repetition stops are non-retryable, retain
+  its own turn counter. A tool result's `Details.Delegation.Usage`, spent by a
+  subagent on the run's behalf, counts toward the token budget and
+  `Result.Usage` when the result is accepted. Resource/turn/repetition stops are non-retryable, retain
   actual outcomes and pair skipped calls. Exact accounting, overshoot and
   continuation behavior belong to [run limits](execution-sessions.md#run-resource-limits).
 - Default model retries allow three retries after the first attempt, with

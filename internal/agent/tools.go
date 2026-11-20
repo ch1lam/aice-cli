@@ -81,6 +81,11 @@ func (e *runExecution) executeTools(
 
 		e.proposal = nil
 		message, toolErr := e.executeTool(ctx, call)
+		if message.Details != nil && message.Details.Delegation != nil {
+			// A subagent spent tokens on this run's behalf: they count
+			// toward its budget like its own model calls.
+			e.addUsage(message.Details.Delegation.Usage)
+		}
 		message, err := e.acceptToolResult(ctx, message, true)
 		if err != nil {
 			return err

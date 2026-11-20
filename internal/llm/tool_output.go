@@ -49,6 +49,18 @@ type ToolResultDetails struct {
 	Loss              string          `json:"loss,omitempty"`
 	// Review records who decided an automatic permission for this call.
 	Review *ToolReview `json:"review,omitempty"`
+	// Delegation records the subagent run that produced this result.
+	Delegation *ToolDelegation `json:"delegation,omitempty"`
+}
+
+// ToolDelegation links a result to the subagent run behind it. Its usage is
+// spent on the parent's behalf and counts toward the parent run and Session.
+type ToolDelegation struct {
+	// SessionID names the child Session; empty when the child was not persisted.
+	SessionID string `json:"session_id,omitempty"`
+	Usage     Usage  `json:"usage"`
+	Turns     int    `json:"turns"`
+	ToolCalls int    `json:"tool_calls"`
 }
 
 // MaxToolActions bounds the actions recorded for one tool call.
@@ -178,6 +190,14 @@ func (d *ToolResultDetails) Clone() *ToolResultDetails {
 		}
 		copy.Review = &review
 	}
+	if d.Delegation != nil {
+		delegation := *d.Delegation
+		if delegation.Usage.Cost != nil {
+			cost := *delegation.Usage.Cost
+			delegation.Usage.Cost = &cost
+		}
+		copy.Delegation = &delegation
+	}
 	return &copy
 }
 
@@ -208,6 +228,12 @@ func (d *ToolResultDetails) Validate() error {
 		}
 		if !utf8.ValidString(r.Reason+r.Classifier) || len(r.Reason) > 4096 || len(r.Classifier) > 256 {
 			return fmt.Errorf("tool result review text must be UTF-8 and bounded")
+		}
+	}
+	if g := d.Delegation; g != nil {
+		if g.Turns < 0 || g.ToolCalls < 0 || len(g.SessionID) > 256 || !utf8.ValidString(g.SessionID) ||
+			strings.ContainsAny(g.SessionID, "\x00\r\n/\\") {
+			return fmt.Errorf("tool result delegation is invalid")
 		}
 	}
 	if d.Binding != nil {

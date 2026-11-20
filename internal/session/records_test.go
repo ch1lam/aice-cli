@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -151,5 +152,50 @@ func TestSnapshotSiblingPrefixesHaveIndependentPendingCalls(t *testing.T) {
 		if _, err := session.BuildContext(snapshot); err == nil {
 			t.Fatalf("pending prefix %q accepted", leaf)
 		}
+	}
+}
+
+// Delegated usage survives a JSON round trip and counts toward the Session
+// total as well as its own subtotal.
+func TestUsageSummaryIncludesDelegations(t *testing.T) {
+	t.Parallel()
+	assistant := textMessages()[1].(llm.AssistantMessage)
+	assistant.Usage = llm.Usage{TotalTokens: 10}
+	assistant.StopReason = llm.StopReasonToolUse
+	assistant.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &llm.ToolCall{ID: "call", Name: "agent", Arguments: json.RawMessage(`{}`)}}}
+	result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "call", Name: "agent",
+		Content: []llm.ContentPart{llm.NewTextContent("report").Part()},
+		Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegation: &llm.ToolDelegation{
+			SessionID: "child", Usage: llm.Usage{TotalTokens: 30, Cost: &llm.Cost{Total: 0.5}}, Turns: 3, ToolCalls: 2,
+		}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded llm.ToolResultMessage
+	if err := json.Unmarshal(data, &decoded); err != nil || !reflect.DeepEqual(decoded.Details, result.Details) {
+		t.Fatalf("round trip = %#v, %v", decoded.Details, err)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	writer := mustCreate(t, path)
+	appendMessages(t, writer, "m", textMessages()[0], assistant, decoded)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	summary, err := reopened.Usage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Delegations != 1 || summary.DelegatedUsage.TotalTokens != 30 || summary.Total.TotalTokens != 40 ||
+		summary.Total.Cost == nil || summary.Total.Cost.Total != 0.5 {
+		t.Fatalf("summary = %+v", summary)
 	}
 }

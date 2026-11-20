@@ -165,3 +165,27 @@ func TestRunTimeBudgetCancelsToolAndPairsRemainder(t *testing.T) {
 		}
 	})
 }
+
+// Tokens a subagent spends for the run count toward its budget, so the budget
+// cannot be bypassed by delegating.
+func TestRunBudgetIncludesDelegatedUsage(t *testing.T) {
+	t.Parallel()
+	info := testModel()
+	call := assistantMessage(info, llm.StopReasonToolUse, toolCallPart("a", "agent", `{}`))
+	call.Usage = llm.Usage{TotalTokens: 5}
+	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(call)}}}
+	delegate := newFakeTool("agent", func(_ context.Context, c llm.ToolCall) (llm.ToolResult, error) {
+		return llm.ToolResult{CallID: c.ID, Name: c.Name, Content: []llm.ContentPart{textPart("report")},
+			Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegation: &llm.ToolDelegation{
+				SessionID: "child", Usage: llm.Usage{TotalTokens: 20}, Turns: 2, ToolCalls: 1,
+			}}}, nil
+	})
+	loop, err := agent.NewLoop(model, []agent.Tool{delegate}, agent.WithGuard(allowAllGuard{}), agent.WithRunLimits(agent.RunLimits{Tokens: 20}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(t.Context(), testInput(info, mustPrompt(t, "delegate")), nil)
+	if !errors.Is(err, agent.ErrTokenBudget) || len(model.requests) != 1 || result.Usage.TotalTokens != 25 {
+		t.Fatalf("err=%v requests=%d usage=%+v", err, len(model.requests), result.Usage)
+	}
+}
