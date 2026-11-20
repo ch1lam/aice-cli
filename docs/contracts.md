@@ -195,9 +195,9 @@ retain the short content summary; Session keeps the additive metadata.
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - `RunLimits` are immutable configuration with per-run counters. Steering,
   follow-ups and automatic compaction share token/time budgets; compaction has
-  its own turn counter. A tool result's `Details.Delegation.Usage`, spent by a
-  subagent on the run's behalf, counts toward the token budget and
-  `Result.Usage` when the result is accepted. Resource/turn/repetition stops are non-retryable, retain
+  its own turn counter. The usage of each of a tool result's
+  `Details.Delegations`, spent by subagents on the run's behalf, counts toward
+  the token budget and `Result.Usage` when the result is accepted. Resource/turn/repetition stops are non-retryable, retain
   actual outcomes and pair skipped calls. Exact accounting, overshoot and
   continuation behavior belong to [run limits](execution-sessions.md#run-resource-limits).
 - Default model retries allow three retries after the first attempt, with
@@ -272,7 +272,9 @@ retain the short content summary; Session keeps the additive metadata.
   for tool results. The Loop calls it once for each result that enters model
   context, after the outcome is final (executed, failed, Guard-denied,
   declined or not dispatched) and before the result is retained, recorded or
-  displayed. Each non-empty notice is prepended as a text part, so Session
+  displayed. Each non-empty notice text is prepended as a text part and each
+  notice delegation is appended to `Details.Delegations` (a result without
+  details was returned, so it gains `ExecutionReturned` details), so Session
   history, `Result.ModelRounds`, events and the next request carry the same
   message, and bounded result views, which keep leading content in order,
   retain it. Notices cannot change the tool's own content, `IsError` or call
@@ -478,16 +480,27 @@ The runtime boundary preserves these ownership rules:
   route events by source and cancel/join all thread runs on shutdown. Side
   execution never mutates main history, usage, settings or its mailbox.
 - `tool.Tasks`, owned by the run environment, owns background task processes,
-  output files and one supervising goroutine per task; tasks outlive the tool
-  call and run that started them. Session reset stops and joins the current
+  in-process run tasks (background subagents), output files and one
+  supervising goroutine per task; tasks outlive the tool call and run that
+  started them. Stopping a run task cancels its context and waits for it to
+  return. A finished task's delegation is handed out only with its first
+  report, so it is recorded once. Session reset stops and joins the current
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only through tool result notices, and the TUI polls the running count
   through `BackgroundTaskCounter` only while tasks run.
-- A subagent's child Loop runs inside the parent's `agent` tool call, on its
-  goroutine and context, so the parent Loop is blocked and cancellation reaches
-  the child. The main run binds its frozen settings for children in the
-  context; the child owns its Session store, result reader and run counters and
-  shares the parent's Guard, ask handler and MCP run binding.
+- A synchronous subagent's child Loop runs inside the parent's `agent` tool
+  call, on its goroutine and context, so the parent Loop is blocked and
+  cancellation reaches the child. The main run binds its frozen settings for
+  children in the context; the child owns its Session store, result reader and
+  run counters and shares the parent's Guard, ask handler and MCP run binding.
+  A background child is a `tool.Tasks` run task: it keeps the call's context
+  values but not its cancellation, has no ask handler and no MCP run binding,
+  and may outlive the run. Children carry no delegation in their context, so
+  they cannot start subagents.
+- The Guard adapter owns file write claims. A background writer's context
+  names it by task ID; any other context is the main agent. Its task registers
+  and releases the writer; a permitted write claims its files in
+  `Revalidate`, so a claim made after the decision still wins at execution.
 - `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
   cancellable exchanges. Replies are bound to the current request and validated;
   cancellation wins racing submissions. Q&A publishes only a complete explicit

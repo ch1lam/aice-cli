@@ -14,7 +14,7 @@ tests. Search for the named symbols rather than relying on line numbers.
 | --- | --- | --- |
 | Startup and composition | [app.go](../internal/app/app.go): `NewCommand`, `newRunEnvironment`, `Interactive`, `Print`, `frontend`, `sessionTools`/`sessionLoop`; [run_scope.go](../internal/app/run_scope.go): per-run bindings shared by Print and interactive runs | [app_test.go](../internal/app/app_test.go), [app_tools_test.go](../internal/app/app_tools_test.go) |
 | Model/tool loop | [loop.go](../internal/agent/loop.go), [tools.go](../internal/agent/tools.go), [finalize.go](../internal/agent/finalize.go) | [loop_test.go](../internal/agent/loop_test.go), [retry_test.go](../internal/agent/retry_test.go) |
-| Subagents | [tool/agent.go](../internal/tool/agent.go) (tool contract and result), [app/subagent.go](../internal/app/subagent.go) (child Loop, Session, explore Guard, classifier transcript); bound per main run in `Print` and `interactiveRun.Run` | [app/subagent_test.go](../internal/app/subagent_test.go), [tool/agent_test.go](../internal/tool/agent_test.go) |
+| Subagents | [tool/agent.go](../internal/tool/agent.go) (tool contract and result), [app/subagent.go](../internal/app/subagent.go) (child Loop, Session, explore Guard, classifier transcript, background start), [app/write_claims.go](../internal/app/write_claims.go) (file claims of concurrent writers); bound per main run in `Print` and `interactiveRun.Run`; background children run as `StartRun` tasks in [tool/tasks.go](../internal/tool/tasks.go) | [app/subagent_test.go](../internal/app/subagent_test.go), [tool/agent_test.go](../internal/tool/agent_test.go), [tool/tasks_run_test.go](../internal/tool/tasks_run_test.go) |
 | Steering and follow-up | [interactive_run.go](../internal/app/interactive_run.go), [mailbox.go](../internal/interaction/mailbox.go) | [interactive_run_test.go](../internal/app/interactive_run_test.go), [mailbox_test.go](../internal/interaction/mailbox_test.go) |
 | Durable history and compaction | [app/conversation.go](../internal/app/conversation.go), [app/session.go](../internal/app/session.go), [app/compact.go](../internal/app/compact.go), [session/store.go](../internal/session/store.go), [session/replay.go](../internal/session/replay.go) | [store_test.go](../internal/session/store_test.go), [app/compact_test.go](../internal/app/compact_test.go), [long_task_test.go](../internal/app/long_task_test.go) |
 | Project history picker, titles and restoration | [app/session_browser.go](../internal/app/session_browser.go), [app/session_title.go](../internal/app/session_title.go) (generated titles, started from `interactiveRun.Run`), [app/session_rename.go](../internal/app/session_rename.go), [app/session_resume.go](../internal/app/session_resume.go), [app/session_transcript.go](../internal/app/session_transcript.go), [tui/session_picker.go](../internal/tui/session_picker.go), [session/read.go](../internal/session/read.go) | [app/session_browser_test.go](../internal/app/session_browser_test.go), [app/session_title_test.go](../internal/app/session_title_test.go), [app/session_transcript_test.go](../internal/app/session_transcript_test.go), [tui/session_picker_test.go](../internal/tui/session_picker_test.go), [session/read_test.go](../internal/session/read_test.go) |
@@ -169,6 +169,16 @@ any task. Observed on macOS with native Bash. Intended behavior is undecided:
 returning the collected output and exit status, or rejecting `&` in favor of
 [background tasks](execution-sessions.md#background-tasks). Either fix needs a
 regression test for the output and the surviving child.
+
+### File claims cover only writes the Guard can name
+
+[File claims](execution-sessions.md#subagents) keep concurrent writers off a
+file only for writes the Guard can name: `write`, `edit` and recognized bash
+redirections, checked in [app/write_claims.go](../internal/app/write_claims.go).
+A shell command whose writes it cannot name, such as a build, a test run, a
+generator or `git checkout .`, can change a file another writer holds. This is
+a known limit of the current design, not a bug to fix by deeper shell
+analysis; the intended fix is worktree isolation for background writers.
 
 ### Self-update OpenPGP dependency warning
 

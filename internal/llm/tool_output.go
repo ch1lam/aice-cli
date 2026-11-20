@@ -49,12 +49,17 @@ type ToolResultDetails struct {
 	Loss              string          `json:"loss,omitempty"`
 	// Review records who decided an automatic permission for this call.
 	Review *ToolReview `json:"review,omitempty"`
-	// Delegation records the subagent run that produced this result.
-	Delegation *ToolDelegation `json:"delegation,omitempty"`
+	// Delegations record finished subagent runs this result reports: the
+	// synchronous child that produced it, or background children whose
+	// completion it carries. Each is recorded once.
+	Delegations []ToolDelegation `json:"delegations,omitempty"`
 }
 
-// ToolDelegation links a result to the subagent run behind it. Its usage is
-// spent on the parent's behalf and counts toward the parent run and Session.
+// MaxToolDelegations bounds the subagent runs one result reports.
+const MaxToolDelegations = 64
+
+// ToolDelegation links a result to a subagent run. Its usage is spent on the
+// parent's behalf and counts toward the run and Session that receive it.
 type ToolDelegation struct {
 	// SessionID names the child Session; empty when the child was not persisted.
 	SessionID string `json:"session_id,omitempty"`
@@ -190,13 +195,12 @@ func (d *ToolResultDetails) Clone() *ToolResultDetails {
 		}
 		copy.Review = &review
 	}
-	if d.Delegation != nil {
-		delegation := *d.Delegation
-		if delegation.Usage.Cost != nil {
-			cost := *delegation.Usage.Cost
-			delegation.Usage.Cost = &cost
+	copy.Delegations = slices.Clone(d.Delegations)
+	for i := range copy.Delegations {
+		if cost := copy.Delegations[i].Usage.Cost; cost != nil {
+			cloned := *cost
+			copy.Delegations[i].Usage.Cost = &cloned
 		}
-		copy.Delegation = &delegation
 	}
 	return &copy
 }
@@ -230,7 +234,10 @@ func (d *ToolResultDetails) Validate() error {
 			return fmt.Errorf("tool result review text must be UTF-8 and bounded")
 		}
 	}
-	if g := d.Delegation; g != nil {
+	if len(d.Delegations) > MaxToolDelegations {
+		return fmt.Errorf("tool result reports more than %d delegations", MaxToolDelegations)
+	}
+	for _, g := range d.Delegations {
 		if g.Turns < 0 || g.ToolCalls < 0 || len(g.SessionID) > 256 || !utf8.ValidString(g.SessionID) ||
 			strings.ContainsAny(g.SessionID, "\x00\r\n/\\") {
 			return fmt.Errorf("tool result delegation is invalid")

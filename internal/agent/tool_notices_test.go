@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -33,12 +34,12 @@ func TestLoopPrependsToolResultNotices(t *testing.T) {
 				{events: terminalEvents(assistantMessage(modelInfo, llm.StopReasonStop, textPart("done")))},
 			}}
 			calls := 0
-			notices := func(_ context.Context, result llm.ToolResultMessage) []string {
+			notices := func(_ context.Context, result llm.ToolResultMessage) []agent.ToolResultNotice {
 				calls++
 				if result.ToolCallID != "call-1" {
 					t.Errorf("notice source saw call %q", result.ToolCallID)
 				}
-				return []string{"task finished", "  "}
+				return []agent.ToolResultNotice{{Text: "task finished"}, {Text: "  "}}
 			}
 			loop, err := agent.NewLoop(model, []agent.Tool{newFakeTool("probe", nil)},
 				agent.WithGuard(test.guard), agent.WithToolResultNotices(notices))
@@ -77,5 +78,33 @@ func TestLoopPrependsToolResultNotices(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A notice's delegation is recorded on the result that carries it, also one
+// without details of its own, and its usage counts toward the run's budget.
+func TestLoopRecordsNoticeDelegations(t *testing.T) {
+	t.Parallel()
+	modelInfo := testModel()
+	model := &scriptedModel{scripts: []*streamScript{
+		{events: terminalEvents(assistantMessage(modelInfo, llm.StopReasonToolUse, toolCallPart("call-1", "probe", `{}`)))},
+		{events: terminalEvents(assistantMessage(modelInfo, llm.StopReasonStop, textPart("done")))},
+	}}
+	notices := func(context.Context, llm.ToolResultMessage) []agent.ToolResultNotice {
+		return []agent.ToolResultNotice{{Text: "subagent finished", Delegation: &llm.ToolDelegation{SessionID: "child", Usage: llm.Usage{TotalTokens: 30}}}}
+	}
+	loop, err := agent.NewLoop(model, []agent.Tool{newFakeTool("probe", nil)}, agent.WithGuard(allowAllGuard{}),
+		agent.WithToolResultNotices(notices), agent.WithRunLimits(agent.RunLimits{Tokens: 30}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(t.Context(), testInput(modelInfo, mustPrompt(t, "probe")), nil)
+	if !errors.Is(err, agent.ErrTokenBudget) || len(model.requests) != 1 {
+		t.Fatalf("err = %v after %d requests, want the delegated usage to exhaust the budget", err, len(model.requests))
+	}
+	got := result.ModelRounds[0].ToolResults[0]
+	if got.Details == nil || got.Details.State != llm.ExecutionReturned || len(got.Details.Delegations) != 1 ||
+		got.Details.Delegations[0].SessionID != "child" || got.Content[0].Text != "subagent finished" {
+		t.Fatalf("result = %#v / %#v", got.Content, got.Details)
 	}
 }

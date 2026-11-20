@@ -551,8 +551,8 @@ credentials/prompt content out of logs.
 
 ### Background tasks
 
-`bash` with `run_in_background` starts the command as a background task and
-returns its ID (`bg-` and six random hex digits) and output file at once.
+`bash` with `run_in_background` starts the command as a background task, as
+`agent` does for a [background subagent](#subagents), and returns its ID (`bg-` and six random hex digits) and output file at once.
 The Guard checks the command exactly like a foreground one, so rules and
 `--yolo` behave the same. A background task takes no `timeout`; it ends when
 it exits, `task_kill` stops it, it runs for 10 hours, its output exceeds
@@ -598,16 +598,17 @@ the child, and cancelling the parent (Esc, or the run ending) cancels it.
   `agent` (depth is 1), `request_user_input`, `task_output` and `task_kill`,
   and its `bash` offers no `run_in_background`. Its run has the configured
   [run limits](configuration.md#run-limits) of its own.
-- `type: "explore"` additionally denies file writes (`write`, `edit`, bash
-  redirections), bash commands not known to be read-only, and MCP tools, whose
-  effects AICE cannot see. `general` (the default) may edit.
+- `type: "explore"` has no `write` or `edit` tool and denies file writes
+  (including bash redirections), bash commands not known to be read-only, and
+  MCP tools, whose effects AICE cannot see. `general` (the default) may edit
+  and run builds and tests.
 - Auto mode reviews a child call against the parent Session's user turns and
   the child's own actions. The task prompt is written by the model, so it never
   counts as user intent.
 - The result is the report (at most 32 KiB; longer reports are cut with a
   pointer to the transcript), followed by turns, tool calls, duration and the
   transcript path. A child that stops early is an error result that keeps its
-  last report. The result's `delegation` details record the child Session ID,
+  last report. The result's `delegations` details record the child Session ID,
   usage, turns and tool calls; that usage counts toward the parent run's token
   budget and the Session's usage totals.
 - A child of a parent with a Session is recorded as an ordinary Session in
@@ -615,9 +616,52 @@ the child, and cancelling the parent (Esc, or the run ending) cancels it.
   and which never gets a title. A parent without a Session (`--print` without
   `--session`) keeps its children in memory.
 
-While a child runs, steering messages wait in the parent's mailbox until the
-`agent` call returns, and the TUI shows the call as running without the child's
-individual steps. There are no background subagents yet.
+While a synchronous child runs, steering messages wait in the parent's mailbox
+until the `agent` call returns, and the TUI shows the call as running without
+the child's individual steps.
+
+A subagent with `run_in_background` runs as a
+[background task](#background-tasks): the call returns its task ID and report
+file at once, and several run in parallel while the parent keeps working. At
+most 4 subagents run at once, within the 8 running tasks. A background child:
+
+- shares the background task limits, `task_output`, `task_kill` and completion
+  notices with background commands; its output file receives its report when
+  it finishes, and its notice and `task_output` show the report's first 2 KiB
+  and 4 KiB;
+- is not stopped by cancelling the run that started it; `/new`, resuming
+  another Session, `task_kill` and exit cancel it;
+- has no person to ask: asks are refused as under `--print`, while rules,
+  Session grants and auto mode decide as usual;
+- has no MCP tools or MCP discovery tools, since the parent run's MCP binding
+  ends with that run;
+- records its usage with the first result that reports its completion (the
+  notice, `task_output` or `task_kill`), counting toward that run's token
+  budget and the Session totals. A child stopped before it was reported, by
+  `/new` or exit, leaves its usage only in its own Session.
+
+A background `general` child is a writer of its own; the main agent,
+including the synchronous subagents it waits for, is another. One file has
+one writer at a time:
+
+- A writer's first write to a file claims it until that writer ends; a write
+  by another writer to that file is denied, naming who holds it. Claims are
+  checked when the Guard decides and again just before the write executes,
+  and a file is identified by its workspace path with symlinks resolved.
+- With no background writer running, nothing runs concurrently and the main
+  agent claims nothing; its claims end with the last background writer.
+- Only writes the Guard can name are claimed: `write`, `edit` and recognized
+  bash redirections. A shell command whose writes it cannot name, such as a
+  build, a test run or a generator, is not limited, and the main agent's
+  commands (for example `git checkout .`) can still overwrite a writer's
+  files. Reliable concurrent writing needs physical isolation, which is not
+  implemented.
+- A background writer gets `.aice/agents/<task-id>/` for test reports, logs
+  and other artifacts; its prompt asks it to put them there, and its report
+  names the directory, which stays after the task ends.
+
+Subagents are one level deep: a child has no `agent` tool, and its context
+carries no delegation, so it cannot start another subagent either way.
 
 ### Directory listings
 

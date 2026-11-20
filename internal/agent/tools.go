@@ -81,11 +81,6 @@ func (e *runExecution) executeTools(
 
 		e.proposal = nil
 		message, toolErr := e.executeTool(ctx, call)
-		if message.Details != nil && message.Details.Delegation != nil {
-			// A subagent spent tokens on this run's behalf: they count
-			// toward its budget like its own model calls.
-			e.addUsage(message.Details.Delegation.Usage)
-		}
 		message, err := e.acceptToolResult(ctx, message, true)
 		if err != nil {
 			return err
@@ -310,6 +305,13 @@ func (e *runExecution) acceptToolResult(
 ) (llm.ToolResultMessage, error) {
 	if recordHistory {
 		message = e.withNotices(ctx, message)
+		if message.Details != nil {
+			// Subagents spent these tokens on this run's behalf: they count
+			// toward its budget like its own model calls.
+			for _, delegation := range message.Details.Delegations {
+				e.addUsage(delegation.Usage)
+			}
+		}
 	}
 	round := &e.result.ModelRounds[len(e.result.ModelRounds)-1]
 	round.ToolResults = append(round.ToolResults, message)
@@ -326,15 +328,31 @@ func (e *runExecution) withNotices(ctx context.Context, message llm.ToolResultMe
 		return message
 	}
 	var parts []llm.ContentPart
+	var delegations []llm.ToolDelegation
 	for _, notice := range e.loop.notices(ctx, message) {
-		if strings.TrimSpace(notice) != "" {
-			parts = append(parts, llm.NewTextContent(notice).Part())
+		if strings.TrimSpace(notice.Text) != "" {
+			parts = append(parts, llm.NewTextContent(notice.Text).Part())
+		}
+		if notice.Delegation != nil {
+			delegations = append(delegations, *notice.Delegation)
 		}
 	}
-	if len(parts) == 0 {
-		return message
+	if len(parts) > 0 {
+		message.Content = append(parts, message.Content...)
 	}
-	message.Content = append(parts, message.Content...)
+	if len(delegations) > 0 {
+		// A result without details was dispatched and returned: undispatched
+		// results always carry details.
+		details := message.Details.Clone()
+		if details == nil {
+			details = &llm.ToolResultDetails{State: llm.ExecutionReturned}
+		}
+		details.Delegations = append(details.Delegations, delegations...)
+		if len(details.Delegations) > llm.MaxToolDelegations {
+			details.Delegations = details.Delegations[:llm.MaxToolDelegations]
+		}
+		message.Details = details
+	}
 	return message
 }
 

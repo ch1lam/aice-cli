@@ -176,9 +176,9 @@ func TestRunBudgetIncludesDelegatedUsage(t *testing.T) {
 	model := &scriptedModel{scripts: []*streamScript{{events: terminalEvents(call)}}}
 	delegate := newFakeTool("agent", func(_ context.Context, c llm.ToolCall) (llm.ToolResult, error) {
 		return llm.ToolResult{CallID: c.ID, Name: c.Name, Content: []llm.ContentPart{textPart("report")},
-			Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegation: &llm.ToolDelegation{
+			Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegations: []llm.ToolDelegation{{
 				SessionID: "child", Usage: llm.Usage{TotalTokens: 20}, Turns: 2, ToolCalls: 1,
-			}}}, nil
+			}}}}, nil
 	})
 	loop, err := agent.NewLoop(model, []agent.Tool{delegate}, agent.WithGuard(allowAllGuard{}), agent.WithRunLimits(agent.RunLimits{Tokens: 20}))
 	if err != nil {

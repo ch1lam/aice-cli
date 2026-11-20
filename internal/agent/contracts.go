@@ -154,14 +154,23 @@ type ToolSelector interface {
 	SelectTools(context.Context, llm.ToolCall) (llm.ToolResult, []ToolReference, error)
 }
 
-// ToolResultNotices returns caller-owned text the model must see with one
+// ToolResultNotices returns caller-owned notices the model must see with one
 // completed tool result, such as background work that finished meanwhile. The
-// Loop prepends each non-empty notice as a text part before retaining,
-// recording or displaying the result, so every view sees the same message. It
-// is called once per result that enters model context, including errors and
-// Guard denials, and must return promptly without blocking on I/O. Notices
-// cannot change the tool's own content, error state or pairing.
-type ToolResultNotices func(ctx context.Context, result llm.ToolResultMessage) []string
+// Loop prepends each non-empty notice text as a text part and appends each
+// delegation to the result's details before retaining, recording or
+// displaying the result, so every view sees the same message; delegated usage
+// counts toward the run like a synchronous subagent's. It is called once per
+// result that enters model context, including errors and Guard denials, and
+// must return promptly without blocking on I/O. Notices cannot change the
+// tool's own content, error state or pairing.
+type ToolResultNotices func(ctx context.Context, result llm.ToolResultMessage) []ToolResultNotice
+
+// ToolResultNotice is one notice; Delegation, when set, records the finished
+// subagent run the notice reports.
+type ToolResultNotice struct {
+	Text       string
+	Delegation *llm.ToolDelegation
+}
 
 // InputMessage is one caller-owned user message waiting to be injected into
 // an active run. ID is echoed on the corresponding message events.

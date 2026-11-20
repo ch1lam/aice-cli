@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -15,7 +16,7 @@ const (
 	taskOutputSchema = `{
   "type": "object",
   "properties": {
-    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash"},
+    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash or agent"},
     "wait": {"type": "number", "minimum": 0, "maximum": 600, "description": "Seconds to wait for every listed task to finish before returning (default: 0, maximum: 600)"}
   },
   "required": ["task_ids"],
@@ -24,7 +25,7 @@ const (
 	taskKillSchema = `{
   "type": "object",
   "properties": {
-    "task_id": {"type": "string", "description": "Background task id returned by bash"}
+    "task_id": {"type": "string", "description": "Background task id returned by bash or agent"}
   },
   "required": ["task_id"],
   "additionalProperties": false
@@ -59,9 +60,9 @@ func NewTaskKill(tasks *Tasks) (*TaskKill, error) {
 func (*TaskOutput) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_output",
-		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file.",
+		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file; a subagent's file holds its report.",
 		InputSchema:   jsonSchema(taskOutputSchema),
-		PromptSnippet: "Check or wait for background tasks started by bash",
+		PromptSnippet: "Check or wait for background tasks started by bash or agent",
 	}
 }
 
@@ -90,16 +91,30 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 	for index, status := range statuses {
 		reports[index] = taskReport(status, taskOutputPreviewBytes)
 	}
-	return textResult(call, strings.Join(reports, "\n\n"), false), nil
+	return withTaskDelegations(textResult(call, strings.Join(reports, "\n\n"), false), statuses...), nil
+}
+
+// withTaskDelegations records the subagent tasks a result reports first, so
+// their usage is counted exactly once.
+func withTaskDelegations(result llm.ToolResult, statuses ...TaskStatus) llm.ToolResult {
+	for _, status := range statuses {
+		if status.FirstReport && status.Delegation != nil {
+			if result.Details == nil {
+				result.Details = &llm.ToolResultDetails{State: llm.ExecutionReturned}
+			}
+			result.Details.Delegations = append(result.Details.Delegations, *status.Delegation)
+		}
+	}
+	return result
 }
 
 // Definition returns the model-facing task_kill contract.
 func (*TaskKill) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_kill",
-		Description:   "Stop a background task and its child processes: interrupt first, then kill after a short grace period. Stopping a finished task is not an error.",
+		Description:   "Stop a background task: a command and its child processes are interrupted, then killed after a short grace period; a subagent is cancelled. Stopping a finished task is not an error.",
 		InputSchema:   jsonSchema(taskKillSchema),
-		PromptSnippet: "Stop a background task started by bash",
+		PromptSnippet: "Stop a background task started by bash or agent",
 	}
 }
 
@@ -116,22 +131,30 @@ func (k *TaskKill) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResu
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"task_kill\": %w", err)
 	}
-	return textResult(call, taskReport(status, taskOutputPreviewBytes), false), nil
+	return withTaskDelegations(textResult(call, taskReport(status, taskOutputPreviewBytes), false), status), nil
 }
 
 // CompletionNotices describes background tasks that finished since the last
-// report, one notice each, for the Agent Loop to show with a tool result.
-func (t *Tasks) CompletionNotices() []string {
+// report, one notice each, for the Agent Loop to show with a tool result. A
+// subagent's notice carries its delegation record.
+func (t *Tasks) CompletionNotices() []agent.ToolResultNotice {
 	completions := t.TakeCompletions()
-	notices := make([]string, len(completions))
+	notices := make([]agent.ToolResultNotice, len(completions))
 	for index, status := range completions {
-		notices[index] = "Background task finished; no need to poll it.\n" + taskReport(status, taskPreviewBytes)
+		notices[index] = agent.ToolResultNotice{
+			Text:       "Background task finished; no need to poll it.\n" + taskReport(status, taskPreviewBytes),
+			Delegation: status.Delegation,
+		}
 	}
 	return notices
 }
 
-// taskReport renders a status line and the tail of the task's output.
+// taskReport renders a status line and a preview of the task's output: the
+// tail of a command's output, or the beginning of a subagent's report.
 func taskReport(status TaskStatus, previewBytes int64) string {
+	if status.Kind == TaskAgent {
+		return agentTaskReport(status, previewBytes)
+	}
 	var state string
 	switch {
 	case status.Running:
@@ -157,6 +180,35 @@ func taskReport(status TaskStatus, previewBytes int64) string {
 		return report + "\nLast output (earlier output is in the file):\n" + strings.TrimRight(tail, "\n")
 	default:
 		return report + "\nOutput:\n" + strings.TrimRight(tail, "\n")
+	}
+}
+
+func agentTaskReport(status TaskStatus, previewBytes int64) string {
+	var state string
+	switch {
+	case status.Running:
+		state = "running"
+	case status.Reason != "":
+		state = "terminated: " + status.Reason
+	case status.Failure != "":
+		state = "stopped before finishing: " + firstLine(status.Failure)
+	default:
+		state = "finished"
+	}
+	report := fmt.Sprintf("[subagent task %s %s; report file: %s]\nTask: %s", status.ID, state, status.OutputPath, firstLine(status.Description))
+	if status.Running {
+		return report
+	}
+	head, truncated, err := outputHead(status.OutputPath, previewBytes)
+	switch {
+	case err != nil:
+		return report + "\n(report unavailable: " + err.Error() + ")"
+	case strings.TrimSpace(head) == "":
+		return report + "\n(no report)"
+	case truncated:
+		return report + "\nReport (continues in the file):\n" + strings.TrimRight(head, "\n")
+	default:
+		return report + "\nReport:\n" + strings.TrimRight(head, "\n")
 	}
 }
 

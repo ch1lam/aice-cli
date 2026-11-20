@@ -86,6 +86,8 @@ type guardAdapter struct {
 	auto *autoMode
 	// yolo upgrades Decision ask to allow. It never remaps deny.
 	yolo bool
+	// claims keeps concurrent writers off each other's files.
+	claims writeClaims
 
 	workspaceOnce sync.Once
 	workspace     *tool.Workspace
@@ -100,6 +102,14 @@ func (g *guardAdapter) toolWorkspace() (*tool.Workspace, error) {
 }
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
+	result, err := g.decide(ctx, call)
+	if err != nil || g == nil || g.inner == nil {
+		return result, err
+	}
+	return g.claims.apply(ctx, g.inner.Workspace(), result), nil
+}
+
+func (g *guardAdapter) decide(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
 	result, hints, err := g.evaluate(ctx, call)
 	if err != nil || !g.autoActive() {
 		return result, err

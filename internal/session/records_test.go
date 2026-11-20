@@ -165,9 +165,9 @@ func TestUsageSummaryIncludesDelegations(t *testing.T) {
 	assistant.Content = []llm.ContentPart{{Type: llm.ContentTypeToolCall, ToolCall: &llm.ToolCall{ID: "call", Name: "agent", Arguments: json.RawMessage(`{}`)}}}
 	result, err := llm.NewToolResultMessage(llm.ToolResult{CallID: "call", Name: "agent",
 		Content: []llm.ContentPart{llm.NewTextContent("report").Part()},
-		Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegation: &llm.ToolDelegation{
+		Details: &llm.ToolResultDetails{State: llm.ExecutionReturned, Delegations: []llm.ToolDelegation{{
 			SessionID: "child", Usage: llm.Usage{TotalTokens: 30, Cost: &llm.Cost{Total: 0.5}}, Turns: 3, ToolCalls: 2,
-		}}})
+		}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

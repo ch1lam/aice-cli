@@ -14,10 +14,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 const (
-	maxRunningTasks  = 8
+	maxRunningTasks = 8
+	// maxRunningAgents bounds concurrent subagents within maxRunningTasks:
+	// each one spends model tokens.
+	maxRunningAgents = 4
 	maxRetainedTasks = 16
 	// taskOutputLimit bounds one task's output file; a task that exceeds it
 	// is terminated so a runaway log cannot fill the disk.
@@ -35,8 +40,15 @@ var (
 	errTasksClosed = errors.New("background tasks are closed")
 )
 
-// Tasks owns the background shell tasks of one run environment: their
-// processes, output files and unreported completions. Tasks outlive the tool
+// Task kinds.
+const (
+	TaskBash  = "bash"
+	TaskAgent = "agent"
+)
+
+// Tasks owns the background tasks of one run environment: shell processes
+// and in-process runs such as subagents, their output files and unreported
+// completions. Tasks outlive the tool
 // call and run that started them; Close or KillAll ends them. Each task has
 // one supervising goroutine, owned and awaited by Tasks.
 type Tasks struct {
@@ -57,6 +69,7 @@ type Tasks struct {
 
 type task struct {
 	id          string
+	kind        string
 	command     string
 	description string
 	path        string
@@ -67,6 +80,9 @@ type task struct {
 	// Written by the supervisor before done closes; read after done.
 	exitCode int
 	reason   string
+	// failure is why a run task returned an error on its own.
+	failure    string
+	delegation *llm.ToolDelegation
 	// reported is guarded by Tasks.mu.
 	reported bool
 }
@@ -74,6 +90,7 @@ type task struct {
 // TaskStatus is a snapshot of one task.
 type TaskStatus struct {
 	ID          string
+	Kind        string
 	Command     string
 	Description string
 	OutputPath  string
@@ -82,7 +99,19 @@ type TaskStatus struct {
 	// terminated the task.
 	ExitCode int
 	Reason   string
+	// Failure is why a run task failed on its own.
+	Failure string
+	// Delegation records a finished subagent task.
+	Delegation *llm.ToolDelegation
+	// FirstReport marks the one snapshot that reports this completion; its
+	// Delegation must be recorded with that report.
+	FirstReport bool
 }
+
+// TaskRun is a background task that is not a process, identified by id. It
+// writes its output to out and returns when done or when ctx ends; a
+// delegation it returns is reported with its completion.
+type TaskRun func(ctx context.Context, id string, out io.Writer) (*llm.ToolDelegation, error)
 
 // NewTasks creates the private output directory for background tasks.
 func NewTasks() (*Tasks, error) {
@@ -98,29 +127,48 @@ func NewTasks() (*Tasks, error) {
 // else writes there.
 func (t *Tasks) Dir() string { return t.dir }
 
-// start launches command with the shell and records it as a task.
-func (t *Tasks) start(shellPath, dir, command, description string) (TaskStatus, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// reserveLocked admits one task and creates its output file. The caller
+// holds Tasks.mu and registers the task only once it has started.
+func (t *Tasks) reserveLocked(kind, command, description string) (*task, *os.File, error) {
 	if t.closed {
-		return TaskStatus{}, errTasksClosed
+		return nil, nil, errTasksClosed
 	}
 	if t.runningLocked() >= maxRunningTasks {
-		return TaskStatus{}, fmt.Errorf("at most %d background tasks may run at once; stop one with task_kill", maxRunningTasks)
+		return nil, nil, fmt.Errorf("at most %d background tasks may run at once; stop one with task_kill", maxRunningTasks)
 	}
 	if !t.evictLocked() {
-		return TaskStatus{}, fmt.Errorf("at most %d background tasks are retained; read or stop running tasks first", maxRetainedTasks)
+		return nil, nil, fmt.Errorf("at most %d background tasks are retained; read or stop running tasks first", maxRetainedTasks)
 	}
 	id, err := newTaskID()
 	if err != nil {
-		return TaskStatus{}, err
+		return nil, nil, err
 	}
 	path := filepath.Join(t.dir, id+".log")
 	output, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return TaskStatus{}, fmt.Errorf("create task output: %w", err)
+		return nil, nil, fmt.Errorf("create task output: %w", err)
+	}
+	return &task{
+		id: id, kind: kind, command: command, description: description, path: path,
+		started: time.Now(), stopReq: make(chan string, 1), done: make(chan struct{}),
+	}, output, nil
+}
+
+func (t *Tasks) registerLocked(current *task) {
+	t.tasks[current.id] = current
+	t.order = append(t.order, current.id)
+}
+
+// start launches command with the shell and records it as a task.
+func (t *Tasks) start(shellPath, dir, command, description string) (TaskStatus, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	current, output, err := t.reserveLocked(TaskBash, command, description)
+	if err != nil {
+		return TaskStatus{}, err
 	}
 	defer output.Close()
+	path := current.path
 
 	processCtx, kill := context.WithCancel(context.Background())
 	// Raw shell text intentionally reaches bash at this tool boundary. The
@@ -137,27 +185,66 @@ func (t *Tasks) start(shellPath, dir, command, description string) (TaskStatus, 
 		_ = os.Remove(path)
 		return TaskStatus{}, fmt.Errorf("start command: %w", err)
 	}
-	current := &task{
-		id: id, command: command, description: description, path: path,
-		started: time.Now(), stopReq: make(chan string, 1), done: make(chan struct{}),
-	}
-	t.tasks[id] = current
-	t.order = append(t.order, id)
+	t.registerLocked(current)
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
 		defer cleanup()
 		defer kill()
-		t.supervise(current, cmd, kill)
+		waited := make(chan error, 1)
+		go func() { waited <- cmd.Wait() }()
+		err := t.supervise(current, waited, func() error { return terminateTask(cmd, kill, waited) })
+		current.exitCode = exitCode(err)
+		t.finish(current)
 	}()
 	return current.status(), nil
 }
 
+// StartRun runs fn as a background task labeled by description. Stopping the
+// task cancels fn's context and waits for it to return.
+func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if kind == TaskAgent && t.runningKindLocked(TaskAgent) >= maxRunningAgents {
+		return TaskStatus{}, fmt.Errorf("at most %d background subagents may run at once; wait for one or stop it with task_kill", maxRunningAgents)
+	}
+	current, output, err := t.reserveLocked(kind, "", description)
+	if err != nil {
+		return TaskStatus{}, err
+	}
+	t.registerLocked(current)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		waited := make(chan error, 1)
+		go func() {
+			delegation, err := fn(ctx, current.id, output)
+			current.delegation = delegation
+			waited <- err
+		}()
+		err := t.supervise(current, waited, func() error { cancel(); return <-waited })
+		cancel()
+		_ = output.Close()
+		if err != nil && current.reason == "" {
+			current.failure = err.Error()
+		}
+		t.finish(current)
+	}()
+	return current.status(), nil
+}
+
+func (t *Tasks) finish(current *task) {
+	t.mu.Lock()
+	t.finished = append(t.finished, current)
+	t.mu.Unlock()
+	close(current.done)
+}
+
 // supervise waits for the task and terminates it on request, on Close, after
-// the maximum runtime or when its output exceeds the limit.
-func (t *Tasks) supervise(current *task, cmd *exec.Cmd, kill context.CancelFunc) {
-	waited := make(chan error, 1)
-	go func() { waited <- cmd.Wait() }()
+// the maximum runtime or when its output exceeds the limit. It records why
+// AICE ended the task and returns the task's own result.
+func (t *Tasks) supervise(current *task, waited <-chan error, terminate func() error) error {
 	poll := time.NewTicker(taskPollInterval)
 	defer poll.Stop()
 	deadline := time.NewTimer(taskMaxRuntime)
@@ -181,17 +268,12 @@ loop:
 			}
 		}
 		if reason != "" {
-			err = terminateTask(cmd, kill, waited)
+			err = terminate()
 			break
 		}
 	}
-
 	current.reason = reason
-	current.exitCode = exitCode(err)
-	t.mu.Lock()
-	t.finished = append(t.finished, current)
-	t.mu.Unlock()
-	close(current.done)
+	return err
 }
 
 // terminateTask asks the process tree to stop, then kills it after a grace.
@@ -223,14 +305,28 @@ func exitCode(err error) int {
 // status returns a snapshot; the caller holds Tasks.mu or owns the task.
 func (c *task) status() TaskStatus {
 	status := TaskStatus{
-		ID: c.id, Command: c.command, Description: c.description,
+		ID: c.id, Kind: c.kind, Command: c.command, Description: c.description,
 		OutputPath: c.path, Running: true,
 	}
 	select {
 	case <-c.done:
 		status.Running = false
-		status.ExitCode, status.Reason = c.exitCode, c.reason
+		status.ExitCode, status.Reason, status.Failure = c.exitCode, c.reason, c.failure
+		if c.delegation != nil {
+			delegation := *c.delegation
+			status.Delegation = &delegation
+		}
 	default:
+	}
+	return status
+}
+
+// report snapshots a task for a caller that reports it; the caller holds
+// Tasks.mu. A finished task's first report is marked.
+func (c *task) report() TaskStatus {
+	status := c.status()
+	if !status.Running && !c.reported {
+		c.reported, status.FirstReport = true, true
 	}
 	return status
 }
@@ -258,10 +354,7 @@ waiting:
 	defer t.mu.Unlock()
 	statuses := make([]TaskStatus, len(tasks))
 	for index, current := range tasks {
-		statuses[index] = current.status()
-		if !statuses[index].Running {
-			current.reported = true
-		}
+		statuses[index] = current.report()
 	}
 	return statuses, nil
 }
@@ -285,8 +378,7 @@ func (t *Tasks) Kill(ctx context.Context, id string) (TaskStatus, error) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	current.reported = true
-	return current.status(), nil
+	return current.report(), nil
 }
 
 // Running reports how many tasks are still running.
@@ -307,8 +399,7 @@ func (t *Tasks) TakeCompletions() []TaskStatus {
 	var statuses []TaskStatus
 	for _, current := range t.finished {
 		if !current.reported {
-			current.reported = true
-			statuses = append(statuses, current.status())
+			statuses = append(statuses, current.report())
 		}
 	}
 	t.finished = nil
@@ -376,9 +467,14 @@ func (t *Tasks) lookup(ids []string) ([]*task, error) {
 }
 
 func (t *Tasks) runningLocked() int {
+	return t.runningKindLocked("")
+}
+
+// runningKindLocked counts running tasks of kind, or of every kind for "".
+func (t *Tasks) runningKindLocked(kind string) int {
 	running := 0
 	for _, current := range t.tasks {
-		if current.status().Running {
+		if (kind == "" || current.kind == kind) && current.status().Running {
 			running++
 		}
 	}
@@ -431,4 +527,23 @@ func outputTail(path string, limit int64) (string, bool, error) {
 	}
 	text := strings.ToValidUTF8(string(data), "")
 	return text, offset > 0, nil
+}
+
+// outputHead returns at most limit leading bytes of a task's output, ending at
+// a rune boundary.
+func outputHead(path string, limit int64) (string, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return "", false, err
+	}
+	truncated := int64(len(data)) > limit
+	if truncated {
+		data = data[:limit]
+	}
+	return strings.ToValidUTF8(string(data), ""), truncated, nil
 }
