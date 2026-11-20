@@ -69,12 +69,14 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 }
 
 // resetSessionScope drops what belonged to the previous Session after a switch
-// or /new: BTW threads, temporary Guard grants and measured throughput. It
-// publishes view, which tells the frontend to discard its side threads too.
+// or /new: BTW threads, background tasks, temporary Guard grants and measured
+// throughput. It publishes view, which tells the frontend to discard its side
+// threads too.
 func (s *interactiveSession) resetSessionScope(usage llm.Usage, view *interaction.Transcript) {
 	s.sideMu.Lock()
 	clear(s.sideThreads)
 	s.sideMu.Unlock()
+	s.tasks.KillAll()
 	if s.guard != nil {
 		s.guard.ResetSessionGrants()
 	}

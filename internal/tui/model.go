@@ -161,8 +161,12 @@ type model struct {
 	thinking       interaction.DisplayThinking
 	// permissionMode is "default" (shown as manual) or "auto";
 	// setPermissionMode switches it.
-	permissionMode        string
-	setPermissionMode     func(string) tea.Cmd
+	permissionMode    string
+	setPermissionMode func(string) tea.Cmd
+	// backgroundTasks is the running count; pollTasks schedules one recount.
+	backgroundTasks       int
+	pollTasks             func() tea.Cmd
+	taskPollPending       bool
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	throughput            interaction.DisplayThroughput
@@ -551,6 +555,9 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
+	case backgroundTasksMsg:
+		m.taskPollPending = false
+		return m, m.followBackgroundTasks(message.running)
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.run.running()
 		command := m.welcomeAnimation.Update(message, active)

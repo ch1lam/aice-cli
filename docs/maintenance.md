@@ -157,6 +157,18 @@ the context window can therefore rebuild with a different output limit.
 Recording the catalog flag in `run_config` would close the gap; it changes the
 record content and is undecided.
 
+### Foreground bash with a backgrounded child
+
+A foreground `bash` command that leaves a child running, such as
+`sleep 8 & echo started`, fails about one second after the shell exits with
+`exec: WaitDelay expired before I/O complete`: the child still holds the
+output pipe, so [`Bash.Execute`](../internal/tool/bash.go) loses the output
+already written and returns a tool error, and the child keeps running outside
+any task. Observed on macOS with native Bash. Intended behavior is undecided:
+returning the collected output and exit status, or rejecting `&` in favor of
+[background tasks](execution-sessions.md#background-tasks). Either fix needs a
+regression test for the output and the surviving child.
+
 ### Self-update OpenPGP dependency warning
 
 `github.com/creativeprojects/go-selfupdate` imports the unmaintained

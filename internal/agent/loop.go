@@ -21,6 +21,7 @@ type Loop struct {
 	retry       RetryPolicy
 	guard       Guard
 	guardAsk    GuardAskHandler
+	notices     ToolResultNotices
 }
 
 // GuardAskReply is the user's resolution of one guard Ask.
@@ -52,6 +53,15 @@ func WithGuard(g Guard) LoopOption {
 func WithGuardAskHandler(h GuardAskHandler) LoopOption {
 	return func(l *Loop) error {
 		l.guardAsk = h
+		return nil
+	}
+}
+
+// WithToolResultNotices installs the source of notices prepended to tool
+// results. A nil source adds none.
+func WithToolResultNotices(n ToolResultNotices) LoopOption {
+	return func(l *Loop) error {
+		l.notices = n
 		return nil
 	}
 }

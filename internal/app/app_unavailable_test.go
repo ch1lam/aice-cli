@@ -25,7 +25,13 @@ func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	t.Setenv("ProgramFiles(x86)", "")
 	t.Setenv("LocalAppData", "")
 
-	tools, err := newBuiltInTools(t.Context(), workspace, false)
+	// Background tasks exist, but without bash their tools are not offered.
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	tools, err := newBuiltInTools(t.Context(), workspace, tasks, false)
 	if err != nil {
 		t.Fatalf("newBuiltInTools() error = %v", err)
 	}

@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +26,11 @@ var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResum
 func configureProcess(command *exec.Cmd) {
 	command.WaitDelay = time.Second
 	command.Cancel = nil
+}
+
+// interruptProcessTree has no graceful form here; callers kill the tree.
+func interruptProcessTree(*exec.Cmd) error {
+	return errors.ErrUnsupported
 }
 
 func supportsProcessTreeTermination() bool {

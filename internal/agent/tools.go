@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -33,7 +34,7 @@ func (e *runExecution) failTruncatedToolCalls(
 		if err != nil {
 			return err
 		}
-		if err := e.acceptToolResult(ctx, message, true); err != nil {
+		if message, err = e.acceptToolResult(ctx, message, true); err != nil {
 			return err
 		}
 		if err := e.emit(ctx, AgentEvent{
@@ -80,7 +81,8 @@ func (e *runExecution) executeTools(
 
 		e.proposal = nil
 		message, toolErr := e.executeTool(ctx, call)
-		if err := e.acceptToolResult(ctx, message, true); err != nil {
+		message, err := e.acceptToolResult(ctx, message, true)
+		if err != nil {
 			return err
 		}
 		e.pendingSelection = append(e.pendingSelection, e.proposal...)
@@ -282,7 +284,7 @@ func (e *runExecution) syntheticToolResults(
 		if err != nil {
 			return err
 		}
-		if err := e.acceptToolResult(ctx, message, recordHistory); err != nil {
+		if message, err = e.acceptToolResult(ctx, message, recordHistory); err != nil {
 			return err
 		}
 		if err := e.emitToolResultMessage(ctx, turnNumber, call, message); err != nil {
@@ -293,14 +295,42 @@ func (e *runExecution) syntheticToolResults(
 }
 
 // acceptToolResult retains the actual outcome before recording or display can
-// fail. The active ModelRound is the sole owner of produced tool results.
-func (e *runExecution) acceptToolResult(ctx context.Context, message llm.ToolResultMessage, recordHistory bool) error {
+// fail. The active ModelRound is the sole owner of produced tool results. A
+// result entering model context first receives the caller's notices; the
+// returned message is the one retained, recorded and displayed.
+func (e *runExecution) acceptToolResult(
+	ctx context.Context,
+	message llm.ToolResultMessage,
+	recordHistory bool,
+) (llm.ToolResultMessage, error) {
+	if recordHistory {
+		message = e.withNotices(ctx, message)
+	}
 	round := &e.result.ModelRounds[len(e.result.ModelRounds)-1]
 	round.ToolResults = append(round.ToolResults, message)
 	if recordHistory {
 		e.history = append(e.history, message)
 	}
-	return e.recordMessage(ctx, message)
+	return message, e.recordMessage(ctx, message)
+}
+
+// withNotices prepends notices so bounded model views, which keep leading
+// content in order, retain them.
+func (e *runExecution) withNotices(ctx context.Context, message llm.ToolResultMessage) llm.ToolResultMessage {
+	if e.loop.notices == nil {
+		return message
+	}
+	var parts []llm.ContentPart
+	for _, notice := range e.loop.notices(ctx, message) {
+		if strings.TrimSpace(notice) != "" {
+			parts = append(parts, llm.NewTextContent(notice).Part())
+		}
+	}
+	if len(parts) == 0 {
+		return message
+	}
+	message.Content = append(parts, message.Content...)
+	return message
 }
 
 func (e *runExecution) emitToolResultMessage(

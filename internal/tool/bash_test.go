@@ -187,7 +187,7 @@ func newBash(t *testing.T, workspace *tool.Workspace) *tool.Bash {
 	if err != nil {
 		t.Skipf("native Bash unavailable: %v", err)
 	}
-	bash, err := tool.NewBash(t.Context(), workspace, tool.BashShells{Native: shell})
+	bash, err := tool.NewBash(t.Context(), workspace, tool.BashShells{Native: shell}, nil)
 	if err != nil {
 		t.Fatalf("NewBash() error = %v", err)
 	}

@@ -43,7 +43,7 @@ func TestNewBashPrefersNativeAndRejectsUnusableWSL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bash, err := NewBash(t.Context(), workspace, hostShells())
+	bash, err := NewBash(t.Context(), workspace, hostShells(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestNewBashPrefersNativeAndRejectsUnusableWSL(t *testing.T) {
 		t.Fatalf("shellPath = %q, want %q", bash.shellPath, want)
 	}
 	t.Setenv("PATH", wslDir)
-	if _, err := NewBash(t.Context(), workspace, hostShells()); err == nil || !strings.Contains(err.Error(), "winget install Git.Git") {
+	if _, err := NewBash(t.Context(), workspace, hostShells(), nil); err == nil || !strings.Contains(err.Error(), "winget install Git.Git") {
 		t.Fatalf("NewBash() error = %v, want native Bash installation guidance", err)
 	}
 }

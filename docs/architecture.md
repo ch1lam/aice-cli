@@ -96,7 +96,7 @@ Optional capabilities retain their own owners:
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; `provider.Route` gates each request (identity, catalog model, API, content) and dispatches by API; [configuration](configuration.md) |
-| `internal/tool` | Host tools, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
+| `internal/tool` | Host tools, background tasks, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
@@ -214,7 +214,9 @@ middleware is implemented.
 ## Planned extensions and restraint
 
 Plan mode, subagents and memory remain unimplemented product scope. `/btw` is a
-tool-free side conversation, not a subagent executor. Model-native web search is
+tool-free side conversation, not a subagent executor. [Background
+tasks](execution-sessions.md#background-tasks) run shell commands only; AICE
+never starts a run when one finishes. Model-native web search is
 only a reserved priority entry; Exa is the only production search adapter and
 there is no execution-error failover. See [Web](web.md).
 

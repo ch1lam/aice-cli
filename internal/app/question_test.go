@@ -152,7 +152,7 @@ func TestBuiltInToolsGateQuestionByMode(t *testing.T) {
 	t.Parallel()
 	workspace := testWorkspace(t, t.TempDir())
 	names := func(interactive bool) []string {
-		tools, err := newBuiltInTools(t.Context(), workspace, interactive)
+		tools, err := newBuiltInTools(t.Context(), workspace, nil, interactive)
 		if err != nil {
 			t.Fatalf("newBuiltInTools() error = %v", err)
 		}

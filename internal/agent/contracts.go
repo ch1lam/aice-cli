@@ -154,6 +154,15 @@ type ToolSelector interface {
 	SelectTools(context.Context, llm.ToolCall) (llm.ToolResult, []ToolReference, error)
 }
 
+// ToolResultNotices returns caller-owned text the model must see with one
+// completed tool result, such as background work that finished meanwhile. The
+// Loop prepends each non-empty notice as a text part before retaining,
+// recording or displaying the result, so every view sees the same message. It
+// is called once per result that enters model context, including errors and
+// Guard denials, and must return promptly without blocking on I/O. Notices
+// cannot change the tool's own content, error state or pairing.
+type ToolResultNotices func(ctx context.Context, result llm.ToolResultMessage) []string
+
 // InputMessage is one caller-owned user message waiting to be injected into
 // an active run. ID is echoed on the corresponding message events.
 type InputMessage struct {

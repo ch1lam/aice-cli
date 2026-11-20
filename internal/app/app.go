@@ -262,6 +262,7 @@ func (a *application) Print(
 	}
 	defer environment.web.closeBackend()
 	defer func() { returnErr = errors.Join(returnErr, environment.mcp.Close()) }()
+	defer func() { returnErr = errors.Join(returnErr, environment.tasks.Close()) }()
 	for _, diagnostic := range environment.configuration.Diagnostics {
 		fmt.Fprintln(diagnostics, "aice: "+diagnostic)
 	}
@@ -320,7 +321,7 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())), agent.WithToolResultNotices(taskNotices(environment.tasks)))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -393,6 +394,7 @@ func (a *application) Interactive(
 		return err
 	}
 	var runner *interactiveSession
+	defer func() { returnErr = errors.Join(returnErr, environment.tasks.Close()) }()
 	defer func() {
 		owner := environment.web
 		if runner != nil {
@@ -521,7 +523,9 @@ type runEnvironment struct {
 	tools         []agent.Tool
 	// baseTools contain host tools only; optional capabilities are composed
 	// together when startup or Settings publishes a tool/prompt snapshot.
-	baseTools    []agent.Tool
+	baseTools []agent.Tool
+	// tasks may be nil; its owner closes it when the environment ends.
+	tasks        *tool.Tasks
 	web          webState
 	systemPrompt string
 	skills       skill.Catalog
@@ -612,7 +616,22 @@ func (a *application) prepareRunEnvironment(
 		workspace.PhysicalPath(),
 		resolution.Decision == trust.DecisionTrusted,
 	)
-	tools, err := newBuiltInTools(ctx, workspace, frontend.questions)
+	// Without a private output directory bash simply offers no background
+	// tasks; the rest of the tool set is unaffected.
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aice: warning: background tasks unavailable: %v\n", err)
+		tasks = nil
+	}
+	webState := bindWeb(a.webBackends(), configured.configuration.Web)
+	prepared := false
+	defer func() {
+		if !prepared {
+			webState.closeBackend()
+			_ = tasks.Close()
+		}
+	}()
+	tools, err := newBuiltInTools(ctx, workspace, tasks, frontend.questions)
 	if err != nil {
 		return nil, err
 	}
@@ -620,13 +639,6 @@ func (a *application) prepareRunEnvironment(
 	baseTools := tools
 	// Web tools are registered only when a source is usable; the model never
 	// sees a schema without an implementation behind it.
-	webState := bindWeb(a.webBackends(), configured.configuration.Web)
-	prepared := false
-	defer func() {
-		if !prepared {
-			webState.closeBackend()
-		}
-	}()
 	tools, err = composeTools(baseTools, webState, configured.configuration)
 	if err != nil {
 		return nil, err
@@ -641,7 +653,11 @@ func (a *application) prepareRunEnvironment(
 	if err != nil {
 		return nil, err
 	}
-	guardConfig := executionGuardConfig(configured.configuration, workspace.PhysicalPath(), skillReadOnlyRoots(discovery.catalog))
+	readOnlyRoots := skillReadOnlyRoots(discovery.catalog)
+	if tasks != nil {
+		readOnlyRoots = append(readOnlyRoots, tasks.Dir())
+	}
+	guardConfig := executionGuardConfig(configured.configuration, workspace.PhysicalPath(), readOnlyRoots)
 	// Bash starts in the workspace as spelled, so its logical `cd ..` can
 	// leave a symlinked workspace for a different parent.
 	guardConfig.BashDirectory = workspace.Path()
@@ -674,6 +690,7 @@ func (a *application) prepareRunEnvironment(
 		options:       configured.options,
 		tools:         tools,
 		baseTools:     baseTools,
+		tasks:         tasks,
 		web:           webState,
 		systemPrompt:  systemPrompt,
 		skills:        discovery.catalog,
@@ -708,6 +725,7 @@ func (a *application) newInteractiveSession(
 		modelErr:      environment.modelErr,
 		tools:         environment.tools,
 		baseTools:     environment.baseTools,
+		tasks:         environment.tasks,
 		web:           environment.web,
 		desktop:       a.newDesktopPreset(environment.configuration),
 		systemPrompt:  environment.systemPrompt,
@@ -852,6 +870,7 @@ type interactiveSession struct {
 	configuration  config.Config
 	tools          []agent.Tool
 	baseTools      []agent.Tool
+	tasks          *tool.Tasks
 	web            webState
 	desktop        *desktopPreset
 	systemPrompt   string
@@ -929,8 +948,14 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 	if s.titleUpdates != nil {
 		frontend.Titles = s
 	}
+	if s.tasks != nil {
+		frontend.Tasks = s
+	}
 	return frontend
 }
+
+// RunningTasks counts the Session's running background tasks.
+func (s *interactiveSession) RunningTasks() int { return s.tasks.Running() }
 
 // sessionTools composes the Session base tools with web and optional
 // capabilities for configuration, and assembles the matching system prompt.
@@ -957,6 +982,7 @@ func (s *interactiveSession) sessionLoop(configuration config.Config, tools []ag
 		tools,
 		agent.WithGuard(s.guardAdapter),
 		agent.WithGuardAskHandler(s.handleGuardAsk),
+		agent.WithToolResultNotices(taskNotices(s.tasks)),
 	)
 }
 

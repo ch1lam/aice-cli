@@ -686,6 +686,7 @@ func (s *interactiveSession) RuntimeState() interaction.RuntimeState {
 		Usage:            usage,
 		Throughput:       s.throughput,
 		Context:          s.contextSnapshotFor(s.model, s.configuration, s.systemPrompt),
+		BackgroundTasks:  s.tasks.Running(),
 		SessionChanged:   s.sessionChanged,
 		Transcript:       s.transcript,
 	}
