@@ -358,6 +358,7 @@ func (a *application) Print(
 		systemPrompt: environment.systemPrompt,
 		mcp:          scope.mcp,
 		sessionDir:   sessionDir,
+		worktrees:    a.worktreeRoot(),
 	})
 
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)

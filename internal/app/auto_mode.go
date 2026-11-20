@@ -137,6 +137,16 @@ func newAutoMode(classifier classifierFunc, workspace string, settings config.Au
 	return a
 }
 
+// in returns this mode for a subagent working in another workspace.
+func (a *autoMode) in(workspace string) *autoMode {
+	if a == nil {
+		return nil
+	}
+	return newAutoMode(a.classify, workspace, config.AutoModeSettings{
+		Environment: a.slots.Environment, Block: a.slots.Block, Allow: a.slots.Allow,
+	}, a.headless, a.enabled.Load())
+}
+
 // decide routes a default-mode result: denials and human-only approvals
 // pass through; eligible asks and unreviewed side effects go to the
 // classifier.

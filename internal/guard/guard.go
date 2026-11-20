@@ -97,6 +97,41 @@ func New(workspace string, cfg Config) (*Guard, error) {
 	}, nil
 }
 
+// Rebase returns a Guard with this one's policy over another workspace, such
+// as a subagent's git worktree. Rules are parsed again so relative ones name
+// its files; readOnlyRoots are added to this Guard's. Session grants and
+// bound MCP services stay here; the web search binding carries over.
+func (g *Guard) Rebase(workspace string, readOnlyRoots ...string) (*Guard, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var rules ruleSet
+	for _, group := range []struct {
+		from []rule
+		into *[]rule
+	}{{g.rules.allow, &rules.allow}, {g.rules.ask, &rules.ask}, {g.rules.deny, &rules.deny}} {
+		for _, current := range group.from {
+			parsed, err := parseRule(current.text, workspace)
+			if err != nil {
+				return nil, err
+			}
+			*group.into = append(*group.into, parsed)
+		}
+	}
+	return &Guard{
+		rules:               rules,
+		workspace:           workspace,
+		physicalWorkspace:   physicalWorkspace(workspace),
+		bashDir:             workspace,
+		readOnlyRoots:       append(slices.Clone(g.readOnlyRoots), resolveReadOnlyRoots(readOnlyRoots, workspace)...),
+		credentialFiles:     g.credentialFiles,
+		credentialDirs:      g.credentialDirs,
+		controlFiles:        g.controlFiles,
+		sessionAllowedTools: map[string]bool{},
+		sessionCommands:     map[string]bool{},
+		searchTarget:        g.searchTarget,
+	}, nil
+}
+
 // AllowPathSession records an outside-workspace grant for the remainder of
 // this Session. isDir covers the directory and its descendants; write also
 // covers reads. Grants of the filesystem root or the user's home directory

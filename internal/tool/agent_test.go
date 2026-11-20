@@ -18,8 +18,8 @@ func (f delegatorFunc) Delegate(ctx context.Context, request tool.DelegateReques
 	return f(ctx, request)
 }
 
-func (delegatorFunc) Start(context.Context, tool.DelegateRequest) (tool.TaskStatus, error) {
-	return tool.TaskStatus{ID: "bg-000001", OutputPath: "/tasks/bg-000001.log"}, nil
+func (delegatorFunc) Start(_ context.Context, request tool.DelegateRequest) (tool.DelegateStart, error) {
+	return tool.DelegateStart{Task: tool.TaskStatus{ID: "bg-000001", OutputPath: "/tasks/bg-000001.log"}, Notes: []string{"isolation: " + request.Isolation}}, nil
 }
 
 func agentCall(t *testing.T, arguments any) llm.ToolCall {
@@ -46,6 +46,8 @@ func TestAgentValidatesBeforeDelegating(t *testing.T) {
 		{"description": "", "prompt": "task"},
 		{"description": "x", "prompt": "task", "type": "admin"},
 		{"description": "x", "prompt": "task", "extra": true},
+		{"description": "x", "prompt": "task", "isolation": "container"},
+		{"description": "x", "prompt": "task", "type": "explore", "isolation": "worktree"},
 	} {
 		if _, err := agentTool.Execute(t.Context(), agentCall(t, arguments)); err == nil {
 			t.Errorf("arguments %v were accepted", arguments)
@@ -112,5 +114,25 @@ func TestAgentStartsExploreInBackground(t *testing.T) {
 	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore", "run_in_background": true}))
 	if err != nil || result.IsError || !strings.Contains(result.Content[0].Text, "bg-000001") || result.Details != nil {
 		t.Fatalf("result = %#v, %v", result, err)
+	}
+}
+
+// The requested isolation reaches the delegator, and its notes reach the
+// parent with the result.
+func TestAgentPassesIsolationAndNotes(t *testing.T) {
+	t.Parallel()
+	agentTool, err := tool.NewAgent(delegatorFunc(func(_ context.Context, request tool.DelegateRequest) tool.DelegateResult {
+		return tool.DelegateResult{Report: "done", Notes: []string{"isolation: " + request.Isolation}}
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, background := range []bool{false, true} {
+		result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{
+			"description": "change", "prompt": "task", "isolation": "worktree", "run_in_background": background,
+		}))
+		if err != nil || !strings.HasSuffix(result.Content[0].Text, "\nisolation: worktree") {
+			t.Fatalf("background %v result = %q, %v", background, result.Content[0].Text, err)
+		}
 	}
 }
