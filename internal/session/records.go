@@ -183,11 +183,12 @@ func summarizeUsage(messages []MessageEntry, compactions []Compaction) UsageSumm
 					summary.ReviewUsage = llm.AddUsage(summary.ReviewUsage, *usage)
 				}
 			}
-			if message.Details != nil && message.Details.Delegation != nil {
-				usage := message.Details.Delegation.Usage
-				summary.Delegations++
-				summary.DelegatedUsage = llm.AddUsage(summary.DelegatedUsage, usage)
-				count(usage)
+			if message.Details != nil {
+				for _, delegation := range message.Details.Delegations {
+					summary.Delegations++
+					summary.DelegatedUsage = llm.AddUsage(summary.DelegatedUsage, delegation.Usage)
+					count(delegation.Usage)
+				}
 			}
 		}
 	}

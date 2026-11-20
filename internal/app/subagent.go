@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -28,15 +30,21 @@ You are a subagent: the parent agent delegated the task in the first user messag
 // the user, or own background tasks that outlive its run.
 var childToolsExcluded = map[string]bool{"agent": true, "request_user_input": true, "task_output": true, "task_kill": true}
 
+// backgroundToolsExcluded also leave a background child: it may outlive the
+// run whose MCP binding they route through.
+var backgroundToolsExcluded = map[string]bool{"tool_search": true, "mcp_resource_list": true, "mcp_server_info": true}
+
 // delegation is one main run's frozen settings for the subagents it starts.
-// A child runs inside the parent's tool call, sharing its Guard, ask
-// handler, model settings and MCP binding.
+// A synchronous child runs inside the parent's tool call, sharing its Guard,
+// ask handler, model settings and MCP binding. A background child is a task
+// that may outlive the run: it has no MCP binding and no person to ask.
 type delegation struct {
-	newLoop   func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
+	// newLoop builds a child Loop; asks routes Guard asks to the frontend,
+	// otherwise they are refused.
+	newLoop   func(tools []agent.Tool, guard agent.Guard, asks bool) (*agent.Loop, error)
 	compactor func(store *session.Store) agent.HistoryCompactor
-	// onUsage, when set, receives what each child spent, for frontends that
-	// total usage from events rather than from the Session.
-	onUsage      func(llm.Usage)
+	// tasks runs background children; nil leaves only synchronous ones.
+	tasks        *tool.Tasks
 	tools        []agent.Tool
 	workspace    *tool.Workspace
 	guard        *guardAdapter
@@ -59,22 +67,69 @@ func withDelegation(ctx context.Context, d *delegation) context.Context {
 // settings of the main run that made the call.
 type delegationRouter struct{}
 
+// errNoDelegation also refuses a child that tries to delegate: subagents are
+// one level deep.
+var errNoDelegation = errors.New("subagents are not available in this run; a subagent cannot start another")
+
 func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateRequest) tool.DelegateResult {
 	d, _ := ctx.Value(delegationKey{}).(*delegation)
 	if d == nil {
-		return tool.DelegateResult{Err: errors.New("subagents are not available in this run")}
+		return tool.DelegateResult{Err: errNoDelegation}
 	}
-	return d.run(ctx, request)
+	return d.run(ctx, request, false)
 }
 
-func (d *delegation) run(ctx context.Context, request tool.DelegateRequest) (res tool.DelegateResult) {
+func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest) (tool.TaskStatus, error) {
+	d, _ := ctx.Value(delegationKey{}).(*delegation)
+	if d == nil {
+		return tool.TaskStatus{}, errNoDelegation
+	}
+	return d.start(ctx, request)
+}
+
+// start runs a read-only child as a background task. It keeps the call's
+// context values but not its cancellation: only the task's own stop ends it.
+// Its report goes to the task's output file and its delegation record to
+// whichever result first reports the completion.
+func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest) (tool.TaskStatus, error) {
+	if d.tasks == nil {
+		return tool.TaskStatus{}, errors.New("background subagents are unavailable in this run; run it synchronously")
+	}
+	if !request.ReadOnly {
+		return tool.TaskStatus{}, errors.New("only read-only subagents run in the background")
+	}
+	values := context.WithoutCancel(callCtx)
+	return d.tasks.StartRun(tool.TaskAgent, request.Description, func(taskCtx context.Context, out io.Writer) (*llm.ToolDelegation, error) {
+		ctx, cancel := context.WithCancel(values)
+		defer cancel()
+		defer context.AfterFunc(taskCtx, cancel)()
+		res := d.run(ctx, request, true)
+		report := strings.TrimSpace(res.Report)
+		if report == "" {
+			report = "(the subagent finished without a report)"
+		}
+		fmt.Fprintf(out, "%s\n[subagent: %d turns, %d tool calls, %s", report, res.Turns, res.ToolCalls, res.Duration.Round(time.Second))
+		if res.Transcript != "" {
+			fmt.Fprintf(out, "; transcript: %s", res.Transcript)
+		}
+		fmt.Fprintln(out, "]")
+		return &llm.ToolDelegation{SessionID: res.SessionID, Usage: res.Usage, Turns: res.Turns, ToolCalls: res.ToolCalls}, res.Err
+	})
+}
+
+func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, background bool) (res tool.DelegateResult) {
 	start := time.Now()
 	defer func() { res.Duration = time.Since(start) }()
 	var guard agent.Guard = d.guard
 	if request.ReadOnly {
 		guard = exploreGuard{inner: d.guard}
 	}
-	loop, err := d.newLoop(d.childTools(ctx), guard)
+	mcp := d.mcp
+	if background {
+		mcp = mcpRunBinding{}
+		ctx = context.WithValue(ctx, mcpRunContextKey{}, noMCPRun{})
+	}
+	loop, err := d.newLoop(d.childTools(ctx, background), guard, !background)
 	if err != nil {
 		res.Err = err
 		return res
@@ -113,7 +168,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest) (res
 		res.Err = err
 		return res
 	}
-	input := runScope{mcp: d.mcp, store: store}.input(d.model, d.systemPrompt+subagentPrompt, d.options, nil, prompt)
+	input := runScope{mcp: mcp, store: store}.input(d.model, d.systemPrompt+subagentPrompt, d.options, nil, prompt)
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if store != nil {
 			if err := appendSessionMessage(recordCtx, store, message); err != nil {
@@ -136,20 +191,20 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest) (res
 	input.Compactor = d.compactor(store)
 	result, err := loop.Run(ctx, input, nil)
 	res.Usage = result.Usage
-	if d.onUsage != nil {
-		d.onUsage(result.Usage)
-	}
 	res.Err = err
 	return res
 }
 
+// noMCPRun unbinds the parent's MCP run from a background child's context.
+type noMCPRun struct{}
+
 // childTools are the parent's host tools without those a child must not
 // have; bash loses background execution.
-func (d *delegation) childTools(ctx context.Context) []agent.Tool {
+func (d *delegation) childTools(ctx context.Context, background bool) []agent.Tool {
 	tools := make([]agent.Tool, 0, len(d.tools))
 	for _, current := range d.tools {
 		name := current.Definition().Name
-		if childToolsExcluded[name] {
+		if childToolsExcluded[name] || background && backgroundToolsExcluded[name] {
 			continue
 		}
 		if bash, ok := current.(*tool.Bash); ok && bash.SupportsBackground() {

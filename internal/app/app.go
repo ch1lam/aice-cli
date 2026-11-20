@@ -344,11 +344,12 @@ func (a *application) Print(
 		sessionDir = filepath.Join(environment.workspace.Path(), ".aice", "sessions")
 	}
 	ctx = withDelegation(ctx, &delegation{
-		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+		// Print has no person to ask, synchronous child or not.
+		newLoop: func(tools []agent.Tool, guard agent.Guard, _ bool) (*agent.Loop, error) {
 			return agent.NewLoop(configured.service, tools, agent.WithGuard(guard), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 		},
 		compactor:    func(store *session.Store) agent.HistoryCompactor { return a.historyCompactor(store, &configured, nil) },
-		onUsage:      sink.AddUsage,
+		tasks:        environment.tasks,
 		tools:        environment.tools,
 		workspace:    environment.workspace,
 		guard:        environment.guardAdapter,
@@ -362,7 +363,15 @@ func (a *application) Print(
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
-	_, loopErr := loop.Run(ctx, runInput, sink.Accept)
+	_, loopErr := loop.Run(ctx, runInput, func(eventCtx context.Context, event agent.AgentEvent) error {
+		// Subagent usage reaches the totals through the results that record it.
+		if event.Type == agent.EventTypeToolExecutionEnd && event.ToolResult != nil && event.ToolResult.Details != nil {
+			for _, delegation := range event.ToolResult.Details.Delegations {
+				sink.AddUsage(delegation.Usage)
+			}
+		}
+		return sink.Accept(eventCtx, event)
+	})
 	finishErr := sink.Finish()
 	if loopErr != nil {
 		return errors.Join(

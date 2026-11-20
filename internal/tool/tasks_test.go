@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -97,7 +98,7 @@ func TestBackgroundTaskLifecycle(t *testing.T) {
 		t.Fatalf("snapshot = %q, want running", report)
 	}
 	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("notices before completion = %q", notices)
+		t.Fatalf("notices before completion = %+v", notices)
 	}
 
 	other := tt.start(t, "echo other")
@@ -107,22 +108,22 @@ func TestBackgroundTaskLifecycle(t *testing.T) {
 		t.Fatalf("report = %q", report)
 	}
 	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("task_output already reported both tasks; notices = %q", notices)
+		t.Fatalf("task_output already reported both tasks; notices = %+v", notices)
 	}
 
 	third := tt.start(t, "echo done")
 	deadline := time.Now().Add(10 * time.Second)
-	var notices []string
+	var notices []agent.ToolResultNotice
 	for len(notices) == 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 		notices = tt.tasks.CompletionNotices()
 	}
-	if len(notices) != 1 || !strings.Contains(notices[0], third+" exited with code 0") ||
-		!strings.Contains(notices[0], "done") {
-		t.Fatalf("notices = %q", notices)
+	if len(notices) != 1 || !strings.Contains(notices[0].Text, third+" exited with code 0") ||
+		!strings.Contains(notices[0].Text, "done") || notices[0].Delegation != nil {
+		t.Fatalf("notices = %+v", notices)
 	}
 	if again := tt.tasks.CompletionNotices(); len(again) != 0 {
-		t.Fatalf("completion reported twice: %q", again)
+		t.Fatalf("completion reported twice: %+v", again)
 	}
 }
 
@@ -147,7 +148,7 @@ func TestBackgroundTaskKill(t *testing.T) {
 		t.Fatalf("kill took %s, want the grace period before the kill", elapsed)
 	}
 	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("killed task produced notices %q", notices)
+		t.Fatalf("killed task produced notices %+v", notices)
 	}
 	if _, err := tt.kill.Execute(t.Context(), toolCall(t, "task_kill", map[string]any{"task_id": id})); err != nil {
 		t.Fatalf("killing a finished task: %v", err)
@@ -192,7 +193,7 @@ func TestBackgroundTasksEndWithSessionAndClose(t *testing.T) {
 		t.Fatalf("output after KillAll: %v", err)
 	}
 	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("previous Session's tasks reported: %q", notices)
+		t.Fatalf("previous Session's tasks reported: %+v", notices)
 	}
 	if _, err := tt.output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{id}})); err == nil {
 		t.Fatal("task survived KillAll")

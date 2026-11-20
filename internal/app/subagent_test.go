@@ -4,19 +4,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/tui"
 )
 
@@ -70,7 +74,10 @@ func TestApplicationPrintDelegatesToExploreSubagent(t *testing.T) {
 	}
 
 	result := requestToolResult(t, model.parent[1])
-	delegation := result.Details.Delegation
+	if len(result.Details.Delegations) != 1 {
+		t.Fatalf("parent result delegations = %#v", result.Details.Delegations)
+	}
+	delegation := &result.Details.Delegations[0]
 	if result.IsError || !strings.Contains(result.Content[0].Text, "the loader is config.Load") ||
 		delegation == nil || delegation.Usage.TotalTokens != 21 || delegation.Turns != 3 || delegation.ToolCalls != 2 {
 		t.Fatalf("parent result = %#v / %#v", result.Content, delegation)
@@ -199,7 +206,7 @@ func TestInteractiveRunDelegatesToSubagent(t *testing.T) {
 		t.Fatalf("%d parent and %d child requests", len(model.parent), len(model.child))
 	}
 	result := requestToolResult(t, model.parent[1])
-	if result.IsError || result.Details.Delegation == nil || result.Details.Delegation.SessionID == "" {
+	if result.IsError || len(result.Details.Delegations) != 1 || result.Details.Delegations[0].SessionID == "" {
 		t.Fatalf("parent result = %#v", result)
 	}
 	children, err := filepath.Glob(filepath.Join(workspace, ".aice", "sessions", "agents", "*.jsonl"))
@@ -217,4 +224,213 @@ func TestAgentToolDetailIsTheDescription(t *testing.T) {
 	if detail := toolCallDetail(call); detail != "find loader" {
 		t.Fatalf("detail = %q", detail)
 	}
+}
+
+// Background explore subagents run in parallel, cannot delegate further, and
+// their usage is recorded by the result that first reports them.
+func TestApplicationPrintRunsBackgroundSubagentsInParallel(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	model := &parallelSubagentModel{arrived: make(chan struct{}, 2), release: make(chan struct{})}
+	command, err := newTestCommand(t, dependencies{
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
+		},
+		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
+		userHomeDir: func() (string, error) { return t.TempDir(), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := filepath.Join(workspace, "parent.jsonl")
+	output := new(bytes.Buffer)
+	command.SetOut(output)
+	command.SetArgs([]string{"--workspace", workspace, "--session", sessionPath, "--print", "investigate"})
+	if err := command.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	if output.String() != "parent done\n" || len(model.parent) != 4 {
+		t.Fatalf("output = %q after %d parent requests", output.String(), len(model.parent))
+	}
+	for _, request := range model.parent[1:3] {
+		if started := requestToolResult(t, request); started.IsError || !strings.Contains(started.Content[0].Text, "started in background") {
+			t.Fatalf("start result = %#v", started.Content)
+		}
+	}
+	if nested := model.nested; nested == nil || !nested.IsError || !strings.Contains(nested.Content[0].Text, "agent") {
+		t.Fatalf("nested delegation result = %#v", nested)
+	}
+	reported := requestToolResult(t, model.parent[3])
+	if reported.Details == nil || len(reported.Details.Delegations) != 2 ||
+		!strings.Contains(reported.Content[0].Text, "report from a") || !strings.Contains(reported.Content[0].Text, "report from b") {
+		t.Fatalf("task_output result = %q / %#v", reported.Content[0].Text, reported.Details)
+	}
+	parent, err := session.Open(t.Context(), sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := parent.Usage()
+	_ = parent.Close()
+	if err != nil || summary.Delegations != 2 || summary.DelegatedUsage.TotalTokens != 10 {
+		t.Fatalf("parent usage = %+v, %v", summary, err)
+	}
+}
+
+// parallelSubagentModel holds each child's first request until both children
+// have arrived, so the run finishes only if they run at the same time.
+type parallelSubagentModel struct {
+	arrived chan struct{}
+	release chan struct{}
+	once    sync.Once
+
+	mu     sync.Mutex
+	parent []llm.Request
+	ids    []string
+	nested *llm.ToolResultMessage
+}
+
+func (m *parallelSubagentModel) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
+	call := func(id, name string, arguments any) llm.Stream {
+		data, _ := json.Marshal(arguments)
+		return toolCallEventStream(request.Model, llm.ToolCall{ID: id, Name: name, Arguments: data})
+	}
+	if len(request.Tools) == 0 {
+		return textEventStream(request.Model, "Title", llm.Usage{}, llm.StopReasonStop), nil
+	}
+	if strings.Contains(request.SystemPrompt, "# Subagent") {
+		task := visibleText(request.Messages[0].(llm.UserMessage).Content, "")
+		if len(request.Messages) == 1 {
+			m.arrived <- struct{}{}
+			if len(m.arrived) == 2 {
+				m.once.Do(func() { close(m.release) })
+			}
+			select {
+			case <-m.release:
+			case <-time.After(10 * time.Second):
+				return nil, errors.New("children did not run in parallel")
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			if task == "a" {
+				return call("nest", "agent", map[string]any{"description": "nested", "prompt": "go deeper"}), nil
+			}
+		} else if result, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {
+			m.mu.Lock()
+			m.nested = &result
+			m.mu.Unlock()
+		}
+		return textEventStream(request.Model, "report from "+task, llm.Usage{TotalTokens: 5}, llm.StopReasonStop), nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.parent = append(m.parent, request)
+	if len(m.parent) > 1 {
+		if result, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {
+			if match := regexp.MustCompile(`task (bg-[0-9a-f]{6})`).FindStringSubmatch(result.Content[len(result.Content)-1].Text); match != nil {
+				m.ids = append(m.ids, match[1])
+			}
+		}
+	}
+	switch len(m.parent) {
+	case 1, 2:
+		name := map[int]string{1: "a", 2: "b"}[len(m.parent)]
+		return call("start-"+name, "agent", map[string]any{"description": "probe " + name, "prompt": name, "type": "explore", "run_in_background": true}), nil
+	case 3:
+		return call("wait", "task_output", map[string]any{"task_ids": m.ids, "wait": 30}), nil
+	}
+	return textEventStream(request.Model, "parent done", llm.Usage{TotalTokens: 2}, llm.StopReasonStop), nil
+}
+
+// A child's context carries no delegation, so even a child that reached the
+// agent tool could not start another subagent, synchronous or background.
+func TestChildContextRefusesDelegation(t *testing.T) {
+	t.Parallel()
+	ctx := withDelegation(t.Context(), nil)
+	request := tool.DelegateRequest{Description: "x", Prompt: "x", ReadOnly: true}
+	if res := (delegationRouter{}).Delegate(ctx, request); !errors.Is(res.Err, errNoDelegation) {
+		t.Fatalf("Delegate err = %v", res.Err)
+	}
+	if _, err := (delegationRouter{}).Start(ctx, request); !errors.Is(err, errNoDelegation) {
+		t.Fatalf("Start err = %v", err)
+	}
+}
+
+// An interactive background child has nobody to ask: an ask is refused at
+// once instead of waiting on a prompt the TUI is not showing.
+func TestInteractiveBackgroundSubagentRefusesAsks(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := &askingChildModel{outside: outside}
+	command, err := newTestCommand(t, dependencies{
+		loadConfig: func(config.LoadOptions) (config.Config, error) {
+			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
+		},
+		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
+		userHomeDir: func() (string, error) { return t.TempDir(), nil },
+		runTUI: func(ctx context.Context, frontend interaction.Frontend, _ tui.Options) error {
+			return runInteractive(ctx, frontend.Runner, "investigate", nil)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetArgs([]string{"--workspace", workspace})
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	if err := command.ExecuteContext(ctx); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	if model.denied == nil || !model.denied.IsError || len(model.parent) != 3 {
+		t.Fatalf("child read result = %#v after %d parent requests", model.denied, len(model.parent))
+	}
+}
+
+type askingChildModel struct {
+	outside string
+	mu      sync.Mutex
+	parent  []llm.Request
+	id      string
+	denied  *llm.ToolResultMessage
+}
+
+func (m *askingChildModel) Stream(_ context.Context, request llm.Request) (llm.Stream, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	call := func(id, name string, arguments any) llm.Stream {
+		data, _ := json.Marshal(arguments)
+		return toolCallEventStream(request.Model, llm.ToolCall{ID: id, Name: name, Arguments: data})
+	}
+	if len(request.Tools) == 0 {
+		return textEventStream(request.Model, "Title", llm.Usage{}, llm.StopReasonStop), nil
+	}
+	if strings.Contains(request.SystemPrompt, "# Subagent") {
+		if len(request.Messages) == 1 {
+			return call("outside", "read", map[string]any{"path": m.outside}), nil
+		}
+		if result, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {
+			m.denied = &result
+		}
+		return textEventStream(request.Model, "could not read it", llm.Usage{}, llm.StopReasonStop), nil
+	}
+	m.parent = append(m.parent, request)
+	switch len(m.parent) {
+	case 1:
+		return call("start", "agent", map[string]any{"description": "probe", "prompt": "read it", "type": "explore", "run_in_background": true}), nil
+	case 2:
+		if started, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {
+			m.id = regexp.MustCompile(`bg-[0-9a-f]{6}`).FindString(started.Content[0].Text)
+		}
+		return call("wait", "task_output", map[string]any{"task_ids": []string{m.id}, "wait": 20}), nil
+	}
+	return textEventStream(request.Model, "parent done", llm.Usage{}, llm.StopReasonStop), nil
 }

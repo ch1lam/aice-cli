@@ -18,6 +18,10 @@ func (f delegatorFunc) Delegate(ctx context.Context, request tool.DelegateReques
 	return f(ctx, request)
 }
 
+func (delegatorFunc) Start(context.Context, tool.DelegateRequest) (tool.TaskStatus, error) {
+	return tool.TaskStatus{ID: "bg-000001", OutputPath: "/tasks/bg-000001.log"}, nil
+}
+
 func agentCall(t *testing.T, arguments any) llm.ToolCall {
 	t.Helper()
 	data, err := json.Marshal(arguments)
@@ -42,6 +46,9 @@ func TestAgentValidatesBeforeDelegating(t *testing.T) {
 		{"description": "", "prompt": "task"},
 		{"description": "x", "prompt": "task", "type": "admin"},
 		{"description": "x", "prompt": "task", "extra": true},
+		// Writers are never parallel: only explore may run in the background.
+		{"description": "x", "prompt": "task", "run_in_background": true},
+		{"description": "x", "prompt": "task", "type": "general", "run_in_background": true},
 	} {
 		if _, err := agentTool.Execute(t.Context(), agentCall(t, arguments)); err == nil {
 			t.Errorf("arguments %v were accepted", arguments)
@@ -72,7 +79,7 @@ func TestAgentStoppedChildKeepsReportAndUsage(t *testing.T) {
 	}
 	text := result.Content[0].Text
 	if !result.IsError || !strings.Contains(text, "stopped before finishing") || !strings.Contains(text, "half done") ||
-		result.Details == nil || result.Details.Delegation == nil || result.Details.Delegation.Usage.TotalTokens != 9 {
+		result.Details == nil || len(result.Details.Delegations) != 1 || result.Details.Delegations[0].Usage.TotalTokens != 9 {
 		t.Fatalf("result = %q / %#v", text, result.Details)
 	}
 }
@@ -93,5 +100,20 @@ func TestAgentTruncatesLongReports(t *testing.T) {
 	if result.IsError || !utf8.ValidString(text) || len(text) > tool.MaxAgentReportBytes+512 ||
 		!strings.Contains(text, "report truncated") || !strings.Contains(text, "transcript: child.jsonl") {
 		t.Fatalf("result = %d bytes, tail %q", len(text), text[len(text)-200:])
+	}
+}
+
+func TestAgentStartsExploreInBackground(t *testing.T) {
+	t.Parallel()
+	agentTool, err := tool.NewAgent(delegatorFunc(func(context.Context, tool.DelegateRequest) tool.DelegateResult {
+		t.Error("a background call ran synchronously")
+		return tool.DelegateResult{}
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore", "run_in_background": true}))
+	if err != nil || result.IsError || !strings.Contains(result.Content[0].Text, "bg-000001") || result.Details != nil {
+		t.Fatalf("result = %#v, %v", result, err)
 	}
 }

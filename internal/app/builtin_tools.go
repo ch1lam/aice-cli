@@ -65,7 +65,7 @@ func taskNotices(tasks *tool.Tasks) agent.ToolResultNotices {
 	if tasks == nil {
 		return nil
 	}
-	return func(context.Context, llm.ToolResultMessage) []string {
+	return func(context.Context, llm.ToolResultMessage) []agent.ToolResultNotice {
 		return tasks.CompletionNotices()
 	}
 }
