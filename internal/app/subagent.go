@@ -26,6 +26,15 @@ const subagentPrompt = `
 
 You are a subagent: the parent agent delegated the task in the first user message to you. No user can answer questions here; resolve what you can and state what you could not. Your final message is the report the parent receives instead of this whole conversation: give conclusions with the evidence behind them (paths, lines, commands, results), not a narrative of your steps.`
 
+// writerPrompt follows the subagent section for a background writer; %s is
+// its artifact directory.
+const writerPrompt = `
+
+Other agents change files in this workspace while you run. Change only the files your task requires; a write to a file another agent is changing is denied, so do not work around that denial. Write test reports, logs and other artifacts under %s, which is yours alone, and name the ones that matter in your report.`
+
+// exploreToolsExcluded leave an explore child, which may not write.
+var exploreToolsExcluded = map[string]bool{"write": true, "edit": true}
+
 // childToolsExcluded never reach a subagent: it cannot delegate further, ask
 // the user, or own background tasks that outlive its run.
 var childToolsExcluded = map[string]bool{"agent": true, "request_user_input": true, "task_output": true, "task_kill": true}
@@ -76,7 +85,7 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if d == nil {
 		return tool.DelegateResult{Err: errNoDelegation}
 	}
-	return d.run(ctx, request, false)
+	return d.run(ctx, request, false, "")
 }
 
 func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest) (tool.TaskStatus, error) {
@@ -87,23 +96,31 @@ func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest)
 	return d.start(ctx, request)
 }
 
-// start runs a read-only child as a background task. It keeps the call's
-// context values but not its cancellation: only the task's own stop ends it.
-// Its report goes to the task's output file and its delegation record to
-// whichever result first reports the completion.
+// start runs a child as a background task. It keeps the call's context
+// values but not its cancellation: only the task's own stop ends it. Its
+// report goes to the task's output file and its delegation record to
+// whichever result first reports the completion. A writer is named by its
+// task ID for file claims and gets its own artifact directory.
 func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest) (tool.TaskStatus, error) {
 	if d.tasks == nil {
 		return tool.TaskStatus{}, errors.New("background subagents are unavailable in this run; run it synchronously")
 	}
-	if !request.ReadOnly {
-		return tool.TaskStatus{}, errors.New("only read-only subagents run in the background")
-	}
 	values := context.WithoutCancel(callCtx)
-	return d.tasks.StartRun(tool.TaskAgent, request.Description, func(taskCtx context.Context, out io.Writer) (*llm.ToolDelegation, error) {
+	return d.tasks.StartRun(tool.TaskAgent, request.Description, func(taskCtx context.Context, id string, out io.Writer) (*llm.ToolDelegation, error) {
 		ctx, cancel := context.WithCancel(values)
 		defer cancel()
 		defer context.AfterFunc(taskCtx, cancel)()
-		res := d.run(ctx, request, true)
+		artifacts := ""
+		if !request.ReadOnly {
+			d.guard.claims.begin(id)
+			defer d.guard.claims.end(id)
+			ctx = withWriter(ctx, id)
+			artifacts = filepath.Join(d.workspace.Path(), ".aice", "agents", id)
+			if err := os.MkdirAll(artifacts, 0o700); err != nil {
+				return nil, fmt.Errorf("create artifact directory: %w", err)
+			}
+		}
+		res := d.run(ctx, request, true, artifacts)
 		report := strings.TrimSpace(res.Report)
 		if report == "" {
 			report = "(the subagent finished without a report)"
@@ -112,12 +129,20 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 		if res.Transcript != "" {
 			fmt.Fprintf(out, "; transcript: %s", res.Transcript)
 		}
+		if artifacts != "" {
+			if rel, err := filepath.Rel(d.workspace.Path(), artifacts); err == nil {
+				artifacts = rel
+			}
+			fmt.Fprintf(out, "; artifacts: %s", artifacts)
+		}
 		fmt.Fprintln(out, "]")
 		return &llm.ToolDelegation{SessionID: res.SessionID, Usage: res.Usage, Turns: res.Turns, ToolCalls: res.ToolCalls}, res.Err
 	})
 }
 
-func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, background bool) (res tool.DelegateResult) {
+// run executes one child to completion. artifacts, when set, is a background
+// writer's own directory.
+func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, background bool, artifacts string) (res tool.DelegateResult) {
 	start := time.Now()
 	defer func() { res.Duration = time.Since(start) }()
 	var guard agent.Guard = d.guard
@@ -129,7 +154,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, back
 		mcp = mcpRunBinding{}
 		ctx = context.WithValue(ctx, mcpRunContextKey{}, noMCPRun{})
 	}
-	loop, err := d.newLoop(d.childTools(ctx, background), guard, !background)
+	loop, err := d.newLoop(d.childTools(ctx, background, request.ReadOnly), guard, !background)
 	if err != nil {
 		res.Err = err
 		return res
@@ -168,7 +193,11 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, back
 		res.Err = err
 		return res
 	}
-	input := runScope{mcp: mcp, store: store}.input(d.model, d.systemPrompt+subagentPrompt, d.options, nil, prompt)
+	systemPrompt := d.systemPrompt + subagentPrompt
+	if artifacts != "" {
+		systemPrompt += fmt.Sprintf(writerPrompt, artifacts)
+	}
+	input := runScope{mcp: mcp, store: store}.input(d.model, systemPrompt, d.options, nil, prompt)
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if store != nil {
 			if err := appendSessionMessage(recordCtx, store, message); err != nil {
@@ -200,11 +229,11 @@ type noMCPRun struct{}
 
 // childTools are the parent's host tools without those a child must not
 // have; bash loses background execution.
-func (d *delegation) childTools(ctx context.Context, background bool) []agent.Tool {
+func (d *delegation) childTools(ctx context.Context, background, readOnly bool) []agent.Tool {
 	tools := make([]agent.Tool, 0, len(d.tools))
 	for _, current := range d.tools {
 		name := current.Definition().Name
-		if childToolsExcluded[name] || background && backgroundToolsExcluded[name] {
+		if childToolsExcluded[name] || background && backgroundToolsExcluded[name] || readOnly && exploreToolsExcluded[name] {
 			continue
 		}
 		if bash, ok := current.(*tool.Bash); ok && bash.SupportsBackground() {

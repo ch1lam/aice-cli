@@ -39,7 +39,7 @@ func newRunTasks(t *testing.T) (*tool.Tasks, *tool.TaskOutput, *tool.TaskKill) {
 func TestRunTaskReportsDelegationOnce(t *testing.T) {
 	t.Parallel()
 	tasks, output, _ := newRunTasks(t)
-	status, err := tasks.StartRun(tool.TaskAgent, "find loader", func(_ context.Context, out io.Writer) (*llm.ToolDelegation, error) {
+	status, err := tasks.StartRun(tool.TaskAgent, "find loader", func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
 		fmt.Fprintln(out, "the loader is config.Load")
 		return &llm.ToolDelegation{SessionID: "child", Usage: llm.Usage{TotalTokens: 7}, Turns: 2}, nil
 	})
@@ -69,7 +69,7 @@ func TestRunTaskReportsDelegationOnce(t *testing.T) {
 func TestRunTaskCompletionNoticeCarriesDelegation(t *testing.T) {
 	t.Parallel()
 	tasks, _, _ := newRunTasks(t)
-	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(context.Context, io.Writer) (*llm.ToolDelegation, error) {
+	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) {
 		return &llm.ToolDelegation{SessionID: "child"}, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestRunTaskCompletionNoticeCarriesDelegation(t *testing.T) {
 func TestRunTaskKillAndFailure(t *testing.T) {
 	t.Parallel()
 	tasks, output, kill := newRunTasks(t)
-	blocked, err := tasks.StartRun(tool.TaskAgent, "wait", func(ctx context.Context, _ io.Writer) (*llm.ToolDelegation, error) {
+	blocked, err := tasks.StartRun(tool.TaskAgent, "wait", func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
 		<-ctx.Done()
 		return &llm.ToolDelegation{SessionID: "stopped"}, ctx.Err()
 	})
@@ -105,7 +105,7 @@ func TestRunTaskKillAndFailure(t *testing.T) {
 		result.Details == nil || len(result.Details.Delegations) != 1 {
 		t.Fatalf("kill result = %#v, %v", result, err)
 	}
-	failed, err := tasks.StartRun(tool.TaskAgent, "fail", func(context.Context, io.Writer) (*llm.ToolDelegation, error) {
+	failed, err := tasks.StartRun(tool.TaskAgent, "fail", func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) {
 		return nil, fmt.Errorf("model unavailable")
 	})
 	if err != nil {
@@ -114,5 +114,22 @@ func TestRunTaskKillAndFailure(t *testing.T) {
 	report, err := output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{failed.ID}, "wait": 10}))
 	if err != nil || !strings.Contains(report.Content[0].Text, "stopped before finishing: model unavailable") || report.Details != nil {
 		t.Fatalf("failed report = %#v, %v", report, err)
+	}
+}
+
+func TestRunTasksBoundConcurrentSubagents(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	block := func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	for range 4 {
+		if _, err := tasks.StartRun(tool.TaskAgent, "wait", block); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tasks.StartRun(tool.TaskAgent, "fifth", block); err == nil || !strings.Contains(err.Error(), "at most 4 background subagents") {
+		t.Fatalf("fifth subagent err = %v", err)
 	}
 }

@@ -43,7 +43,7 @@ type DelegateResult struct {
 }
 
 // Delegator runs subagents. Delegate runs one to completion within the
-// caller's context; Start runs a read-only one as a background task.
+// caller's context; Start runs one as a background task.
 type Delegator interface {
 	Delegate(ctx context.Context, request DelegateRequest) DelegateResult
 	Start(ctx context.Context, request DelegateRequest) (TaskStatus, error)
@@ -68,15 +68,16 @@ func (a *Agent) Definition() llm.ToolDefinition {
 		Name: "agent",
 		Description: "Delegate a self-contained task to a subagent that starts with a fresh context, works with your tools " +
 			"until done, and returns only its final report. Its intermediate steps never enter your context. " +
-			"type \"explore\" denies every write and is for research, locating code and review; \"general\" (default) may edit. " +
-			"An explore subagent can run_in_background: the call returns a task id at once and the report arrives with a later tool result.",
+			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
+			"run_in_background returns a task id at once; the report arrives with a later tool result. " +
+			"Concurrent writers never change the same file: a write to a file another running writer changed is denied.",
 		InputSchema: jsonSchema(`{
 			"type": "object",
 			"properties": {
 				"description": {"type": "string", "description": "3-5 word label shown to the user"},
 				"prompt": {"type": "string", "description": "The complete task. The subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report."},
 				"type": {"type": "string", "enum": ["general", "explore"]},
-				"run_in_background": {"type": "boolean", "description": "Run an explore subagent as a background task and return its task id at once (default: false)"}
+				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: false)"}
 			},
 			"required": ["description", "prompt"],
 			"additionalProperties": false
@@ -86,7 +87,8 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"Delegate only independent tasks whose process is long but whose conclusion is short, such as a broad search, an investigation or a review; do simple or tightly coupled work yourself",
 			"Write the prompt so it stands alone: the subagent cannot see this conversation or ask the user anything",
 			"Prefer type explore unless the task must change files; verify a subagent's claims before relying on them for edits",
-			"Run independent explore subagents in the background to work in parallel, keep doing your own work, and use task_output to wait only when you need a report; never start the same task twice",
+			"Run independent subagents in the background to work in parallel, keep doing your own work, and use task_output to wait only when you need a report; never start the same task twice",
+			"Give parallel writers disjoint files: name the files each may change, and do not edit them yourself until it finishes",
 		},
 	}
 }
@@ -116,11 +118,6 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	}
 	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore}
 	if args.Background {
-		// Concurrent writers would need physical isolation, which AICE does
-		// not provide yet: only read-only subagents run in parallel.
-		if !request.ReadOnly {
-			return llm.ToolResult{}, fmt.Errorf("tool %q: only type %q may run_in_background; run a subagent that changes files synchronously", "agent", AgentExplore)
-		}
 		status, err := a.delegator.Start(ctx, request)
 		if err != nil {
 			return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "agent", err)

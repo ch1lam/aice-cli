@@ -46,9 +46,6 @@ func TestAgentValidatesBeforeDelegating(t *testing.T) {
 		{"description": "", "prompt": "task"},
 		{"description": "x", "prompt": "task", "type": "admin"},
 		{"description": "x", "prompt": "task", "extra": true},
-		// Writers are never parallel: only explore may run in the background.
-		{"description": "x", "prompt": "task", "run_in_background": true},
-		{"description": "x", "prompt": "task", "type": "general", "run_in_background": true},
 	} {
 		if _, err := agentTool.Execute(t.Context(), agentCall(t, arguments)); err == nil {
 			t.Errorf("arguments %v were accepted", arguments)

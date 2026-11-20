@@ -19,7 +19,10 @@ import (
 )
 
 const (
-	maxRunningTasks  = 8
+	maxRunningTasks = 8
+	// maxRunningAgents bounds concurrent subagents within maxRunningTasks:
+	// each one spends model tokens.
+	maxRunningAgents = 4
 	maxRetainedTasks = 16
 	// taskOutputLimit bounds one task's output file; a task that exceeds it
 	// is terminated so a runaway log cannot fill the disk.
@@ -105,10 +108,10 @@ type TaskStatus struct {
 	FirstReport bool
 }
 
-// TaskRun is a background task that is not a process. It writes its output to
-// out and returns when done or when ctx ends; a delegation it returns is
-// reported with its completion.
-type TaskRun func(ctx context.Context, out io.Writer) (*llm.ToolDelegation, error)
+// TaskRun is a background task that is not a process, identified by id. It
+// writes its output to out and returns when done or when ctx ends; a
+// delegation it returns is reported with its completion.
+type TaskRun func(ctx context.Context, id string, out io.Writer) (*llm.ToolDelegation, error)
 
 // NewTasks creates the private output directory for background tasks.
 func NewTasks() (*Tasks, error) {
@@ -202,6 +205,9 @@ func (t *Tasks) start(shellPath, dir, command, description string) (TaskStatus, 
 func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if kind == TaskAgent && t.runningKindLocked(TaskAgent) >= maxRunningAgents {
+		return TaskStatus{}, fmt.Errorf("at most %d background subagents may run at once; wait for one or stop it with task_kill", maxRunningAgents)
+	}
 	current, output, err := t.reserveLocked(kind, "", description)
 	if err != nil {
 		return TaskStatus{}, err
@@ -213,7 +219,7 @@ func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, erro
 		defer t.wg.Done()
 		waited := make(chan error, 1)
 		go func() {
-			delegation, err := fn(ctx, output)
+			delegation, err := fn(ctx, current.id, output)
 			current.delegation = delegation
 			waited <- err
 		}()
@@ -461,9 +467,14 @@ func (t *Tasks) lookup(ids []string) ([]*task, error) {
 }
 
 func (t *Tasks) runningLocked() int {
+	return t.runningKindLocked("")
+}
+
+// runningKindLocked counts running tasks of kind, or of every kind for "".
+func (t *Tasks) runningKindLocked(kind string) int {
 	running := 0
 	for _, current := range t.tasks {
-		if current.status().Running {
+		if (kind == "" || current.kind == kind) && current.status().Running {
 			running++
 		}
 	}
