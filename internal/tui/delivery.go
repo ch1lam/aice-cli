@@ -142,6 +142,21 @@ func (m *model) applySteer(steering interaction.InputDisplay) bool {
 	return true
 }
 
+// applyNotification shows an AICE notification entering the run, such as
+// finished background tasks; the response to it starts a new process.
+func (m *model) applyNotification(notification interaction.InputDisplay) bool {
+	if strings.TrimSpace(notification.Text) == "" {
+		return false
+	}
+	m.activeProcessID = 0
+	m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: notification.Text})
+	m.beginProcess()
+	m.assistantEntry = -1
+	m.status = "Reading notification..."
+	m.resizeLayout()
+	return true
+}
+
 // deliveryResult closes preflight. Failed inputs return to the composer intact.
 type deliveryResult struct {
 	id    string

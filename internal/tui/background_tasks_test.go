@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -13,6 +15,11 @@ import (
 type taskCounter struct{ running int }
 
 func (c *taskCounter) RunningTasks() int { return c.running }
+
+func (*taskCounter) AwaitCompletion(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
 
 // The composer shows running background tasks and keeps exactly one poll
 // pending until none remain, including tasks that end between runs.
@@ -44,5 +51,62 @@ func TestBackgroundTaskCountFollowsTasks(t *testing.T) {
 	current = updateModel(t, current, backgroundTasksMsg{running: counter.RunningTasks()})
 	if shows("task · ") || shows("tasks · ") || current.taskPollPending {
 		t.Fatalf("finished tasks still shown or polled: pending = %v", current.taskPollPending)
+	}
+}
+
+// A finished task wakes an idle view with a notification run. A busy view
+// ignores the wake, and waits again once its run finishes.
+func TestTaskCompletionWakesIdleView(t *testing.T) {
+	t.Parallel()
+	requests := make(chan runRequest, 1)
+	current := newModel(requests, make(chan struct{}))
+	waits := 0
+	current.awaitTasks = func() tea.Cmd {
+		waits++
+		return func() tea.Msg { return nil }
+	}
+
+	updated, command := current.Update(taskCompletionMsg{})
+	current = updated.(model)
+	if !current.run.running() || command == nil {
+		t.Fatalf("idle view did not start a run: running = %v", current.run.running())
+	}
+	if started, ok := command().(runStartedMsg); !ok || started.updates == nil {
+		t.Fatal("wake did not reach the run controller")
+	}
+	if request := <-requests; !request.notification || request.prompt != "" {
+		t.Fatalf("request = %+v, want a notification run", request)
+	}
+
+	updated, command = current.Update(taskCompletionMsg{})
+	current = updated.(model)
+	if command != nil || len(requests) != 0 || waits != 0 {
+		t.Fatalf("busy view acted on a wake: command = %v, requests = %d, waits = %d", command != nil, len(requests), waits)
+	}
+
+	updated, _ = current.applyRunBatch(runBatchMsg{updates: []runUpdate{{done: true}}})
+	current = updated.(model)
+	if current.run.running() || !current.taskWaitPending || waits != 1 {
+		t.Fatalf("finished run: running = %v, wait pending = %v, waits = %d", current.run.running(), current.taskWaitPending, waits)
+	}
+
+	// A failed notification run does not wait again; the next run's end does.
+	current.taskWaitPending = false
+	updated, command = current.Update(taskCompletionMsg{})
+	current = updated.(model)
+	if !current.run.running() || command == nil {
+		t.Fatal("idle view did not wake again")
+	}
+	updated, _ = current.applyRunBatch(runBatchMsg{updates: []runUpdate{{done: true, err: errors.New("no credentials")}}})
+	current = updated.(model)
+	if current.taskWaitPending || waits != 1 {
+		t.Fatalf("failed wake: wait pending = %v, waits = %d", current.taskWaitPending, waits)
+	}
+
+	// A wait that ended with the program does not start a run.
+	current.taskWaitPending = false
+	updated, command = current.Update(taskCompletionMsg{err: errors.New("stopped")})
+	if updated.(model).run.running() || command != nil {
+		t.Fatal("a failed wait started a run")
 	}
 }

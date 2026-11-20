@@ -250,6 +250,9 @@ func sessionNodeDescription(
 		}
 		switch message := entry.Message.(type) {
 		case llm.UserMessage:
+			if message.IsNotice() {
+				return "notification " + quoteSessionText(noticeSummary(message))
+			}
 			return "user " + quoteSessionText(visibleText(message.Content, "\n"))
 		case llm.AssistantMessage:
 			return "assistant " + quoteSessionText(visibleText(message.Content, "\n"))

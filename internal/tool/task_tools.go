@@ -151,6 +151,7 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 		return llm.UserMessage{}, "", false
 	}
 	reports := []string{noticeHeader}
+	summaries := make([]string, 0, len(completions))
 	notice := &llm.Notice{}
 	for _, status := range completions {
 		preview := int64(taskPreviewBytes)
@@ -158,10 +159,12 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 			preview = agentNoticeBytes
 		}
 		reports = append(reports, taskReport(status, preview))
+		summaries = append(summaries, taskSummary(status))
 		if status.Delegation != nil && len(notice.Delegations) < llm.MaxToolDelegations {
 			notice.Delegations = append(notice.Delegations, *status.Delegation)
 		}
 	}
+	notice.Summary = strings.Join(summaries, "\n")
 	return llm.UserMessage{
 		Role:      llm.RoleUser,
 		Content:   []llm.ContentPart{llm.NewTextContent(strings.Join(reports, "\n\n")).Part()},
@@ -170,27 +173,44 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 	}, "notice-" + completions[0].ID, true
 }
 
+// taskSummary names a task and its state in one line.
+func taskSummary(status TaskStatus) string {
+	if status.Kind == TaskAgent {
+		return fmt.Sprintf("Subagent %s %s: %s", status.ID, taskState(status), firstLine(status.Description))
+	}
+	return fmt.Sprintf("Task %s %s: %s", status.ID, taskState(status), firstLine(taskLabel(status)))
+}
+
+func taskState(status TaskStatus) string {
+	switch {
+	case status.Running:
+		return "running"
+	case status.Reason != "":
+		return "terminated: " + status.Reason
+	case status.Kind != TaskAgent:
+		return fmt.Sprintf("exited with code %d", status.ExitCode)
+	case status.Failure != "":
+		return "stopped before finishing: " + firstLine(status.Failure)
+	default:
+		return "finished"
+	}
+}
+
+func taskLabel(status TaskStatus) string {
+	if status.Description != "" {
+		return status.Description
+	}
+	return status.Command
+}
+
 // taskReport renders a status line and a preview of the task's output: the
 // tail of a command's output, or the beginning of a subagent's report.
 func taskReport(status TaskStatus, previewBytes int64) string {
 	if status.Kind == TaskAgent {
 		return agentTaskReport(status, previewBytes)
 	}
-	var state string
-	switch {
-	case status.Running:
-		state = "running"
-	case status.Reason != "":
-		state = "terminated: " + status.Reason
-	default:
-		state = fmt.Sprintf("exited with code %d", status.ExitCode)
-	}
-	label := status.Description
-	if label == "" {
-		label = status.Command
-	}
 	report := fmt.Sprintf("[task %s %s; output file: %s]\nCommand: %s",
-		status.ID, state, status.OutputPath, firstLine(label))
+		status.ID, taskState(status), status.OutputPath, firstLine(taskLabel(status)))
 	tail, truncated, err := outputTail(status.OutputPath, previewBytes)
 	switch {
 	case err != nil:
@@ -205,18 +225,7 @@ func taskReport(status TaskStatus, previewBytes int64) string {
 }
 
 func agentTaskReport(status TaskStatus, previewBytes int64) string {
-	var state string
-	switch {
-	case status.Running:
-		state = "running"
-	case status.Reason != "":
-		state = "terminated: " + status.Reason
-	case status.Failure != "":
-		state = "stopped before finishing: " + firstLine(status.Failure)
-	default:
-		state = "finished"
-	}
-	report := fmt.Sprintf("[subagent task %s %s; report file: %s]\nTask: %s", status.ID, state, status.OutputPath, firstLine(status.Description))
+	report := fmt.Sprintf("[subagent task %s %s; report file: %s]\nTask: %s", status.ID, taskState(status), status.OutputPath, firstLine(status.Description))
 	if status.Running {
 		return report
 	}

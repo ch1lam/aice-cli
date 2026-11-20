@@ -28,9 +28,11 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 		}
 		switch message := entry.Message.(type) {
 		case llm.UserMessage:
-			view.Entries = append(view.Entries, interaction.TranscriptEntry{
-				ID: entry.ID, Kind: interaction.TranscriptUser, Text: userContent(message),
-			})
+			kind, text := interaction.TranscriptUser, userContent(message)
+			if message.IsNotice() {
+				kind, text = interaction.TranscriptNotification, noticeSummary(message)
+			}
+			view.Entries = append(view.Entries, interaction.TranscriptEntry{ID: entry.ID, Kind: kind, Text: text})
 		case llm.AssistantMessage:
 			text, thinking := assistantContent(message)
 			view.Entries = append(view.Entries, interaction.TranscriptEntry{

@@ -468,6 +468,9 @@ type UserMessage struct {
 
 // Notice describes an AICE-written user-role message.
 type Notice struct {
+	// Summary names what the notice reports in a few lines for display; the
+	// model reads Content.
+	Summary string `json:"summary,omitempty"`
 	// Delegations record finished subagent runs the notice reports, counted
 	// like those a tool result reports.
 	Delegations []ToolDelegation `json:"delegations,omitempty"`

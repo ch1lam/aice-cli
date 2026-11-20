@@ -21,6 +21,11 @@ func translateAgentEvent(event agent.AgentEvent) *interaction.Event {
 	case agent.EventTypeMessageUpdate:
 		return translateAssistantDelta(event.AssistantMessageEvent)
 	case agent.EventTypeMessageEnd:
+		// A notification may also be the prompt of a run it woke.
+		if input, ok := event.Message.(llm.UserMessage); ok && input.IsNotice() {
+			return &interaction.Event{Kind: interaction.EventNotification,
+				Input: interaction.InputDisplay{ID: event.InputID, Text: noticeSummary(input)}}
+		}
 		if event.InputID != "" {
 			input, ok := event.Message.(llm.UserMessage)
 			if !ok {
@@ -126,6 +131,16 @@ func userContent(message llm.UserMessage) string {
 		}
 	}
 	return text.String()
+}
+
+// noticeSummary is what frontends show for an AICE notification: its summary,
+// or the first line of its text when a record has none.
+func noticeSummary(message llm.UserMessage) string {
+	if message.Notice != nil && message.Notice.Summary != "" {
+		return message.Notice.Summary
+	}
+	line, _, _ := strings.Cut(userContent(message), "\n")
+	return line
 }
 
 func translateAssistantDelta(event *llm.Event) *interaction.Event {

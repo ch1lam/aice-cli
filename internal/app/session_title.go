@@ -173,7 +173,7 @@ func firstExchange(messages []session.MessageEntry) (user, reply string) {
 	for _, entry := range messages {
 		switch message := entry.Message.(type) {
 		case llm.UserMessage:
-			if user == "" {
+			if user == "" && !message.IsNotice() {
 				user = typedText(message)
 			}
 		case llm.AssistantMessage:

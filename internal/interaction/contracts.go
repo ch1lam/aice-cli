@@ -16,6 +16,11 @@ type RunInput struct {
 	Files []string
 	// Skills are explicit catalog names selected by the frontend.
 	Skills []string
+	// Notification starts a run without user input: its prompt is the AICE
+	// notification of background tasks that finished. Prompt, Images, Files
+	// and Skills must be empty. The run does nothing when no task waits to be
+	// reported, as when a run already took it.
+	Notification bool
 }
 
 // ActiveRun is one prepared Agent run. Its implementation owns accepted input
@@ -193,10 +198,14 @@ type RuntimeState struct {
 	Transcript *Transcript
 }
 
-// BackgroundTaskCounter reports how many background tasks are running, so a
-// frontend can follow tasks that finish between runs.
-type BackgroundTaskCounter interface {
+// BackgroundTasks lets a frontend follow background tasks between runs.
+type BackgroundTasks interface {
+	// RunningTasks counts the tasks still running.
 	RunningTasks() int
+	// AwaitCompletion returns once a finished task waits to be reported, at
+	// once if one already does, or with ctx's error when ctx ends. A frontend
+	// that is idle then starts a Notification run.
+	AwaitCompletion(ctx context.Context) error
 }
 
 // RuntimeStateProvider reports settings changed by an application command.
@@ -216,6 +225,9 @@ const (
 	EventToolEnd
 	EventSteer
 	EventFollowUp
+	// EventNotification is an AICE notification entering the run; Input.Text
+	// is its summary.
+	EventNotification
 	EventRetryStart
 	EventRetryEnd
 	EventAgentEnd

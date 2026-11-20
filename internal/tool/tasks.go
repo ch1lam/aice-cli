@@ -412,6 +412,18 @@ func (t *Tasks) RunningKind(kind string) int {
 	return t.runningKindLocked(kind)
 }
 
+// HasCompletions reports whether a finished task waits to be reported.
+func (t *Tasks) HasCompletions() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, current := range t.finished {
+		if !current.reported {
+			return true
+		}
+	}
+	return false
+}
+
 // TakeCompletions returns finished tasks that no result has reported yet, in
 // completion order, and marks them reported.
 func (t *Tasks) TakeCompletions() []TaskStatus {

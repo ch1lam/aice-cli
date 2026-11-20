@@ -21,8 +21,9 @@ type Frontend struct {
 	Titles SessionTitleSource
 	// PermissionModes switches the Session's permission mode.
 	PermissionModes PermissionModeSwitcher
-	// Tasks counts running background tasks.
-	Tasks BackgroundTaskCounter
+	// Tasks follows background tasks: their running count and completions
+	// that should wake an idle Session.
+	Tasks BackgroundTasks
 	// CheckUpdate, when set, performs the welcome-screen update check.
 	CheckUpdate UpdateChecker
 }

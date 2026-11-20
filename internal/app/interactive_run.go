@@ -14,11 +14,14 @@ import (
 )
 
 type interactiveRun struct {
-	session  *interactiveSession
-	prompt   llm.UserMessage
-	sink     interaction.EventSink
-	mailbox  *interaction.Mailbox
-	revision uint64
+	session *interactiveSession
+	prompt  llm.UserMessage
+	// notification takes the prompt from finished background tasks when the
+	// run starts.
+	notification bool
+	sink         interaction.EventSink
+	mailbox      *interaction.Mailbox
+	revision     uint64
 
 	mu        sync.Mutex
 	isStarted bool
@@ -62,25 +65,32 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
+	run := &interactiveRun{
+		session:      s,
+		notification: input.Notification,
+		sink:         sink,
+		mailbox:      interaction.NewMailbox(),
+		revision:     revision,
+		model:        settings.model,
+	}
+	if input.Notification {
+		if input.Prompt != "" || len(input.Images)+len(input.Files)+len(input.Skills) > 0 {
+			return nil, fmt.Errorf("app: a notification run takes no user input")
+		}
+		return run, s.ensureSessionStore(ctx)
+	}
 	input, err = s.prepareAttachedInput(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := newImageInputContext(ctx, input, settings.model)
+	run.prompt, err = newImageInputContext(ctx, input, settings.model)
 	if err != nil {
 		return nil, fmt.Errorf("app: create prompt: %w", err)
 	}
 	if err := s.ensureSessionStore(ctx); err != nil {
 		return nil, err
 	}
-	return &interactiveRun{
-		session:  s,
-		prompt:   prompt,
-		sink:     sink,
-		mailbox:  interaction.NewMailbox(),
-		revision: revision,
-		model:    settings.model,
-	}, nil
+	return run, nil
 }
 
 // ensureSessionStore lazily creates the session file when the first prompt
@@ -157,6 +167,17 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer r.session.releaseMainRun()
+	if r.notification {
+		// An earlier run may have taken the notification already.
+		if r.session.tasks == nil {
+			return nil
+		}
+		notice, _, ok := r.session.tasks.TakeNotice()
+		if !ok {
+			return nil
+		}
+		r.prompt = notice
+	}
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
 		return err

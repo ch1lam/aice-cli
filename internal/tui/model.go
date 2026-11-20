@@ -164,9 +164,13 @@ type model struct {
 	permissionMode    string
 	setPermissionMode func(string) tea.Cmd
 	// backgroundTasks is the running count; pollTasks schedules one recount.
-	backgroundTasks       int
-	pollTasks             func() tea.Cmd
-	taskPollPending       bool
+	backgroundTasks int
+	pollTasks       func() tea.Cmd
+	taskPollPending bool
+	// awaitTasks waits for a finished task to report while the view is idle;
+	// taskWaitPending marks the one wait in flight.
+	awaitTasks            func() tea.Cmd
+	taskWaitPending       bool
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	throughput            interaction.DisplayThroughput
@@ -318,6 +322,9 @@ func (m model) Init() tea.Cmd {
 	}
 	if m.questionRequests != nil {
 		commands = append(commands, waitForQuestionPrompt(m.questionRequests))
+	}
+	if m.taskWaitPending {
+		commands = append(commands, m.awaitTasks())
 	}
 	return tea.Batch(commands...)
 }
@@ -558,6 +565,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case backgroundTasksMsg:
 		m.taskPollPending = false
 		return m, m.followBackgroundTasks(message.running)
+	case taskCompletionMsg:
+		return m.wakeForTasks(message)
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.run.running()
 		command := m.welcomeAnimation.Update(message, active)

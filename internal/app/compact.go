@@ -261,7 +261,11 @@ func serializeCompactionMessages(messages []llm.AgentMessage) (string, error) {
 		}
 		switch value := message.(type) {
 		case llm.UserMessage:
-			builder.WriteString("[User]\n")
+			if value.IsNotice() {
+				builder.WriteString("[AICE notification, not from the user]\n")
+			} else {
+				builder.WriteString("[User]\n")
+			}
 			appendCompactionContent(&builder, value.Content, 0)
 		case llm.AssistantMessage:
 			fmt.Fprintf(

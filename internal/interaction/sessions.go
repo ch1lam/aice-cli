@@ -66,6 +66,9 @@ const (
 	TranscriptAssistant
 	TranscriptTool
 	TranscriptNotice
+	// TranscriptNotification is an AICE notification the model received, such
+	// as finished background tasks; Text is its summary.
+	TranscriptNotification
 )
 
 // TranscriptEntry is presentation data, never an executable Agent event.

@@ -1003,6 +1003,26 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 // RunningTasks counts the Session's running background tasks.
 func (s *interactiveSession) RunningTasks() int { return s.tasks.Running() }
 
+// AwaitCompletion returns once a finished background task waits to be
+// reported, so an idle frontend can start a notification run.
+func (s *interactiveSession) AwaitCompletion(ctx context.Context) error {
+	if s.tasks == nil {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	for {
+		changed := s.tasks.Changed()
+		if s.tasks.HasCompletions() {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // sessionTools composes the Session base tools with web and optional
 // capabilities for configuration, and assembles the matching system prompt.
 func (s *interactiveSession) sessionTools(configuration config.Config, web webState) ([]agent.Tool, string, error) {
