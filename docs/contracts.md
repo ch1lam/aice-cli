@@ -495,8 +495,12 @@ The runtime boundary preserves these ownership rules:
   run counters and shares the parent's Guard, ask handler and MCP run binding.
   A background child is a `tool.Tasks` run task: it keeps the call's context
   values but not its cancellation, has no ask handler and no MCP run binding,
-  and may outlive the run. Children carry no delegation in their context, so
-  they cannot start subagents.
+  and may outlive the run. A worktree child owns a Guard rebased onto its
+  checkout (`guard.Guard.Rebase`), with no Session grants, MCP services or
+  file claims, and its own file tools; its task commits the checkout and
+  removes it after the child returns, also when stopped. A process-wide lock
+  serializes AICE's worktree and branch changes in a repository. Children
+  carry no delegation in their context, so they cannot start subagents.
 - The Guard adapter owns file write claims. A background writer's context
   names it by task ID; any other context is the main agent. Its task registers
   and releases the writer; a permitted write claims its files in
