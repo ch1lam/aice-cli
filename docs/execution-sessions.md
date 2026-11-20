@@ -577,19 +577,23 @@ user]`, carrying each finished task's status with a command's last 2 KiB of
 output or a subagent's whole report. Through
 [Loop notifications](contracts.md#agent-loop) the run takes it after the
 current tool round, or when the model would otherwise stop, and continues with
-it. A task that finishes while no run is active is reported at the start of
-the next run of the same Session.
+it. A task that finishes while no run is active wakes the interactive TUI:
+once idle, it starts a run whose prompt is the notification, shown as a
+`•` line with one summary per task, and the model answers it without the user
+typing. Elsewhere such a task is reported at the start of the next run of the
+same Session.
 
 A `--print` run, and an ACP prompt turn, does not end while a background
 subagent still runs: when the model stops, it waits for the next notification
 and continues with it, so their reports are never lost to the process or turn
 ending. Background commands are not waited for, since a server never finishes;
-cancelling the run stops the wait. The interactive TUI does not start a run on
-its own; it shows the running count beside the model name.
+cancelling the run stops the wait. The interactive TUI shows the running
+count beside the model name.
 
 Auto mode never reads a notification as user intent, and it does not end the
-user's block streak. Session stats count notifications as `notices`, apart
-from `user_messages`.
+user's block streak. Session titles, search and previews skip notifications,
+the Session tree labels them `notification`, and Session stats count them as
+`notices`, apart from `user_messages`.
 
 Tasks are not recorded in Session history: calls and results are, and a
 resumed Session refers to IDs that no longer exist. Background tasks need

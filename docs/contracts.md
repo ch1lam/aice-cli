@@ -491,8 +491,22 @@ The runtime boundary preserves these ownership rules:
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only as notifications (`Tasks.TakeNotice`); `Tasks.Changed` closes a
   channel per completion for a waiter, which takes it before checking state.
-  The TUI polls the running count through `BackgroundTaskCounter` only while
-  tasks run.
+  The TUI polls the running count through `interaction.BackgroundTasks` only
+  while tasks run.
+- An idle TUI keeps one `BackgroundTasks.AwaitCompletion` wait pending; it
+  returns when a finished task waits to be reported. Still idle, the TUI
+  starts a run with `RunInput.Notification`, whose prompt the application
+  takes from `tool.Tasks` only once the run owns the Session; a run that finds
+  nothing does nothing, since an earlier run may have taken it. A busy view
+  ignores the wake and waits again when its run finishes, because the Loop
+  takes completions during the run. A notification run that fails, other than
+  by cancellation, does not wait again until another run finishes, so a
+  lasting failure cannot repeat itself.
+- A notification reaches frontends as `EventNotification`, also when it is a
+  run's prompt, and in a loaded transcript as `TranscriptNotification`; both
+  carry `llm.Notice.Summary`, never the text the model read. Titles, Session
+  search and previews skip notifications; the Session tree labels them
+  `notification` and compaction input marks them as AICE's.
 - A synchronous subagent's child Loop runs inside the parent's `agent` tool
   call, on its goroutine and context, so the parent Loop is blocked and
   cancellation reaches the child. The main run binds its frozen settings for
