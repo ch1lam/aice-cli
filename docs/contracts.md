@@ -497,6 +497,10 @@ The runtime boundary preserves these ownership rules:
   values but not its cancellation, has no ask handler and no MCP run binding,
   and may outlive the run. Children carry no delegation in their context, so
   they cannot start subagents.
+- The Guard adapter owns file write claims. A background writer's context
+  names it by task ID; any other context is the main agent. Its task registers
+  and releases the writer; a permitted write claims its files in
+  `Revalidate`, so a claim made after the decision still wins at execution.
 - `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
   cancellable exchanges. Replies are bound to the current request and validated;
   cancellation wins racing submissions. Q&A publishes only a complete explicit

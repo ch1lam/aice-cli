@@ -95,7 +95,7 @@ AICE manages model calls, tools, context and sessions through a TUI and
 non-interactive CLI.
 
 - **Choose your model.** Use OpenAI, Claude, DeepSeek, Kimi and other providers, or a custom OpenAI-compatible endpoint. See [supported providers](./docs/configuration.md#credentials-and-connection-overrides).
-- **Work on your codebase.** Read, search and edit files; run shell commands, builds and tests, and keep servers or long builds running as [background tasks](docs/execution-sessions.md#background-tasks). Delegate investigations to [subagents](docs/execution-sessions.md#subagents) that return only their findings, with read-only ones running in parallel in the background.
+- **Work on your codebase.** Read, search and edit files; run shell commands, builds and tests, and keep servers or long builds running as [background tasks](docs/execution-sessions.md#background-tasks). Delegate investigations to [subagents](docs/execution-sessions.md#subagents) that return only their findings, running in parallel in the background without two of them changing the same file at once.
 - **Guide the agent.** Attach files and screenshots, send corrections while the agent works, queue follow-ups, or stop a run.
 - **Resume your work.** Search saved sessions, pick up a previous conversation, or branch from an earlier message. Automatic context compaction supports longer tasks.
 - **Extend your workflow.** Connect tools through [MCP](./docs/mcp.md) and reuse task instructions with [Agent Skills](./docs/configuration.md#agent-skills).
