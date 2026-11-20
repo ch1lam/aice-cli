@@ -6,8 +6,8 @@
 | --- | --- |
 | Process | One AICE invocation; `internal/app` prepares its workspace, startup prompt, skills, and dependencies |
 | Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
-| Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups, with frozen dependencies |
-| Interaction | Initial/follow-up user input, in-interaction steers, and model/tool rounds until settlement; its source messages are persisted individually |
+| Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups and awaited notifications, with frozen dependencies |
+| Interaction | Initial/follow-up input, in-interaction steers and notifications, and model/tool rounds until settlement; its source messages are persisted individually |
 | Model round | One assistant response and its paired tool results; `turn_start`/`turn_end` events refer to this level |
 | Side thread | Ephemeral `/btw` context and answers, owned separately from main Session history |
 
@@ -22,7 +22,10 @@ The application validates the selected model's image capability before accepting
 an initial input or queued delivery. Input validation bounds image count, bytes,
 and decoded dimensions; the mailbox owns a copy of accepted image data.
 Initial inputs, steering, and follow-ups become the same canonical user content
-blocks and persist inline in Session JSONL. Side-thread attachment submissions
+blocks and persist inline in Session JSONL. A notification is a user-role message
+with `Notice` set: AICE wrote it, so nothing reads its text as the user's words
+or intent, and its `Delegations` count like a tool result's. Session records
+without the field are the user's. Side-thread attachment submissions
 are rejected explicitly. Protocol adapters retain responsibility for wire encoding.
 
 - AICE owns `Message`, `AgentMessage`, concrete user/assistant/tool-result
@@ -185,19 +188,23 @@ retain the short content summary; Session keeps the additive metadata.
   response, and that response's tool results). A Session `MessageEntry`
   persists one source message; the complete model round is the safe boundary
   for deriving context when the assistant declares tool calls.
-- One run has two explicit levels. The inner loop continues through tool calls
-  and steering. When it would otherwise stop naturally, the outer loop polls
-  one follow-up; if present, it starts another interaction inside the same run.
-  The application and frontend must not reproduce this stopping decision.
+- One run has two explicit levels. The inner loop continues through tool calls,
+  steering and notifications. When it would otherwise stop naturally, the
+  outer loop polls one follow-up, or else awaits one notification through
+  `RunInput.AwaitNotification` when the application supplies it; either starts
+  another interaction inside the same run. The application and frontend must
+  not reproduce this stopping decision.
 - Runs have no model-round or tool-step ceiling by default. A run ends when the model
-  completes naturally and no follow-up is waiting, or on cancellation/deadline,
+  completes naturally and no follow-up or awaited notification arrives, or on cancellation/deadline,
   context protection, configured turn/resource limits, repeated-tool detection,
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - `RunLimits` are immutable configuration with per-run counters. Steering,
   follow-ups and automatic compaction share token/time budgets; compaction has
-  its own turn counter. The usage of each of a tool result's
-  `Details.Delegations`, spent by subagents on the run's behalf, counts toward
-  the token budget and `Result.Usage` when the result is accepted. Resource/turn/repetition stops are non-retryable, retain
+  its own turn counter. The usage of each delegation a tool result's
+  `Details.Delegations` or a notification's `Notice.Delegations` reports, spent
+  by subagents on the run's behalf, counts toward the token budget and
+  `Result.Usage` when the message is accepted, including a notification that is
+  the run's prompt. Resource/turn/repetition stops are non-retryable, retain
   actual outcomes and pair skipped calls. Exact accounting, overshoot and
   continuation behavior belong to [run limits](execution-sessions.md#run-resource-limits).
 - Default model retries allow three retries after the first attempt, with
@@ -268,20 +275,6 @@ retain the short content summary; Session keeps the additive metadata.
   error text, and `IsError=true`. These results follow the same recording,
   tool-end event, and next-model-request path as successful results. A tool
   argument error alone does not terminate the run; the model can correct it.
-- `WithToolResultNotices` installs an optional caller-owned source of notices
-  for tool results. The Loop calls it once for each result that enters model
-  context, after the outcome is final (executed, failed, Guard-denied,
-  declined or not dispatched) and before the result is retained, recorded or
-  displayed. Each non-empty notice text is prepended as a text part and each
-  notice delegation is appended to `Details.Delegations` (a result without
-  details was returned, so it gains `ExecutionReturned` details), so Session
-  history, `Result.ModelRounds`, events and the next request carry the same
-  message, and bounded result views, which keep leading content in order,
-  retain it. Notices cannot change the tool's own content, `IsError` or call
-  pairing. Results recorded outside model context (calls left unexecuted by a
-  failed model request) receive none. The source must return promptly; the
-  application uses it for [background task](execution-sessions.md#background-tasks)
-  completions.
 - Preserve safe partial assistant output on cancellation or provider failure.
   Failures must become a terminal assistant result or an explicit durable
   operation error; they must not disappear from history.
@@ -314,6 +307,16 @@ retain the short content summary; Session keeps the additive metadata.
   calls declared by that response have matching results. Inject at most one
   user steer before the next model request, then offer the next steer at the
   following safe boundary.
+- Poll `RunInput.Notifications` once after the initial prompt and at the same
+  boundaries as steering, including a natural stop before follow-ups, so a
+  waiting notification continues the interaction instead of ending it. At most
+  one notification follows the steer in a turn. Only an input of
+  `InputKindNotification` may carry `Notice`, and it must; a mismatch ends the
+  run with an error. `AwaitNotification` is called only after the follow-up
+  poll comes back empty; it may block, honors cancellation, and returns false
+  when nothing outstanding can produce a notification. The application uses
+  both for [background task](execution-sessions.md#background-tasks)
+  completions.
 - Poll follow-up input only at a natural stop boundary after steering has been
   checked. Emit `interaction_end` for the completed initial/follow-up
   interaction before polling again. A normally delivered run emits one
@@ -486,8 +489,10 @@ The runtime boundary preserves these ownership rules:
   return. A finished task's delegation is handed out only with its first
   report, so it is recorded once. Session reset stops and joins the current
   tasks; environment close stops and joins all of them. Completions reach the
-  Loop only through tool result notices, and the TUI polls the running count
-  through `BackgroundTaskCounter` only while tasks run.
+  Loop only as notifications (`Tasks.TakeNotice`); `Tasks.Changed` closes a
+  channel per completion for a waiter, which takes it before checking state.
+  The TUI polls the running count through `BackgroundTaskCounter` only while
+  tasks run.
 - A synchronous subagent's child Loop runs inside the parent's `agent` tool
   call, on its goroutine and context, so the parent Loop is blocked and
   cancellation reaches the child. The main run binds its frozen settings for

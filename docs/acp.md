@@ -52,6 +52,14 @@ no progress, Guard denials) is `max_turn_requests`, otherwise `end_turn`. Other
 run failures are JSON-RPC errors. The prompt response `usage` is that prompt's
 usage in ACP's inclusive convention: input includes cache reads and writes.
 
+ACP has no way for the agent to start a turn, so a prompt turn does not end
+while a background subagent runs: the run waits for its notification and
+continues with it, and the response follows their reports
+([background tasks](execution-sessions.md#background-tasks)). `session/cancel`
+also stops this wait; a subagent that finishes after a cancelled turn is
+reported at the start of the next prompt. The notification itself is not
+streamed; the agent's reply to it is.
+
 A Guard deny never becomes a permission request, so no client answer can allow
 it. A cancelled, failed or empty permission answer selects the Guard's deny
 option. The unattended `allow` mode of a client therefore lifts asks only, as

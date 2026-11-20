@@ -571,12 +571,25 @@ each status with the last 4 KiB of output. `task_kill` reports how the task
 ended; stopping a finished task is not an error.
 
 A finished task is reported once. Unless `task_output` or `task_kill` already
-reported it, the next tool result of the run starts with a notice carrying its
-status and last 2 KiB of output, through
-[tool result notices](contracts.md#agent-loop). A task that finishes after the
-model's final answer is reported with the first tool result of a later run of
-the same Session; AICE does not start a run on its own. The interactive TUI
-shows the running count beside the model name.
+reported it, it arrives as a notification: a user-role message AICE writes
+(Session `notice` field), opening with `[AICE notification, not from the
+user]`, carrying each finished task's status with a command's last 2 KiB of
+output or a subagent's whole report. Through
+[Loop notifications](contracts.md#agent-loop) the run takes it after the
+current tool round, or when the model would otherwise stop, and continues with
+it. A task that finishes while no run is active is reported at the start of
+the next run of the same Session.
+
+A `--print` run, and an ACP prompt turn, does not end while a background
+subagent still runs: when the model stops, it waits for the next notification
+and continues with it, so their reports are never lost to the process or turn
+ending. Background commands are not waited for, since a server never finishes;
+cancelling the run stops the wait. The interactive TUI does not start a run on
+its own; it shows the running count beside the model name.
+
+Auto mode never reads a notification as user intent, and it does not end the
+user's block streak. Session stats count notifications as `notices`, apart
+from `user_messages`.
 
 Tasks are not recorded in Session history: calls and results are, and a
 resumed Session refers to IDs that no longer exist. Background tasks need
@@ -626,17 +639,18 @@ file at once, and several run in parallel while the parent keeps working. At
 most 4 subagents run at once, within the 8 running tasks. A background child:
 
 - shares the background task limits, `task_output`, `task_kill` and completion
-  notices with background commands; its output file receives its report when
-  it finishes, and its notice and `task_output` show the report's first 2 KiB
-  and 4 KiB;
+  notifications with background commands; its output file receives its report
+  (cut at 32 KiB like a synchronous child's) when it finishes, its
+  notification carries the whole report and `task_output` shows its first
+  4 KiB;
 - is not stopped by cancelling the run that started it; `/new`, resuming
   another Session, `task_kill` and exit cancel it;
 - has no person to ask: asks are refused as under `--print`, while rules,
   Session grants and auto mode decide as usual;
 - has no MCP tools or MCP discovery tools, since the parent run's MCP binding
   ends with that run;
-- records its usage with the first result that reports its completion (the
-  notice, `task_output` or `task_kill`), counting toward that run's token
+- records its usage with the first message that reports its completion (the
+  notification, `task_output` or `task_kill`), counting toward that run's token
   budget and the Session totals. A child stopped before it was reported, by
   `/new` or exit, leaves its usage only in its own Session.
 

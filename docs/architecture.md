@@ -215,19 +215,20 @@ middleware is implemented.
 
 Plan mode and memory remain unimplemented product scope. `/btw` is a
 tool-free side conversation, not a subagent executor. [Subagents](execution-sessions.md#subagents)
-are one level deep and may run in the background, where one file has one
-writer at a time. Worktree isolation for writers, resuming or messaging a child
-and custom agent definitions are not implemented.
+are one level deep and may run in the background. A writer works in its own git
+worktree and returns its changes as a branch, or shares the workspace, where one
+file has one writer at a time. Resuming or messaging a child and custom agent
+definitions are not implemented.
 [Background tasks](execution-sessions.md#background-tasks) run shell commands
-only; AICE never starts a run when one finishes. Model-native web search is
+and background subagents. A finished one reaches the model as a notification
+the Loop takes at its next boundary; `--print` and ACP turns wait for running
+subagents, and the TUI never starts a run on its own. Model-native web search is
 only a reserved priority entry; Exa is the only production search adapter and
 there is no execution-error failover. See [Web](web.md).
 
 A concrete requirement must justify extensions to Loop semantics, message/Session
 types, permissions or state ownership. Use existing boundaries first. Plan mode
-would need Guard enforcement; reliable parallel writing would need physical
-isolation, since file claims cover only writes the Guard can name; memory
-would need retention and retrieval rules.
+would need Guard enforcement; memory would need retention and retrieval rules.
 No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC layer,
 second transcript store or sandbox manager is implied by the current design.
 The ACP frontend is the standard headless interface: another `interaction`
