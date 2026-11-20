@@ -72,7 +72,7 @@ var searchTools = map[string]bool{"grep": true, "find": true, "ls": true}
 // isKnownTool lists tools the gate can describe. task_output and task_kill
 // act only on background tasks whose bash command this gate already checked.
 func isKnownTool(name string) bool {
-	return fileTools[name] || name == "bash" || name == "task_output" || name == "task_kill" || name == "skill" || name == "tool_search" || name == "mcp_resource_list" || name == "mcp_server_info" || name == "tool_result_read" || name == "request_user_input" || isNetworkTool(name)
+	return fileTools[name] || name == "bash" || name == "task_output" || name == "task_kill" || name == "skill" || name == "tool_search" || name == "mcp_resource_list" || name == "mcp_server_info" || name == "tool_result_read" || name == "request_user_input" || name == "agent" || isNetworkTool(name)
 }
 
 // networkTools reach outside the host through the web entry points and are
