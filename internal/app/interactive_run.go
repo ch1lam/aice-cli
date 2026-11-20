@@ -198,6 +198,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		systemPrompt: snapshot.systemPrompt,
 		mcp:          scope.mcp,
 		sessionDir:   r.session.sessionDirectory(),
+		worktrees:    r.session.application.worktreeRoot(),
 	})
 	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()

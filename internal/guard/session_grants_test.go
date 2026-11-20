@@ -48,3 +48,42 @@ func TestResetSessionGrants(t *testing.T) {
 		check(t, toolCall("read", map[string]any{"path": "README.md"}), DecisionAllow)
 	}
 }
+
+// A rebased Guard applies the same policy to another workspace: relative
+// rules name its files, extra read-only roots are readable, and Session
+// grants stay with the original.
+func TestRebaseKeepsPolicyButNotSessionGrants(t *testing.T) {
+	t.Parallel()
+	workspace, other, readRoot, outside := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	g, err := New(workspace, Config{Rules: Rules{Deny: []string{"write(secret/**)"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.AllowPathSession(outside, true, true)
+	if err := g.AddRule(RuleDecisionDeny, "bash(make deploy)"); err != nil {
+		t.Fatal(err)
+	}
+	rebased, err := g.Rebase(other, readRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		call llm.ToolCall
+		want Decision
+	}{
+		{toolCall("write", map[string]any{"path": "notes.txt"}), DecisionAllow},
+		{toolCall("write", map[string]any{"path": filepath.Join(other, "secret", "k")}), DecisionDeny},
+		{toolCall("write", map[string]any{"path": filepath.Join(workspace, "secret", "k")}), DecisionAsk},
+		{toolCall("bash", map[string]any{"command": "make deploy"}), DecisionDeny},
+		{toolCall("read", map[string]any{"path": filepath.Join(readRoot, "x")}), DecisionAllow},
+		{toolCall("write", map[string]any{"path": filepath.Join(outside, "x")}), DecisionAsk},
+	} {
+		result, err := rebased.Check(t.Context(), test.call)
+		if err != nil || result.Decision != test.want {
+			t.Errorf("Check(%s %s) = %s, %v; want %s", test.call.Name, test.call.Arguments, result.Decision, err, test.want)
+		}
+	}
+	if rebased.Workspace() != other {
+		t.Fatalf("workspace = %q", rebased.Workspace())
+	}
+}

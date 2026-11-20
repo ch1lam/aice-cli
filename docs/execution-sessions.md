@@ -640,9 +640,42 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
   budget and the Session totals. A child stopped before it was reported, by
   `/new` or exit, leaves its usage only in its own Session.
 
-A background `general` child is a writer of its own; the main agent,
-including the synchronous subagents it waits for, is another. One file has
-one writer at a time:
+A `general` child with `isolation: "worktree"` works in its own git worktree.
+It is the default for a background `general` child; a synchronous child shares
+the workspace unless it asks for one, since the parent waits for it. An
+explore child never needs one.
+
+- AICE checks out the workspace repository's `HEAD` into
+  `~/.aice/worktrees/<repo>-<id>` on a new branch `aice/agent-<id>`, and the
+  child works at the workspace's place in it. The checkout holds committed
+  files only: the parent's uncommitted changes and ignored files such as
+  installed dependencies are absent, and the start result says when the
+  workspace has uncommitted changes. An explicit worktree outside a git
+  repository, or before its first commit, is an error; the default falls
+  back to the shared workspace and says why.
+- The child's file tools, `bash` and Guard are rooted at its checkout. The
+  Guard keeps the parent's rules (relative rules name the checkout's files),
+  read-only roots, credential and control-file protection and permission
+  mode, but no Session grants, MCP services or file claims; the child has no
+  MCP tools. It may read the main workspace, since its task may name paths
+  there, but a write there, a `bash` command that reaches into it (such as
+  `cd` or `git -C`), and a command setting `GIT_DIR` or a similar variable are
+  denied. Like file claims, this reads only paths the Guard can name.
+- When the child ends for any reason, AICE commits what it left (its own
+  commits included) to its branch, without hooks or signing, and removes the
+  checkout. The result, or the background report, names the branch and the
+  commit it started from, summarizes the changes and gives the commands to
+  review and to apply them: `git diff <base> <branch> | git apply --3way`,
+  which applies only the child's changes, stages the applied files and leaves
+  conflict markers to resolve. Nothing is applied automatically. A child that
+  changed nothing leaves no branch; other branches stay until deleted.
+- AICE's own git calls run no repository hooks. Starting a worktree first
+  prunes stale worktree records; a checkout left by a crash stays on disk
+  with its branch until removed with `git worktree remove`.
+
+A background `general` child that shares the workspace is a writer of its
+own; the main agent, including the synchronous subagents it waits for, is
+another. One file has one writer at a time:
 
 - A writer's first write to a file claims it until that writer ends; a write
   by another writer to that file is denied, naming who holds it. Claims are
@@ -654,11 +687,12 @@ one writer at a time:
   bash redirections. A shell command whose writes it cannot name, such as a
   build, a test run or a generator, is not limited, and the main agent's
   commands (for example `git checkout .`) can still overwrite a writer's
-  files. Reliable concurrent writing needs physical isolation, which is not
-  implemented.
-- A background writer gets `.aice/agents/<task-id>/` for test reports, logs
-  and other artifacts; its prompt asks it to put them there, and its report
-  names the directory, which stays after the task ends.
+  files. A worktree avoids this.
+
+Every background writer, in a worktree or not, gets `.aice/agents/<task-id>/`
+in the main workspace for test reports, logs and other artifacts; its prompt
+asks it to put them there, and its report names the directory, which stays
+after the task ends.
 
 Subagents are one level deep: a child has no `agent` tool, and its context
 carries no delegation, so it cannot start another subagent either way.

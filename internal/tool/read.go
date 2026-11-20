@@ -74,6 +74,11 @@ func NewRead(workspace *Workspace, options ...ReadOptions) (*Read, error) {
 	return r, nil
 }
 
+// In returns this reader over another workspace, keeping its image options.
+func (r *Read) In(workspace *Workspace) (*Read, error) {
+	return NewRead(workspace, r.options)
+}
+
 // Definition returns the model-facing read contract.
 func (r *Read) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
