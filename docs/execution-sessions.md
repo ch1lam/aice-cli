@@ -606,12 +606,26 @@ tasks survive; Windows Job Objects end them.
 The `agent` tool delegates a self-contained task to a subagent: a child Agent
 Loop that starts from the task prompt alone, works with the parent's tools
 until done, and returns only its final message as the report. Its steps never
-enter the parent's context. The call is synchronous: the parent's run waits for
-the child, and cancelling the parent (Esc, or the run ending) cancels it.
+enter the parent's context. By default the child runs in the
+[background](#background-tasks) and its report arrives as a notification;
+`run_in_background: false` makes the call synchronous: the parent's run waits
+for the child, and cancelling the parent (Esc, or the run ending) cancels it.
+A call that did not ask for the background runs synchronously where background
+tasks are unavailable.
+
+The tool's guidelines tell the model when to delegate (independent parts,
+reading across many files or searching blind, long command output, an
+unanchored review) and when not to (a few tool calls, a result its next step
+needs, tightly coupled parts); to plan first and start independent children
+together; to write prompts that stand alone and ask for checkable evidence; to
+end its turn when only waiting remains; and to verify reports before relying
+on them. The child's prompt section asks for the outcome first, then the
+evidence, then what it could not verify, without narrating its steps.
 
 - The child shares the parent run's model settings, system prompt (with a
   subagent section), Guard, permission mode, Session grants and MCP binding.
-  Its asks reach the same frontend; `--print` refuses them as usual. It lacks
+  Its asks reach the same frontend, which names the child in the prompt;
+  `--print` refuses them as usual. It lacks
   `agent` (depth is 1), `request_user_input`, `task_output` and `task_kill`,
   and its `bash` offers no `run_in_background`. Its run has the configured
   [run limits](configuration.md#run-limits) of its own.
@@ -637,7 +651,7 @@ While a synchronous child runs, steering messages wait in the parent's mailbox
 until the `agent` call returns, and the TUI shows the call as running without
 the child's individual steps.
 
-A subagent with `run_in_background` runs as a
+A background subagent runs as a
 [background task](#background-tasks): the call returns its task ID and report
 file at once, and several run in parallel while the parent keeps working. At
 most 4 subagents run at once, within the 8 running tasks. A background child:
@@ -649,8 +663,9 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
   4 KiB;
 - is not stopped by cancelling the run that started it; `/new`, resuming
   another Session, `task_kill` and exit cancel it;
-- has no person to ask: asks are refused as under `--print`, while rules,
-  Session grants and auto mode decide as usual;
+- asks the person like the main agent, also between runs: the TUI and ACP
+  prompts name the child by task ID and description, and `--print` refuses
+  them; rules, Session grants and auto mode decide first as usual;
 - has no MCP tools or MCP discovery tools, since the parent run's MCP binding
   ends with that run;
 - records its usage with the first message that reports its completion (the
