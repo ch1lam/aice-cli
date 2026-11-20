@@ -10,6 +10,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 type interactiveRun struct {
@@ -177,6 +178,23 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer scope.close()
+	ctx = withDelegation(ctx, &delegation{
+		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return r.session.application.newAgentLoopWithOptions(snapshot.configuration, tools,
+				agent.WithGuard(guard), agent.WithGuardAskHandler(r.session.handleGuardAsk))
+		},
+		compactor: func(store *session.Store) agent.HistoryCompactor {
+			return r.session.application.historyCompactor(store, &configured, nil)
+		},
+		tools:        snapshot.tools,
+		workspace:    r.session.workspace,
+		guard:        r.session.guardAdapter,
+		model:        snapshot.model,
+		options:      snapshot.options,
+		systemPrompt: snapshot.systemPrompt,
+		mcp:          scope.mcp,
+		sessionDir:   r.session.sessionDirectory(),
+	})
 	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()
 

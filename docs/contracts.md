@@ -195,7 +195,9 @@ retain the short content summary; Session keeps the additive metadata.
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - `RunLimits` are immutable configuration with per-run counters. Steering,
   follow-ups and automatic compaction share token/time budgets; compaction has
-  its own turn counter. Resource/turn/repetition stops are non-retryable, retain
+  its own turn counter. A tool result's `Details.Delegation.Usage`, spent by a
+  subagent on the run's behalf, counts toward the token budget and
+  `Result.Usage` when the result is accepted. Resource/turn/repetition stops are non-retryable, retain
   actual outcomes and pair skipped calls. Exact accounting, overshoot and
   continuation behavior belong to [run limits](execution-sessions.md#run-resource-limits).
 - Default model retries allow three retries after the first attempt, with
@@ -481,6 +483,11 @@ The runtime boundary preserves these ownership rules:
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only through tool result notices, and the TUI polls the running count
   through `BackgroundTaskCounter` only while tasks run.
+- A subagent's child Loop runs inside the parent's `agent` tool call, on its
+  goroutine and context, so the parent Loop is blocked and cancellation reaches
+  the child. The main run binds its frozen settings for children in the
+  context; the child owns its Session store, result reader and run counters and
+  shares the parent's Guard, ask handler and MCP run binding.
 - `GuardRequest`/`GuardReply` and `QuestionPrompt`/`QuestionReply` are separate
   cancellable exchanges. Replies are bound to the current request and validated;
   cancellation wins racing submissions. Q&A publishes only a complete explicit

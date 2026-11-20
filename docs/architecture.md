@@ -96,7 +96,7 @@ Optional capabilities retain their own owners:
 | `internal/api/{anthropic,openairesponses,openaicompletions}` | Protocol translation around official SDKs |
 | `internal/api/streamcore` | Protocol-neutral streaming mechanics shared by adapters |
 | `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; `provider.Route` gates each request (identity, catalog model, API, content) and dispatches by API; [configuration](configuration.md) |
-| `internal/tool` | Host tools, background tasks, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
+| `internal/tool` | Host tools, background tasks, the subagent tool, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
 | `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
@@ -213,17 +213,19 @@ middleware is implemented.
 
 ## Planned extensions and restraint
 
-Plan mode, subagents and memory remain unimplemented product scope. `/btw` is a
-tool-free side conversation, not a subagent executor. [Background
-tasks](execution-sessions.md#background-tasks) run shell commands only; AICE
-never starts a run when one finishes. Model-native web search is
+Plan mode and memory remain unimplemented product scope. `/btw` is a
+tool-free side conversation, not a subagent executor. [Subagents](execution-sessions.md#subagents)
+are synchronous and one level deep; background subagents, resuming or messaging
+a child, worktree isolation and custom agent definitions are not implemented.
+[Background tasks](execution-sessions.md#background-tasks) run shell commands
+only; AICE never starts a run when one finishes. Model-native web search is
 only a reserved priority entry; Exa is the only production search adapter and
 there is no execution-error failover. See [Web](web.md).
 
 A concrete requirement must justify extensions to Loop semantics, message/Session
 types, permissions or state ownership. Use existing boundaries first. Plan mode
-would need Guard enforcement; subagents would need explicit child cancellation,
-permission and usage ownership; memory would need retention and retrieval rules.
+would need Guard enforcement; background subagents would need a task lifetime
+beyond the parent's tool call; memory would need retention and retrieval rules.
 No additional framework, plugin bus, public SDK, GUI/Web frontend, RPC layer,
 second transcript store or sandbox manager is implied by the current design.
 The ACP frontend is the standard headless interface: another `interaction`

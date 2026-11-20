@@ -89,7 +89,11 @@ func composeTools(base []agent.Tool, web webState, configuration config.Config) 
 	if err != nil {
 		return nil, err
 	}
-	result = append(result, readResult)
+	delegate, err := tool.NewAgent(delegationRouter{})
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, readResult, delegate)
 	if len(configuration.MCP.Servers) == 0 {
 		return result, nil
 	}

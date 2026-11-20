@@ -134,13 +134,17 @@ type UsageSummary struct {
 	Total llm.Usage
 	// LastCall is the latest assistant usage that reported context tokens.
 	LastCall llm.Usage
-	// Records counts assistant messages and compactions; Priced counts those
+	// Records counts assistant messages, compactions and delegations; Priced counts those
 	// that reported a cost.
 	Records, Priced int
 	// Reviews counts automatic permission decisions; ReviewUsage is what
 	// deciding them cost.
 	Reviews     int
 	ReviewUsage llm.Usage
+	// Delegations counts subagent runs; DelegatedUsage is what they cost and
+	// is included in Total, since it was spent on this Session's work.
+	Delegations    int
+	DelegatedUsage llm.Usage
 	// Messages and Compactions count the recorded tree nodes.
 	Messages, Compactions int
 }
@@ -178,6 +182,12 @@ func summarizeUsage(messages []MessageEntry, compactions []Compaction) UsageSumm
 				if usage := message.Details.Review.Usage; usage != nil {
 					summary.ReviewUsage = llm.AddUsage(summary.ReviewUsage, *usage)
 				}
+			}
+			if message.Details != nil && message.Details.Delegation != nil {
+				usage := message.Details.Delegation.Usage
+				summary.Delegations++
+				summary.DelegatedUsage = llm.AddUsage(summary.DelegatedUsage, usage)
+				count(usage)
 			}
 		}
 	}

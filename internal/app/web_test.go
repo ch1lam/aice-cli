@@ -234,7 +234,7 @@ func TestWebSearchThroughPrintWithFakeBackend(t *testing.T) {
 	for _, definition := range model.requests[0].Tools {
 		names = append(names, definition.Name)
 	}
-	if !reflect.DeepEqual(names, []string{"read", "write", "edit", "bash", "task_output", "task_kill", "grep", "find", "ls", "skill", "web_search", "web_fetch", "tool_result_read"}) {
+	if !reflect.DeepEqual(names, []string{"read", "write", "edit", "bash", "task_output", "task_kill", "grep", "find", "ls", "skill", "web_search", "web_fetch", "tool_result_read", "agent"}) {
 		t.Fatalf("tools = %v", names)
 	}
 	if !strings.Contains(model.requests[0].SystemPrompt, "web_search:") || !strings.Contains(model.requests[0].SystemPrompt, "web_fetch:") {

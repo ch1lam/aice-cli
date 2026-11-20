@@ -601,6 +601,11 @@ func defaultPromptWithSkillsFor(t *testing.T, workspace *tool.Workspace) string 
 	t.Helper()
 	catalog := builtinSkillCatalog(t)
 	tools := appendSkillTool(testBuiltInTools(t, workspace), catalog)
+	delegate, err := tool.NewAgent(delegationRouter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools = append(tools, delegate)
 	return appendSkillsPrompt(
 		buildDefaultSystemPrompt(tools, workspace.Path()),
 		catalog,

@@ -339,6 +339,25 @@ func (a *application) Print(
 		return err
 	}
 	defer scope.close()
+	sessionDir := ""
+	if store != nil {
+		sessionDir = filepath.Join(environment.workspace.Path(), ".aice", "sessions")
+	}
+	ctx = withDelegation(ctx, &delegation{
+		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return agent.NewLoop(configured.service, tools, agent.WithGuard(guard), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
+		},
+		compactor:    func(store *session.Store) agent.HistoryCompactor { return a.historyCompactor(store, &configured, nil) },
+		onUsage:      sink.AddUsage,
+		tools:        environment.tools,
+		workspace:    environment.workspace,
+		guard:        environment.guardAdapter,
+		model:        environment.model,
+		options:      environment.options,
+		systemPrompt: environment.systemPrompt,
+		mcp:          scope.mcp,
+		sessionDir:   sessionDir,
+	})
 
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
