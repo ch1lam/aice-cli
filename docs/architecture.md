@@ -217,8 +217,9 @@ Plan mode and memory remain unimplemented product scope. `/btw` is a
 tool-free side conversation, not a subagent executor. [Subagents](execution-sessions.md#subagents)
 are one level deep and may run in the background. A writer works in its own git
 worktree and returns its changes as a branch, or shares the workspace, where one
-file has one writer at a time. Resuming or messaging a child and custom agent
-definitions are not implemented.
+file has one writer at a time. `send_message` steers a running background
+child or continues a finished one with its Session; children do not survive
+the process, and custom agent definitions are not implemented.
 [Background tasks](execution-sessions.md#background-tasks) run shell commands
 and background subagents. A finished one reaches the model as a notification
 the Loop takes at its next boundary; `--print` and ACP turns wait for running

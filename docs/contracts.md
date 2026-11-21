@@ -487,7 +487,10 @@ The runtime boundary preserves these ownership rules:
   supervising goroutine per task; tasks outlive the tool call and run that
   started them. Stopping a run task cancels its context and waits for it to
   return. A finished task's delegation is handed out only with its first
-  report, so it is recorded once. Session reset stops and joins the current
+  report, so it is recorded once. A run task carries its starter's state
+  (`StartRun` owner); `Tasks.Continue` runs a finished, unclosed run task
+  again under its ID and output file and hands back a completion no result
+  had reported, with its delegation. `task_kill` closes a run task. Session reset stops and joins the current
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only as notifications (`Tasks.TakeNotice`); `Tasks.Changed` closes a
   channel per completion for a waiter, which takes it before checking state.
@@ -516,10 +519,18 @@ The runtime boundary preserves these ownership rules:
   values but not its cancellation, has no MCP run binding, and may outlive the
   run. Every child Loop gets the frontend's ask handler, if any; the child's
   context names it, so its `GuardRequest.Agent` labels the prompt, which a
-  background child may raise while no run is active. A worktree child owns a Guard rebased onto its
+  background child may raise while no run is active. A background child's
+  state (`app.subagent`, its task's owner) holds its Session path and the
+  parent's waiting messages: the child Loop's steering and follow-up take
+  them, a message that arrives after the Loop last looked runs another turn
+  in the same task run, and an interrupt cancels only the current turn. A
+  message to a finished child continues it with `Tasks.Continue` once its
+  last run has published its end; each turn reopens and repairs the child's
+  Session. A worktree child owns a Guard rebased onto its
   checkout (`guard.Guard.Rebase`), with no Session grants, MCP services or
   file claims, and its own file tools; its task commits the checkout and
-  removes it after the child returns, also when stopped. A process-wide lock
+  removes it after the child returns, also when stopped, and a continued
+  task checks the branch out again. A process-wide lock
   serializes AICE's worktree and branch changes in a repository. Children
   carry no delegation in their context, so they cannot start subagents.
 - The Guard adapter owns file write claims. A background writer's context

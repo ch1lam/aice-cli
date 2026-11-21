@@ -567,8 +567,9 @@ stdout and stderr go to one file in a private directory created per process
 The directory is a Guard read-only root, so `read` and `grep` inspect full
 output without an ask, also under `--print`. `task_output` takes 1–8 IDs,
 optionally waits up to 600 seconds for all of them to finish, and reports
-each status with the last 4 KiB of output. `task_kill` reports how the task
-ended; stopping a finished task is not an error.
+each status with the last 4 KiB of output; without IDs it lists every
+retained task in one line each, reporting none of them. `task_kill` reports
+how the task ended; stopping a finished task is not an error.
 
 A finished task is reported once. Unless `task_output` or `task_kill` already
 reported it, it arrives as a notification: a user-role message AICE writes
@@ -626,7 +627,7 @@ evidence, then what it could not verify, without narrating its steps.
   subagent section), Guard, permission mode, Session grants and MCP binding.
   Its asks reach the same frontend, which names the child in the prompt;
   `--print` refuses them as usual. It lacks
-  `agent` (depth is 1), `request_user_input`, `task_output` and `task_kill`,
+  `agent` (depth is 1), `send_message`, `request_user_input`, `task_output` and `task_kill`,
   and its `bash` offers no `run_in_background`. Its run has the configured
   [run limits](configuration.md#run-limits) of its own.
 - `type: "explore"` has no `write` or `edit` tool and denies file writes
@@ -662,16 +663,20 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
   notification carries the whole report and `task_output` shows its first
   4 KiB;
 - is not stopped by cancelling the run that started it; `/new`, resuming
-  another Session, `task_kill` and exit cancel it;
+  another Session, `task_kill` and exit cancel it, and only `task_kill` keeps
+  it from [continuing](#messaging-subagents);
 - asks the person like the main agent, also between runs: the TUI and ACP
   prompts name the child by task ID and description, and `--print` refuses
   them; rules, Session grants and auto mode decide first as usual;
 - has no MCP tools or MCP discovery tools, since the parent run's MCP binding
   ends with that run;
 - records its usage with the first message that reports its completion (the
-  notification, `task_output` or `task_kill`), counting toward that run's token
-  budget and the Session totals. A child stopped before it was reported, by
-  `/new` or exit, leaves its usage only in its own Session.
+  notification, `task_output`, `task_kill` or a `send_message` that continues
+  it), counting toward that run's token budget and the Session totals. A child
+  stopped before it was reported, by `/new` or exit, leaves its usage only in
+  its own Session;
+- always has a Session, since a message may continue it: without a parent
+  Session it lives under `agents/` in the task directory and ends with it.
 
 A `general` child with `isolation: "worktree"` works in its own git worktree.
 It is the default for a background `general` child; a synchronous child shares
@@ -701,7 +706,8 @@ explore child never needs one.
   review and to apply them: `git diff <base> <branch> | git apply --3way`,
   which applies only the child's changes, stages the applied files and leaves
   conflict markers to resolve. Nothing is applied automatically. A child that
-  changed nothing leaves no branch; other branches stay until deleted.
+  changed nothing leaves no branch; other branches stay until deleted. A
+  [continued](#messaging-subagents) child commits to the same branch.
 - AICE's own git calls run no repository hooks. Starting a worktree first
   prunes stale worktree records; a checkout left by a crash stays on disk
   with its branch until removed with `git worktree remove`.
@@ -729,6 +735,29 @@ after the task ends.
 
 Subagents are one level deep: a child has no `agent` tool, and its context
 carries no delegation, so it cannot start another subagent either way.
+
+#### Messaging subagents
+
+`send_message` sends text to a background subagent by its task ID; its
+guideline tells the model to follow up, correct or extend a child's task this
+way instead of starting a new subagent, which would read everything again.
+The Guard allows it without an ask, since it checks every call the child makes.
+
+- A running child reads the message as a steering message at its next step,
+  or when it would otherwise stop; one that arrives after it stopped looking
+  starts another turn in the same task run. `interrupt: true` cancels the
+  child's current step first; the repaired Session keeps what it completed.
+- A finished child continues as the same task: same ID, type, Guard label,
+  file claims name, artifact directory and worktree branch (checked out
+  again, or started again from the base when it changed nothing), with its
+  whole Session and the message as its next prompt. Its output file is
+  rewritten with the new report, which arrives as a new notification. A
+  previous report no result had delivered comes with the `send_message`
+  result, with its usage.
+- A continued child counts toward the running limits like a new one. A child
+  stopped with `task_kill`, or evicted from the 16 retained tasks, cannot
+  continue; nor can any child after `/new`, a Session resume or exit, since
+  tasks do not survive them. Synchronous children are not addressable.
 
 ### Directory listings
 
