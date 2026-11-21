@@ -14,8 +14,10 @@ type Stats struct {
 	Builds []string  `json:"builds"`
 	Models []string  `json:"models"`
 	Usage  llm.Usage `json:"usage"`
-	// UserMessages counts prompts, steering and follow-ups.
+	// UserMessages counts prompts, steering and follow-ups; Notices counts
+	// AICE notifications, such as finished background tasks.
 	UserMessages int `json:"user_messages"`
+	Notices      int `json:"notices"`
 	// ModelRequests counts assistant messages; FailedRequests are those that
 	// ended in an error or abort, whether a retry followed or the run stopped.
 	ModelRequests  int `json:"model_requests"`
@@ -73,7 +75,11 @@ func ComputeStats(snapshot Snapshot) Stats {
 		span(entry.CreatedAt)
 		switch message := entry.Message.(type) {
 		case llm.UserMessage:
-			stats.UserMessages++
+			if message.IsNotice() {
+				stats.Notices++
+			} else {
+				stats.UserMessages++
+			}
 		case llm.AssistantMessage:
 			stats.ModelRequests++
 			addDistinct(&stats.Models, string(message.Provider)+"/"+message.ModelID)

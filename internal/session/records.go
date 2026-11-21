@@ -169,6 +169,13 @@ func summarizeUsage(messages []MessageEntry, compactions []Compaction) UsageSumm
 			summary.Priced++
 		}
 	}
+	delegated := func(delegations []llm.ToolDelegation) {
+		for _, delegation := range delegations {
+			summary.Delegations++
+			summary.DelegatedUsage = llm.AddUsage(summary.DelegatedUsage, delegation.Usage)
+			count(delegation.Usage)
+		}
+	}
 	for _, entry := range messages {
 		switch message := entry.Message.(type) {
 		case llm.AssistantMessage:
@@ -184,11 +191,11 @@ func summarizeUsage(messages []MessageEntry, compactions []Compaction) UsageSumm
 				}
 			}
 			if message.Details != nil {
-				for _, delegation := range message.Details.Delegations {
-					summary.Delegations++
-					summary.DelegatedUsage = llm.AddUsage(summary.DelegatedUsage, delegation.Usage)
-					count(delegation.Usage)
-				}
+				delegated(message.Details.Delegations)
+			}
+		case llm.UserMessage:
+			if message.Notice != nil {
+				delegated(message.Notice.Delegations)
 			}
 		}
 	}

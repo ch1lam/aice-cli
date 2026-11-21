@@ -32,6 +32,9 @@ type runState struct {
 	// start restores the composer.
 	submitted      *interaction.RunInput
 	submittedDraft composerDraft
+	// notification marks a run a finished task started. One that fails does
+	// not wait again, so a lasting failure cannot wake it over and over.
+	notification bool
 }
 
 func (r runState) running() bool { return r.kind != runIdle }

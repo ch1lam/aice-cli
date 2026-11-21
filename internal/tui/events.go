@@ -290,6 +290,8 @@ func (m *model) applyAgentEvent(event interaction.Event) (bool, tea.Cmd) {
 		return true, nil
 	case interaction.EventSteer:
 		return m.applySteer(event.Input), nil
+	case interaction.EventNotification:
+		return m.applyNotification(event.Input), nil
 	case interaction.EventFollowUp:
 		m.startQueuedDelivery(pendingDelivery{
 			id:   event.Input.ID,
@@ -432,6 +434,7 @@ func (m *model) finishRun(err error) tea.Cmd {
 	if err != nil {
 		m.revokeConclusion()
 	}
+	failedWake := m.run.notification && err != nil && !errors.Is(err, context.Canceled)
 	m.updateActiveProcessDuration(time.Now())
 	// A tool whose end event never arrived did not complete; stop its spinner.
 	for i := range m.entries {
@@ -470,7 +473,10 @@ func (m *model) finishRun(err error) tea.Cmd {
 	}
 	m.resizeLayout()
 	m.refreshViewport(follow)
-	return focus
+	if failedWake {
+		return focus
+	}
+	return tea.Batch(focus, m.awaitTaskCompletion())
 }
 
 type runStartedMsg struct {
@@ -500,6 +506,8 @@ func startRun(
 			skills:  input.Skills,
 			images:  input.Images,
 			updates: updates,
+			// notification starts a run without user input.
+			notification: input.Notification,
 		}:
 			return runStartedMsg{updates: updates}
 		}

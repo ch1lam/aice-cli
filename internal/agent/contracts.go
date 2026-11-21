@@ -154,24 +154,6 @@ type ToolSelector interface {
 	SelectTools(context.Context, llm.ToolCall) (llm.ToolResult, []ToolReference, error)
 }
 
-// ToolResultNotices returns caller-owned notices the model must see with one
-// completed tool result, such as background work that finished meanwhile. The
-// Loop prepends each non-empty notice text as a text part and appends each
-// delegation to the result's details before retaining, recording or
-// displaying the result, so every view sees the same message; delegated usage
-// counts toward the run like a synchronous subagent's. It is called once per
-// result that enters model context, including errors and Guard denials, and
-// must return promptly without blocking on I/O. Notices cannot change the
-// tool's own content, error state or pairing.
-type ToolResultNotices func(ctx context.Context, result llm.ToolResultMessage) []ToolResultNotice
-
-// ToolResultNotice is one notice; Delegation, when set, records the finished
-// subagent run the notice reports.
-type ToolResultNotice struct {
-	Text       string
-	Delegation *llm.ToolDelegation
-}
-
 // InputMessage is one caller-owned user message waiting to be injected into
 // an active run. ID is echoed on the corresponding message events.
 type InputMessage struct {
@@ -245,6 +227,15 @@ type RunInput struct {
 	Steering InputSource
 	// FollowUp is polled only when the Agent would otherwise stop naturally.
 	FollowUp InputSource
+	// Notifications report events such as finished background tasks; each
+	// message carries llm.Notice. They are polled after the prompt, with
+	// steering, and at natural stops before follow-ups. Delegations they
+	// report count toward this run like a subagent tool result's.
+	Notifications InputSource
+	// AwaitNotification is called when the run would otherwise end. It blocks
+	// until the next notification arrives, which continues the run, or returns
+	// false when nothing outstanding can produce one. Nil ends the run at once.
+	AwaitNotification func(context.Context) (InputMessage, bool, error)
 }
 
 // ModelRound is one inner-loop model round: user input injected immediately
@@ -314,6 +305,8 @@ const (
 	InputKindUnknown InputKind = iota
 	InputKindSteering
 	InputKindFollowUp
+	// InputKindNotification is an AICE notice, never the user's input.
+	InputKindNotification
 )
 
 // RetryEvent describes one model-call retry. Attempt is one-based and exceeds
@@ -333,7 +326,8 @@ type AgentEvent struct {
 	Type       EventType
 	TurnNumber int
 	// InputID and InputKind are populated on message_start and message_end for
-	// steering and follow-up input. They are empty for the initial user prompt.
+	// steering, follow-up and notification input. They are empty for the
+	// initial prompt.
 	InputID   string
 	InputKind InputKind
 	// Message is populated for message_start, message_end, and turn_end.

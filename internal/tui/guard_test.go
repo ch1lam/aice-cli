@@ -530,3 +530,20 @@ func TestGuardOutranksOpenSessionPicker(t *testing.T) {
 		t.Fatal("picker did not return after the reply")
 	}
 }
+
+// A subagent's ask names the subagent; a control character in its
+// model-written label cannot restyle the card.
+func TestGuardTitleNamesAskingSubagent(t *testing.T) {
+	t.Parallel()
+	current := newGuardTestModel(t, interaction.GuardRequest{
+		Agent:   "bg-00000a · find\x1b[2Jcallers",
+		Command: "go test ./...",
+		Options: guardTestOptions(),
+	})
+	current = updateModel(t, current, tea.WindowSizeMsg{Width: 100, Height: 24})
+	view := current.View().Content
+	if strings.Contains(view, "\x1b[2J") || !strings.Contains(ansi.Strip(view), "Subagent bg-00000a · find") ||
+		!strings.Contains(ansi.Strip(view), "Run this command?") {
+		t.Fatalf("guard card:\n%s", ansi.Strip(view))
+	}
+}

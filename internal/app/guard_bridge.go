@@ -367,6 +367,7 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 	reply := make(chan interaction.GuardReply, 1)
 	req := interaction.GuardRequest{
 		ID:        reqID,
+		Agent:     askingAgent(ctx),
 		ToolName:  call.Name,
 		Reason:    result.Reason,
 		RuleID:    result.RuleID,

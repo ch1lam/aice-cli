@@ -72,7 +72,7 @@ func TestAgentStoppedChildKeepsReportAndUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := agentTool.Execute(ctx, agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore"}))
+	result, err := agentTool.Execute(ctx, agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore", "run_in_background": false}))
 	if !errors.Is(err, context.Canceled) || !request.ReadOnly {
 		t.Fatalf("err = %v, read-only = %v", err, request.ReadOnly)
 	}
@@ -91,7 +91,7 @@ func TestAgentTruncatesLongReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task"}))
+	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "run_in_background": false}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,5 +134,44 @@ func TestAgentPassesIsolationAndNotes(t *testing.T) {
 		if err != nil || !strings.HasSuffix(result.Content[0].Text, "\nisolation: worktree") {
 			t.Fatalf("background %v result = %q, %v", background, result.Content[0].Text, err)
 		}
+	}
+}
+
+// noBackground cannot start background subagents.
+type noBackground struct{ delegatorFunc }
+
+func (noBackground) Start(context.Context, tool.DelegateRequest) (tool.DelegateStart, error) {
+	return tool.DelegateStart{}, tool.ErrNoBackground
+}
+
+// A call runs in the background unless it asks not to. Where the background
+// is unavailable, a call that did not ask for it runs synchronously; one that
+// did fails.
+func TestAgentRunsInTheBackgroundByDefault(t *testing.T) {
+	t.Parallel()
+	ran := false
+	synchronous := delegatorFunc(func(context.Context, tool.DelegateRequest) tool.DelegateResult {
+		ran = true
+		return tool.DelegateResult{Report: "done"}
+	})
+	agentTool, err := tool.NewAgent(synchronous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task"}))
+	if err != nil || ran || !strings.Contains(result.Content[0].Text, "bg-000001") {
+		t.Fatalf("default call ran synchronously = %v: %#v, %v", ran, result, err)
+	}
+
+	agentTool, err = tool.NewAgent(noBackground{synchronous})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task"}))
+	if err != nil || !ran || !strings.HasPrefix(result.Content[0].Text, "done") {
+		t.Fatalf("fallback ran = %v: %#v, %v", ran, result, err)
+	}
+	if _, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "run_in_background": true})); !errors.Is(err, tool.ErrNoBackground) {
+		t.Fatalf("explicit background without one: err = %v", err)
 	}
 }

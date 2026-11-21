@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
@@ -16,10 +15,9 @@ const (
 	taskOutputSchema = `{
   "type": "object",
   "properties": {
-    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash or agent"},
+    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash or agent; omit to list every task"},
     "wait": {"type": "number", "minimum": 0, "maximum": 600, "description": "Seconds to wait for every listed task to finish before returning (default: 0, maximum: 600)"}
   },
-  "required": ["task_ids"],
   "additionalProperties": false
 }`
 	taskKillSchema = `{
@@ -60,7 +58,7 @@ func NewTaskKill(tasks *Tasks) (*TaskKill, error) {
 func (*TaskOutput) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_output",
-		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file; a subagent's file holds its report.",
+		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish; without task_ids, list every task of this Session. The full output stays in each task's output file; a subagent's file holds its latest report. A subagent's report arrives on its own as a notification: to wait only for subagents, end your turn instead of waiting here.",
 		InputSchema:   jsonSchema(taskOutputSchema),
 		PromptSnippet: "Check or wait for background tasks started by bash or agent",
 	}
@@ -76,8 +74,11 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
+	if len(args.TaskIDs) == 0 && args.Wait == 0 {
+		return textResult(call, taskList(o.tasks.List()), false), nil
+	}
 	if len(args.TaskIDs) == 0 || len(args.TaskIDs) > maxTaskOutputIDs {
-		return llm.ToolResult{}, fmt.Errorf("tool \"task_output\": task_ids must list 1 to %d tasks", maxTaskOutputIDs)
+		return llm.ToolResult{}, fmt.Errorf("tool \"task_output\": task_ids must list 1 to %d tasks to wait for", maxTaskOutputIDs)
 	}
 	wait := time.Duration(args.Wait * float64(time.Second))
 	if args.Wait < 0 || wait > maxTaskWait {
@@ -92,6 +93,19 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 		reports[index] = taskReport(status, taskOutputPreviewBytes)
 	}
 	return withTaskDelegations(textResult(call, strings.Join(reports, "\n\n"), false), statuses...), nil
+}
+
+// taskList names every task in one line each. It reports no completion: a
+// finished task is still reported by its notification or task_output.
+func taskList(statuses []TaskStatus) string {
+	if len(statuses) == 0 {
+		return "No background tasks in this Session."
+	}
+	lines := make([]string, 0, len(statuses)+1)
+	for _, status := range statuses {
+		lines = append(lines, taskSummary(status))
+	}
+	return strings.Join(append(lines, "A finished subagent continues with send_message unless it was stopped with task_kill."), "\n")
 }
 
 // withTaskDelegations records the subagent tasks a result reports first, so
@@ -112,7 +126,7 @@ func withTaskDelegations(result llm.ToolResult, statuses ...TaskStatus) llm.Tool
 func (*TaskKill) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_kill",
-		Description:   "Stop a background task: a command and its child processes are interrupted, then killed after a short grace period; a subagent is cancelled. Stopping a finished task is not an error.",
+		Description:   "Stop a background task: a command and its child processes are interrupted, then killed after a short grace period; a subagent is cancelled and closed, so it cannot continue. Stopping a finished task is not an error.",
 		InputSchema:   jsonSchema(taskKillSchema),
 		PromptSnippet: "Stop a background task started by bash or agent",
 	}
@@ -134,19 +148,74 @@ func (k *TaskKill) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResu
 	return withTaskDelegations(textResult(call, taskReport(status, taskOutputPreviewBytes), false), status), nil
 }
 
-// CompletionNotices describes background tasks that finished since the last
-// report, one notice each, for the Agent Loop to show with a tool result. A
-// subagent's notice carries its delegation record.
-func (t *Tasks) CompletionNotices() []agent.ToolResultNotice {
+// noticeHeader opens a task notification so the model never takes it for
+// the user's words.
+const noticeHeader = "[AICE notification, not from the user] Background tasks finished; no need to poll them."
+
+// agentNoticeBytes shows a subagent's whole report, already bounded by
+// MaxAgentReportBytes, with the lines that follow it.
+const agentNoticeBytes = MaxAgentReportBytes + 8<<10
+
+// TakeNotice reports the background tasks that finished since the last report
+// in one notification, marks them reported and returns its input ID. It
+// carries finished subagents' delegation records; ok is false when no task
+// finished.
+func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 	completions := t.TakeCompletions()
-	notices := make([]agent.ToolResultNotice, len(completions))
-	for index, status := range completions {
-		notices[index] = agent.ToolResultNotice{
-			Text:       "Background task finished; no need to poll it.\n" + taskReport(status, taskPreviewBytes),
-			Delegation: status.Delegation,
+	if len(completions) == 0 {
+		return llm.UserMessage{}, "", false
+	}
+	reports := []string{noticeHeader}
+	summaries := make([]string, 0, len(completions))
+	notice := &llm.Notice{}
+	for _, status := range completions {
+		preview := int64(taskPreviewBytes)
+		if status.Kind == TaskAgent {
+			preview = agentNoticeBytes
+		}
+		reports = append(reports, taskReport(status, preview))
+		summaries = append(summaries, taskSummary(status))
+		if status.Delegation != nil && len(notice.Delegations) < llm.MaxToolDelegations {
+			notice.Delegations = append(notice.Delegations, *status.Delegation)
 		}
 	}
-	return notices
+	notice.Summary = strings.Join(summaries, "\n")
+	return llm.UserMessage{
+		Role:      llm.RoleUser,
+		Content:   []llm.ContentPart{llm.NewTextContent(strings.Join(reports, "\n\n")).Part()},
+		Timestamp: time.Now().UnixMilli(),
+		Notice:    notice,
+	}, "notice-" + completions[0].ID, true
+}
+
+// taskSummary names a task and its state in one line.
+func taskSummary(status TaskStatus) string {
+	if status.Kind == TaskAgent {
+		return fmt.Sprintf("Subagent %s %s: %s", status.ID, taskState(status), firstLine(status.Description))
+	}
+	return fmt.Sprintf("Task %s %s: %s", status.ID, taskState(status), firstLine(taskLabel(status)))
+}
+
+func taskState(status TaskStatus) string {
+	switch {
+	case status.Running:
+		return "running"
+	case status.Reason != "":
+		return "terminated: " + status.Reason
+	case status.Kind != TaskAgent:
+		return fmt.Sprintf("exited with code %d", status.ExitCode)
+	case status.Failure != "":
+		return "stopped before finishing: " + firstLine(status.Failure)
+	default:
+		return "finished"
+	}
+}
+
+func taskLabel(status TaskStatus) string {
+	if status.Description != "" {
+		return status.Description
+	}
+	return status.Command
 }
 
 // taskReport renders a status line and a preview of the task's output: the
@@ -155,21 +224,8 @@ func taskReport(status TaskStatus, previewBytes int64) string {
 	if status.Kind == TaskAgent {
 		return agentTaskReport(status, previewBytes)
 	}
-	var state string
-	switch {
-	case status.Running:
-		state = "running"
-	case status.Reason != "":
-		state = "terminated: " + status.Reason
-	default:
-		state = fmt.Sprintf("exited with code %d", status.ExitCode)
-	}
-	label := status.Description
-	if label == "" {
-		label = status.Command
-	}
 	report := fmt.Sprintf("[task %s %s; output file: %s]\nCommand: %s",
-		status.ID, state, status.OutputPath, firstLine(label))
+		status.ID, taskState(status), status.OutputPath, firstLine(taskLabel(status)))
 	tail, truncated, err := outputTail(status.OutputPath, previewBytes)
 	switch {
 	case err != nil:
@@ -184,18 +240,7 @@ func taskReport(status TaskStatus, previewBytes int64) string {
 }
 
 func agentTaskReport(status TaskStatus, previewBytes int64) string {
-	var state string
-	switch {
-	case status.Running:
-		state = "running"
-	case status.Reason != "":
-		state = "terminated: " + status.Reason
-	case status.Failure != "":
-		state = "stopped before finishing: " + firstLine(status.Failure)
-	default:
-		state = "finished"
-	}
-	report := fmt.Sprintf("[subagent task %s %s; report file: %s]\nTask: %s", status.ID, state, status.OutputPath, firstLine(status.Description))
+	report := fmt.Sprintf("[subagent task %s %s; report file: %s]\nTask: %s", status.ID, taskState(status), status.OutputPath, firstLine(status.Description))
 	if status.Running {
 		return report
 	}

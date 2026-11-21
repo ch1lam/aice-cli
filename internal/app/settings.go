@@ -35,6 +35,10 @@ func settingPresentation(id string) (category, label, description string, timing
 		return "models", "Small model", "Fast model on the same provider for the auto mode classifier and Session titles. Empty uses the main model.", timing, false
 	case "thinking":
 		return "models", "Thinking", "Requested reasoning level; the model may use its nearest supported level.", timing, false
+	case "subagent_model":
+		return "models", "Subagent model", "Model for subagents, as provider/model or a model of the main provider. Empty uses the main model.", timing, false
+	case "subagent_thinking":
+		return "models", "Subagent thinking", "Reasoning level for subagents; the model may use its nearest supported level. Empty uses Thinking.", timing, false
 	case "context_windows":
 		return "models", "Context windows", "Override a provider/model capacity in tokens. Removing an entry uses its catalog default.", timing, false
 	case "max_turns":
@@ -127,6 +131,28 @@ func (s *interactiveSession) ReadSettings(ctx context.Context) (interaction.Sett
 			field.AllowCustom = true
 			for _, model := range modelsForProvider(s.providers, activeProvider(settings.model, settings.configuration)) {
 				field.Choices = append(field.Choices, interaction.SettingChoice{Value: model.ID, Label: model.Name, Description: model.ID})
+			}
+		case config.SettingSubagentModel, config.SettingSubagentThinking:
+			child, err := resolveSubagentModel(s.providers, configuredModel{configuration: settings.configuration, model: settings.model, options: settings.options})
+			if err != nil {
+				field.Description += " Current setting unavailable: " + err.Error()
+				child = configuredModel{model: settings.model, options: settings.options}
+			}
+			if def.ID == config.SettingSubagentThinking {
+				field.Effective = string(child.options.Thinking)
+				for _, level := range llm.SupportedThinkingLevels(child.model) {
+					label, description := thinkingLevelDescription(level)
+					field.Choices = append(field.Choices, interaction.SettingChoice{Value: string(level), Label: label, Description: description})
+				}
+				break
+			}
+			field.Effective = string(child.model.Provider) + "/" + child.model.ID
+			field.AllowCustom = true
+			for _, candidate := range s.providers {
+				for _, model := range modelsForProvider(s.providers, string(candidate.ProviderID())) {
+					value := string(model.Provider) + "/" + model.ID
+					field.Choices = append(field.Choices, interaction.SettingChoice{Value: value, Label: model.Name, Description: value})
+				}
 			}
 		case config.SettingThinking:
 			field.Effective = string(settings.options.Thinking)

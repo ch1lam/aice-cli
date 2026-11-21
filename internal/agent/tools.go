@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/ch1lam/aice-cli/internal/llm"
 )
@@ -53,11 +52,32 @@ func (e *runExecution) failTruncatedToolCalls(
 	return nil
 }
 
+type requestHistoryKey struct{}
+
+var errNoRequestHistory = errors.New("agent: no model request in this context")
+
+// RequestHistory returns a copy of the history the model request that made
+// the current tool calls was built from: the context before its assistant
+// message, after any compaction. It fails outside a tool call.
+func RequestHistory(ctx context.Context) ([]llm.AgentMessage, error) {
+	history, ok := ctx.Value(requestHistoryKey{}).([]llm.AgentMessage)
+	if !ok {
+		return nil, errNoRequestHistory
+	}
+	return llm.CloneAgentMessages(history)
+}
+
 func (e *runExecution) executeTools(
 	ctx context.Context,
 	turnNumber int,
 	calls []llm.ToolCall,
 ) error {
+	// The calls' assistant message ends the history; the capped slice keeps
+	// later appends from reaching what a tool reads. Only tools see it.
+	toolCtx := ctx
+	if n := len(e.history) - 1; n >= 0 {
+		toolCtx = context.WithValue(ctx, requestHistoryKey{}, e.history[:n:n])
+	}
 	for index := range calls {
 		call := calls[index]
 		if ctxErr := e.checkBudget(ctx); ctxErr != nil {
@@ -80,7 +100,7 @@ func (e *runExecution) executeTools(
 		}
 
 		e.proposal = nil
-		message, toolErr := e.executeTool(ctx, call)
+		message, toolErr := e.executeTool(toolCtx, call)
 		message, err := e.acceptToolResult(ctx, message, true)
 		if err != nil {
 			return err
@@ -295,23 +315,15 @@ func (e *runExecution) syntheticToolResults(
 }
 
 // acceptToolResult retains the actual outcome before recording or display can
-// fail. The active ModelRound is the sole owner of produced tool results. A
-// result entering model context first receives the caller's notices; the
+// fail. The active ModelRound is the sole owner of produced tool results; the
 // returned message is the one retained, recorded and displayed.
 func (e *runExecution) acceptToolResult(
 	ctx context.Context,
 	message llm.ToolResultMessage,
 	recordHistory bool,
 ) (llm.ToolResultMessage, error) {
-	if recordHistory {
-		message = e.withNotices(ctx, message)
-		if message.Details != nil {
-			// Subagents spent these tokens on this run's behalf: they count
-			// toward its budget like its own model calls.
-			for _, delegation := range message.Details.Delegations {
-				e.addUsage(delegation.Usage)
-			}
-		}
+	if recordHistory && message.Details != nil {
+		e.addDelegations(message.Details.Delegations)
 	}
 	round := &e.result.ModelRounds[len(e.result.ModelRounds)-1]
 	round.ToolResults = append(round.ToolResults, message)
@@ -321,39 +333,12 @@ func (e *runExecution) acceptToolResult(
 	return message, e.recordMessage(ctx, message)
 }
 
-// withNotices prepends notices so bounded model views, which keep leading
-// content in order, retain them.
-func (e *runExecution) withNotices(ctx context.Context, message llm.ToolResultMessage) llm.ToolResultMessage {
-	if e.loop.notices == nil {
-		return message
+// addDelegations counts subagent usage toward the run's budget: subagents
+// spent these tokens on its behalf, like its own model calls.
+func (e *runExecution) addDelegations(delegations []llm.ToolDelegation) {
+	for _, delegation := range delegations {
+		e.addUsage(delegation.Usage)
 	}
-	var parts []llm.ContentPart
-	var delegations []llm.ToolDelegation
-	for _, notice := range e.loop.notices(ctx, message) {
-		if strings.TrimSpace(notice.Text) != "" {
-			parts = append(parts, llm.NewTextContent(notice.Text).Part())
-		}
-		if notice.Delegation != nil {
-			delegations = append(delegations, *notice.Delegation)
-		}
-	}
-	if len(parts) > 0 {
-		message.Content = append(parts, message.Content...)
-	}
-	if len(delegations) > 0 {
-		// A result without details was dispatched and returned: undispatched
-		// results always carry details.
-		details := message.Details.Clone()
-		if details == nil {
-			details = &llm.ToolResultDetails{State: llm.ExecutionReturned}
-		}
-		details.Delegations = append(details.Delegations, delegations...)
-		if len(details.Delegations) > llm.MaxToolDelegations {
-			details.Delegations = details.Delegations[:llm.MaxToolDelegations]
-		}
-		message.Details = details
-	}
-	return message
 }
 
 func (e *runExecution) emitToolResultMessage(

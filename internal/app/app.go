@@ -321,7 +321,7 @@ func (a *application) Print(
 	}, environment.tools); err != nil {
 		return err
 	}
-	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())), agent.WithToolResultNotices(taskNotices(environment.tasks)))
+	loop, err := agent.NewLoop(configured.service, environment.tools, agent.WithGuard(environment.guardAdapter), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 	if err != nil {
 		return fmt.Errorf("app: create agent loop: %w", err)
 	}
@@ -344,17 +344,25 @@ func (a *application) Print(
 		sessionDir = filepath.Join(environment.workspace.Path(), ".aice", "sessions")
 	}
 	ctx = withDelegation(ctx, &delegation{
+		parent: configured,
+		models: sync.OnceValues(func() (configuredModel, error) {
+			child, err := resolveSubagentModel(a.dependencies.providers, configured)
+			if err == nil {
+				err = a.initializeConfiguredModel(&child)
+			}
+			return child, err
+		}),
 		// Print has no person to ask, synchronous child or not.
-		newLoop: func(tools []agent.Tool, guard agent.Guard, _ bool) (*agent.Loop, error) {
-			return agent.NewLoop(configured.service, tools, agent.WithGuard(guard), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
+		newLoop: func(child configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return agent.NewLoop(child.service, tools, agent.WithGuard(guard), agent.WithRunLimits(autoRunLimits(configured.configuration, environment.guardAdapter.autoActive())))
 		},
-		compactor:    func(store *session.Store) agent.HistoryCompactor { return a.historyCompactor(store, &configured, nil) },
+		compactor: func(store *session.Store, child *configuredModel) agent.HistoryCompactor {
+			return a.historyCompactor(store, child, nil)
+		},
 		tasks:        environment.tasks,
 		tools:        environment.tools,
 		workspace:    environment.workspace,
 		guard:        environment.guardAdapter,
-		model:        environment.model,
-		options:      environment.options,
 		systemPrompt: environment.systemPrompt,
 		mcp:          scope.mcp,
 		sessionDir:   sessionDir,
@@ -364,12 +372,12 @@ func (a *application) Print(
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
+	runInput.Notifications = taskNotifications(environment.tasks)
+	runInput.AwaitNotification = awaitSubagents(environment.tasks)
 	_, loopErr := loop.Run(ctx, runInput, func(eventCtx context.Context, event agent.AgentEvent) error {
-		// Subagent usage reaches the totals through the results that record it.
-		if event.Type == agent.EventTypeToolExecutionEnd && event.ToolResult != nil && event.ToolResult.Details != nil {
-			for _, delegation := range event.ToolResult.Details.Delegations {
-				sink.AddUsage(delegation.Usage)
-			}
+		// Subagent usage reaches the totals through the messages that record it.
+		for _, delegation := range eventDelegations(event) {
+			sink.AddUsage(delegation.Usage)
 		}
 		return sink.Accept(eventCtx, event)
 	})
@@ -381,6 +389,20 @@ func (a *application) Print(
 		)
 	}
 	return finishErr
+}
+
+// eventDelegations are the subagent runs a recorded message reports: a tool
+// result's, or a notification's.
+func eventDelegations(event agent.AgentEvent) []llm.ToolDelegation {
+	switch {
+	case event.Type == agent.EventTypeToolExecutionEnd && event.ToolResult != nil && event.ToolResult.Details != nil:
+		return event.ToolResult.Details.Delegations
+	case event.Type == agent.EventTypeMessageEnd && event.InputKind == agent.InputKindNotification:
+		if message, ok := event.Message.(llm.UserMessage); ok && message.Notice != nil {
+			return message.Notice.Delegations
+		}
+	}
+	return nil
 }
 
 // Interactive runs one multi-turn terminal session.
@@ -884,22 +906,25 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
-	mcp            *mcpOwner
-	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
-	lifecycle      settingsLifecycle
-	catalog        sessionCatalog
-	browserBin     string
-	modelErr       error
-	application    *application
-	stateMu        sync.RWMutex
-	loop           *agent.Loop
-	conversation   conversationState
-	model          llm.Model
-	options        llm.StreamOptions
-	configuration  config.Config
-	tools          []agent.Tool
-	baseTools      []agent.Tool
-	tasks          *tool.Tasks
+	mcp           *mcpOwner
+	mcpLoaded     *mcpLoadedTools // protected by stateMu; current main Run only
+	lifecycle     settingsLifecycle
+	catalog       sessionCatalog
+	browserBin    string
+	modelErr      error
+	application   *application
+	stateMu       sync.RWMutex
+	loop          *agent.Loop
+	conversation  conversationState
+	model         llm.Model
+	options       llm.StreamOptions
+	configuration config.Config
+	tools         []agent.Tool
+	baseTools     []agent.Tool
+	tasks         *tool.Tasks
+	// awaitSubagents keeps a main run going until its running subagents
+	// report, for a frontend that cannot start a run on its own.
+	awaitSubagents bool
 	web            webState
 	desktop        *desktopPreset
 	systemPrompt   string
@@ -986,6 +1011,26 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 // RunningTasks counts the Session's running background tasks.
 func (s *interactiveSession) RunningTasks() int { return s.tasks.Running() }
 
+// AwaitCompletion returns once a finished background task waits to be
+// reported, so an idle frontend can start a notification run.
+func (s *interactiveSession) AwaitCompletion(ctx context.Context) error {
+	if s.tasks == nil {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	for {
+		changed := s.tasks.Changed()
+		if s.tasks.HasCompletions() {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // sessionTools composes the Session base tools with web and optional
 // capabilities for configuration, and assembles the matching system prompt.
 func (s *interactiveSession) sessionTools(configuration config.Config, web webState) ([]agent.Tool, string, error) {
@@ -1011,7 +1056,6 @@ func (s *interactiveSession) sessionLoop(configuration config.Config, tools []ag
 		tools,
 		agent.WithGuard(s.guardAdapter),
 		agent.WithGuardAskHandler(s.handleGuardAsk),
-		agent.WithToolResultNotices(taskNotices(s.tasks)),
 	)
 }
 

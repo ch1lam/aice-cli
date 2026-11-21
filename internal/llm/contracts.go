@@ -455,12 +455,29 @@ const (
 	StopReasonAborted StopReason = "aborted"
 )
 
-// UserMessage is a user-authored message before it is placed in model history.
+// UserMessage is a user-role message before it is placed in model history:
+// the user's own input, or an AICE notice when Notice is set.
 type UserMessage struct {
 	Role      Role          `json:"role"`
 	Content   []ContentPart `json:"content"`
 	Timestamp int64         `json:"timestamp"`
+	// Notice marks a message AICE wrote to report an event, such as finished
+	// background tasks. Its text is never the user's words or intent.
+	Notice *Notice `json:"notice,omitempty"`
 }
+
+// Notice describes an AICE-written user-role message.
+type Notice struct {
+	// Summary names what the notice reports in a few lines for display; the
+	// model reads Content.
+	Summary string `json:"summary,omitempty"`
+	// Delegations record finished subagent runs the notice reports, counted
+	// like those a tool result reports.
+	Delegations []ToolDelegation `json:"delegations,omitempty"`
+}
+
+// IsNotice reports whether AICE, not the user, wrote the message.
+func (m UserMessage) IsNotice() bool { return m.Notice != nil }
 
 // AssistantMessage is the complete or partial result of one model request.
 // It is the canonical value stored in history after streaming terminates.
@@ -563,6 +580,11 @@ func (m UserMessage) MessageRole() Role { return m.Role }
 func (m UserMessage) Validate() error {
 	if m.Role != RoleUser {
 		return fmt.Errorf("llm: user message has role %q", m.Role)
+	}
+	if m.Notice != nil {
+		if err := validateDelegations(m.Notice.Delegations); err != nil {
+			return fmt.Errorf("llm: notice: %w", err)
+		}
 	}
 	return validateMessageContent(m.Role, m.Content, false)
 }

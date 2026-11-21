@@ -144,6 +144,9 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 	}
 	if frontend.Tasks != nil {
 		initialModel.pollTasks = backgroundTaskPoll(frontend.Tasks)
+		initialModel.awaitTasks = taskCompletionWait(controllerCtx, frontend.Tasks)
+		// Init starts the first wait; Bubble Tea keeps no state Init sets.
+		initialModel.taskWaitPending = true
 	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
@@ -186,12 +189,14 @@ func checkForUpdate(ctx context.Context, checker interaction.UpdateChecker) tea.
 }
 
 type runRequest struct {
-	prompt  string
-	files   []string
-	skills  []string
-	images  []llm.ImageContent
-	command *interaction.CommandRequest
-	updates chan runUpdate
+	prompt string
+	files  []string
+	skills []string
+	images []llm.ImageContent
+	// notification starts a run with the notification of finished tasks.
+	notification bool
+	command      *interaction.CommandRequest
+	updates      chan runUpdate
 	// sideCreate requests a brand-new side thread for this prompt;
 	// sideThreadID targets an existing thread for a follow-up. The resolved
 	// metadata is stored back on sideThread before the run starts.
@@ -305,7 +310,7 @@ func runOne(ctx context.Context, frontend interaction.Frontend, request runReque
 	if !sendRunUpdate(ctx, request.updates, runUpdate{cancel: cancel, sideThread: request.sideThread}) {
 		return
 	}
-	active, err := frontend.Runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills}, func(
+	active, err := frontend.Runner.NewRun(runCtx, interaction.RunInput{Prompt: request.prompt, Images: request.images, Files: request.files, Skills: request.skills, Notification: request.notification}, func(
 		eventCtx context.Context,
 		event interaction.Event,
 	) error {

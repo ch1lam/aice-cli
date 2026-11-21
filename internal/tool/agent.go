@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,10 @@ const (
 	IsolationWorktree = "worktree"
 )
 
+// ErrNoBackground reports that a run cannot start background subagents; a
+// call that did not ask for the background runs synchronously instead.
+var ErrNoBackground = errors.New("background subagents are unavailable in this run")
+
 // DelegateRequest is one subagent task.
 type DelegateRequest struct {
 	Description string
@@ -35,6 +40,9 @@ type DelegateRequest struct {
 	// Isolation is IsolationNone, IsolationWorktree, or empty for the
 	// delegator's default.
 	Isolation string
+	// Fork starts the child with the caller's conversation instead of a
+	// fresh context.
+	Fork bool
 }
 
 // DelegateStart is a subagent started in the background.
@@ -68,7 +76,8 @@ type Delegator interface {
 	Start(ctx context.Context, request DelegateRequest) (DelegateStart, error)
 }
 
-// Agent delegates a self-contained task to a subagent with a fresh context.
+// Agent delegates a task to a subagent with a fresh context or, forked, with
+// the caller's.
 type Agent struct {
 	delegator Delegator
 }
@@ -85,10 +94,11 @@ func NewAgent(delegator Delegator) (*Agent, error) {
 func (a *Agent) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "agent",
-		Description: "Delegate a self-contained task to a subagent that starts with a fresh context, works with your tools " +
+		Description: "Delegate a task to a subagent that starts with a fresh context, works with your tools " +
 			"until done, and returns only its final report. Its intermediate steps never enter your context. " +
+			"fork starts it instead with a copy of this conversation up to this call, on your model, sharing your prompt cache. " +
+			"By default it runs in the background: the call returns a task id at once, and the report arrives later as a notification, also after you end your turn. " +
 			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
-			"run_in_background returns a task id at once; the report arrives with a later tool result. " +
 			"isolation \"worktree\" runs a general subagent in its own git worktree from the current commit: it sees no uncommitted changes, " +
 			"and its changes come back as a branch for you to review and apply. It is the default for a background general subagent in a git repository. " +
 			"Writers sharing the workspace never change the same file: a write to a file another running writer changed is denied.",
@@ -96,22 +106,24 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"type": "object",
 			"properties": {
 				"description": {"type": "string", "description": "3-5 word label shown to the user"},
-				"prompt": {"type": "string", "description": "The complete task. The subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report."},
+				"prompt": {"type": "string", "description": "The complete task. Unless forked, the subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report. A fork knows the conversation, so say only what to do and report."},
+				"fork": {"type": "boolean", "description": "Start the subagent with a copy of this conversation instead of a fresh context (default: false)"},
 				"type": {"type": "string", "enum": ["general", "explore"]},
-				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: false)"},
+				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: true); false waits for its report in this call and gives it your MCP tools"},
 				"isolation": {"type": "string", "enum": ["none", "worktree"], "description": "Where a general subagent changes files: \"worktree\" (default in the background) or \"none\" to share your workspace (default when synchronous)"}
 			},
 			"required": ["description", "prompt"],
 			"additionalProperties": false
 		}`),
-		PromptSnippet: "Delegate a self-contained task to a subagent that returns only its final report",
+		PromptSnippet: "Delegate a self-contained task to a subagent that works beside you and returns only its report",
 		PromptGuidelines: []string{
-			"Delegate only independent tasks whose process is long but whose conclusion is short, such as a broad search, an investigation or a review; do simple or tightly coupled work yourself",
-			"Write the prompt so it stands alone: the subagent cannot see this conversation or ask the user anything",
-			"Prefer type explore unless the task must change files; verify a subagent's claims before relying on them for edits",
-			"Run independent subagents in the background to work in parallel, keep doing your own work, and use task_output to wait only when you need a report; never start the same task twice",
-			"Review a worktree subagent's branch before applying it, then verify the result yourself",
-			"Give writers that share your workspace disjoint files: name the files each may change, and do not edit them yourself until it finishes",
+			"Delegate when the work splits into independent parts, when answering means reading across many files or searching without knowing where to look (type explore), when a command's output is long and you need only the failures, or when you want a review not anchored on your own conclusion. Do it yourself when it takes a few tool calls, when your very next step depends on it, or when the parts are tightly coupled",
+			"Plan first: decide what you do yourself now and which independent parts can run beside you. Start independent subagents together in one response, then continue with work they do not cover. Never start the same task twice or redo a delegated part yourself",
+			"Write each prompt so it stands alone: the goal and why it matters, what you already know or ruled out, the files or commands to start from, what is in and out of scope, whether to change files, and the report you need. Ask for evidence you can check (names, paths with lines, commands and their results) and for what it could not verify",
+			"When only waiting remains, say what is still running and end your turn; each report arrives as a notification that resumes you. Never poll, sleep or guess a pending result, and collect the reports you need before your final answer",
+			"A report can be confidently wrong. Check the claims your answer depends on; review a writer's changes or branch and run the relevant tests yourself before calling the work done. The user does not see reports: relay what matters",
+			"Set run_in_background to false only when the subagent needs MCP tools or you have nothing else to do until it answers. Writers that share your workspace need disjoint files",
+			"Fork when the task depends on what this conversation has established and restating it would be long or lossy, such as applying a plan you worked out to one part of the code. A fork carries your whole context into every step it takes, so start a fresh subagent when a short prompt can say what it needs, as for independent research",
 		},
 	}
 }
@@ -120,12 +132,27 @@ type agentArguments struct {
 	Description string `json:"description"`
 	Prompt      string `json:"prompt"`
 	Type        string `json:"type,omitempty"`
-	Background  bool   `json:"run_in_background,omitempty"`
+	Background  *bool  `json:"run_in_background,omitempty"`
 	Isolation   string `json:"isolation,omitempty"`
+	Fork        bool   `json:"fork,omitempty"`
 }
 
-// Execute runs one subagent. A child that stopped early is an error result
-// that still carries its partial report and what it spent.
+// TruncateAgentReport trims a subagent report and cuts it at
+// MaxAgentReportBytes with a pointer to the child transcript.
+func TruncateAgentReport(report string) string {
+	report = strings.TrimSpace(report)
+	if len(report) <= MaxAgentReportBytes {
+		return report
+	}
+	cut := MaxAgentReportBytes
+	for cut > 0 && !utf8.RuneStart(report[cut]) {
+		cut--
+	}
+	return report[:cut] + fmt.Sprintf("\n[report truncated: %d of %d bytes shown; the child transcript has the rest]", cut, len(report))
+}
+
+// Execute starts one subagent in the background, or runs it within the call
+// when the call asks for that.
 func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult, error) {
 	args, err := decodeArguments[agentArguments](ctx, call, "agent")
 	if err != nil {
@@ -144,31 +171,35 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	case args.Isolation == IsolationWorktree && args.Type == AgentExplore:
 		return llm.ToolResult{}, fmt.Errorf("tool %q: an explore subagent changes nothing, so it needs no worktree", "agent")
 	}
-	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation}
-	if args.Background {
+	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation, Fork: args.Fork}
+	// The background is the default; without one, a call that did not ask
+	// for it runs synchronously.
+	if background := args.Background == nil || *args.Background; background {
 		started, err := a.delegator.Start(ctx, request)
+		if errors.Is(err, ErrNoBackground) && args.Background == nil {
+			return a.delegate(ctx, call, request)
+		}
 		if err != nil {
 			return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "agent", err)
 		}
 		text := fmt.Sprintf("Subagent started in background as task %s; its report will be written to %s.\n"+
-			"Its report arrives with a later tool result. Continue your own work; use task_output with wait only when you need the report. Do not start it again.",
+			"Its report arrives as a notification, even after you end your turn. Continue with work it does not cover, or end your turn if only waiting remains; do not poll it or start it again.",
 			started.Task.ID, started.Task.OutputPath)
 		for _, note := range started.Notes {
 			text += "\n" + note
 		}
 		return textResult(call, text, false), nil
 	}
+	return a.delegate(ctx, call, request)
+}
+
+// delegate runs one subagent within the call. A child that stopped early is
+// an error result that still carries its partial report and what it spent.
+func (a *Agent) delegate(ctx context.Context, call llm.ToolCall, request DelegateRequest) (llm.ToolResult, error) {
 	res := a.delegator.Delegate(ctx, request)
 
 	var text strings.Builder
-	report := strings.TrimSpace(res.Report)
-	if len(report) > MaxAgentReportBytes {
-		cut := MaxAgentReportBytes
-		for cut > 0 && !utf8.RuneStart(report[cut]) {
-			cut--
-		}
-		report = report[:cut] + fmt.Sprintf("\n[report truncated: %d of %d bytes shown; the child transcript has the rest]", cut, len(res.Report))
-	}
+	report := TruncateAgentReport(res.Report)
 	if res.Err != nil {
 		fmt.Fprintf(&text, "Subagent stopped before finishing: %v\n", res.Err)
 		if report != "" {

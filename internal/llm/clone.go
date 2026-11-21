@@ -34,6 +34,11 @@ func CloneAgentMessage(message AgentMessage) (AgentMessage, error) {
 	case UserMessage:
 		copied := value
 		copied.Content = cloneContentParts(value.Content)
+		if value.Notice != nil {
+			notice := *value.Notice
+			notice.Delegations = cloneDelegations(notice.Delegations)
+			copied.Notice = &notice
+		}
 		return copied, nil
 	case AssistantMessage:
 		copied := value

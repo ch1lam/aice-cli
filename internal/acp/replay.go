@@ -7,7 +7,8 @@ import (
 )
 
 // replay renders a loaded branch as the updates a client would have seen.
-// Notices are AICE presentation and have no ACP counterpart.
+// Notices and AICE notifications have no ACP counterpart; the agent's
+// reply to a notification is replayed.
 func replay(transcript interaction.Transcript) []sdk.SessionUpdate {
 	var updates []sdk.SessionUpdate
 	for _, entry := range transcript.Entries {

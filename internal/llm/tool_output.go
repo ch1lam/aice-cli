@@ -195,14 +195,34 @@ func (d *ToolResultDetails) Clone() *ToolResultDetails {
 		}
 		copy.Review = &review
 	}
-	copy.Delegations = slices.Clone(d.Delegations)
-	for i := range copy.Delegations {
-		if cost := copy.Delegations[i].Usage.Cost; cost != nil {
-			cloned := *cost
-			copy.Delegations[i].Usage.Cost = &cloned
+	copy.Delegations = cloneDelegations(d.Delegations)
+	return &copy
+}
+
+// validateDelegations bounds the subagent runs one message reports.
+func validateDelegations(delegations []ToolDelegation) error {
+	if len(delegations) > MaxToolDelegations {
+		return fmt.Errorf("reports more than %d delegations", MaxToolDelegations)
+	}
+	for _, g := range delegations {
+		if g.Turns < 0 || g.ToolCalls < 0 || len(g.SessionID) > 256 || !utf8.ValidString(g.SessionID) ||
+			strings.ContainsAny(g.SessionID, "\x00\r\n/\\") {
+			return fmt.Errorf("delegation is invalid")
 		}
 	}
-	return &copy
+	return nil
+}
+
+// cloneDelegations deep-copies delegation records.
+func cloneDelegations(delegations []ToolDelegation) []ToolDelegation {
+	cloned := slices.Clone(delegations)
+	for i := range cloned {
+		if cost := cloned[i].Usage.Cost; cost != nil {
+			copied := *cost
+			cloned[i].Usage.Cost = &copied
+		}
+	}
+	return cloned
 }
 
 // Validate accepts absent legacy metadata and rejects ambiguous new states.
@@ -234,14 +254,8 @@ func (d *ToolResultDetails) Validate() error {
 			return fmt.Errorf("tool result review text must be UTF-8 and bounded")
 		}
 	}
-	if len(d.Delegations) > MaxToolDelegations {
-		return fmt.Errorf("tool result reports more than %d delegations", MaxToolDelegations)
-	}
-	for _, g := range d.Delegations {
-		if g.Turns < 0 || g.ToolCalls < 0 || len(g.SessionID) > 256 || !utf8.ValidString(g.SessionID) ||
-			strings.ContainsAny(g.SessionID, "\x00\r\n/\\") {
-			return fmt.Errorf("tool result delegation is invalid")
-		}
+	if err := validateDelegations(d.Delegations); err != nil {
+		return fmt.Errorf("tool result %w", err)
 	}
 	if d.Binding != nil {
 		if d.Binding.Operation != "" && d.Binding.Operation != OperationResourceRead {

@@ -89,6 +89,8 @@ peak billing is twice the estimate.
 | Model | `AICE_MODEL` | A catalog model, or any model ID for `custom` |
 | Small model | `AICE_SMALL_MODEL` | Fast model of the same provider for side calls: the auto mode classifier and Session titles (it receives each new Session's first message and reply once, see [Sessions](execution-sessions.md#sessions)); empty uses Model; project settings cannot set it |
 | Thinking | `AICE_THINKING` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| Subagent model | `AICE_SUBAGENT_MODEL` | Model for [subagents](execution-sessions.md#subagents): a model ID of the main provider, or `provider/model` for another configured provider (for example `deepseek/deepseek-flash`); file key `subagent_model`; empty uses Model |
+| Subagent thinking | `AICE_SUBAGENT_THINKING` | Thinking levels as above for subagents; file key `subagent_thinking`; empty uses Thinking |
 | Default Project Trust | `AICE_DEFAULT_PROJECT_TRUST` | `ask`, `always`, `never`; project values cannot grant startup trust |
 | Custom base URL | `AICE_CUSTOM_BASE_URL` | OpenAI-compatible endpoint persisted as `custom_base_url`; default `http://localhost:11434/v1` |
 | Context windows | `AICE_CONTEXT_WINDOWS` | JSON array of provider/model/token entries described below |
@@ -98,6 +100,16 @@ peak billing is twice the estimate.
 | Auto mode classifier | none (file only) | `auto_mode` object with `environment`, `block`, `allow`; project settings may add `environment` and `block` only |
 | Tool permission rules | none (file only) | `permissions` object with `allow`/`ask`/`deny` rule lists, concatenated from user and trusted project settings; see [permission rules](execution-sessions.md#permission-rules) |
 | Web search and fetch | none (file only) | Nested `web` object: search sources, priority, service instances, fetch switch; see [Web search and fetch](web.md#configuration) |
+
+The subagent settings apply to every subagent of a run, taken when its first
+`agent` call needs them; changes apply from the next run. A requested level is
+clamped to the subagents' model like the main one, so an unset subagent
+thinking with a different model uses the main Thinking setting at that
+model's nearest supported level. A `provider/model` value whose prefix is not a
+provider ID is a model ID of the main provider. A model AICE cannot resolve,
+or another provider without a credential, fails the `agent` call with an error
+naming `subagent_model`; the run itself continues. The settings view lists
+every provider's models for it and the levels the chosen model supports.
 
 The `web` object and the `web_services` credential namespace in `auth.json`
 are handled as whole objects per layer rather than field-merged. Only user

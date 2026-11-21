@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -24,7 +23,7 @@ const subagentPrompt = `
 
 # Subagent
 
-You are a subagent: the parent agent delegated the task in the first user message to you. No user can answer questions here; resolve what you can and state what you could not. Your final message is the report the parent receives instead of this whole conversation: give conclusions with the evidence behind them (paths, lines, commands, results), not a narrative of your steps.`
+You are a subagent: the parent agent delegated the task in the first user message to you. Do it directly and completely within its scope; if you notice something outside it, note it in one sentence instead of doing it. No user can answer questions here: make reasonable assumptions, state them, and state what you could not resolve. Your final message is the only thing the parent receives: start with the answer or outcome, then the evidence behind it (names, file paths with lines, commands and their results), then what you could not verify. If you changed files, list them and the checks you ran. Do not narrate your steps or recap code you merely read.`
 
 // sharedWriterPrompt follows the subagent section for a background writer
 // in the parent's workspace.
@@ -47,9 +46,10 @@ Write test reports, logs and other artifacts under %s, which is yours alone, and
 // exploreToolsExcluded leave an explore child, which may not write.
 var exploreToolsExcluded = map[string]bool{"write": true, "edit": true}
 
-// childToolsExcluded never reach a subagent: it cannot delegate further, ask
-// the user, or own background tasks that outlive its run.
-var childToolsExcluded = map[string]bool{"agent": true, "request_user_input": true, "task_output": true, "task_kill": true}
+// childToolsExcluded never reach a subagent: it cannot delegate further,
+// message other subagents, ask the user, or own background tasks that
+// outlive its run.
+var childToolsExcluded = map[string]bool{"agent": true, "send_message": true, "request_user_input": true, "task_output": true, "task_kill": true}
 
 // mcpToolsExcluded also leave a child without MCP: they route through the
 // parent run's MCP binding.
@@ -58,19 +58,23 @@ var mcpToolsExcluded = map[string]bool{"tool_search": true, "mcp_resource_list":
 // delegation is one main run's frozen settings for the subagents it starts.
 // A synchronous child runs inside the parent's tool call, sharing its Guard,
 // ask handler, model settings and MCP binding. A background child is a task
-// that may outlive the run: it has no MCP binding and no person to ask.
+// that may outlive the run: it has no MCP binding, and its asks reach the
+// frontend labeled with its task.
 type delegation struct {
-	// newLoop builds a child Loop; asks routes Guard asks to the frontend,
-	// otherwise they are refused.
-	newLoop   func(tools []agent.Tool, guard agent.Guard, asks bool) (*agent.Loop, error)
-	compactor func(store *session.Store) agent.HistoryCompactor
+	// models resolves the children's model once, on the first call that
+	// needs it, so a bad subagent_model fails only the agent call. A fork
+	// runs on parent, the main run's own model.
+	models func() (configuredModel, error)
+	parent configuredModel
+	// newLoop builds a child Loop on that model with the frontend's ask
+	// handler, if any.
+	newLoop   func(model configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
+	compactor func(store *session.Store, model *configuredModel) agent.HistoryCompactor
 	// tasks runs background children; nil leaves only synchronous ones.
 	tasks        *tool.Tasks
 	tools        []agent.Tool
 	workspace    *tool.Workspace
 	guard        *guardAdapter
-	model        llm.Model
-	options      llm.StreamOptions
 	systemPrompt string
 	mcp          mcpRunBinding
 	// sessionDir holds child Sessions; empty keeps them in memory, as for a
@@ -82,6 +86,15 @@ type delegation struct {
 }
 
 type delegationKey struct{}
+
+// askerKey names the subagent whose Guard asks a context carries.
+type askerKey struct{}
+
+// askingAgent is the subagent label for a Guard ask, empty for the main agent.
+func askingAgent(ctx context.Context) string {
+	label, _ := ctx.Value(askerKey{}).(string)
+	return label
+}
 
 func withDelegation(ctx context.Context, d *delegation) context.Context {
 	return context.WithValue(ctx, delegationKey{}, d)
@@ -100,11 +113,15 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if d == nil {
 		return tool.DelegateResult{Err: errNoDelegation}
 	}
+	inherit, err := d.prepare(ctx, request)
+	if err != nil {
+		return tool.DelegateResult{Err: err}
+	}
 	tree, notes, err := d.isolate(ctx, request, false)
 	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
-	res := d.run(ctx, request, childRun{tree: tree})
+	res := d.run(ctx, request, childRun{tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit)}, request.Prompt)
 	if tree != nil {
 		notes = append(notes, tree.finish(ctx, request.Description))
 	}
@@ -123,10 +140,36 @@ func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest)
 // childRun is how one child runs.
 type childRun struct {
 	background bool
+	// agent is a background child's state across its turns.
+	agent *subagent
+	// label names the child in its Guard asks.
+	label string
 	// artifacts is a background writer's own directory.
 	artifacts string
 	// tree is the child's own worktree, if it has one.
 	tree *worktree
+	// inherit is a fork's conversation, which its first turn starts with;
+	// the first inherited entries of its Session are that conversation.
+	inherit   []llm.AgentMessage
+	inherited int
+}
+
+// prepare checks what a child needs before it starts: its model, or a
+// fork's conversation, which it returns.
+func (d *delegation) prepare(ctx context.Context, request tool.DelegateRequest) ([]llm.AgentMessage, error) {
+	if request.Fork {
+		return forkHistory(ctx)
+	}
+	_, err := d.models()
+	return nil, err
+}
+
+// childModel is the model a child runs on.
+func (d *delegation) childModel(request tool.DelegateRequest) (configuredModel, error) {
+	if request.Fork {
+		return d.parent, nil
+	}
+	return d.models()
 }
 
 // isolate decides where a writing child works: in its own worktree when
@@ -159,58 +202,22 @@ func (d *delegation) isolate(ctx context.Context, request tool.DelegateRequest, 
 }
 
 // start runs a child as a background task. It keeps the call's context
-// values but not its cancellation: only the task's own stop ends it. Its
-// report goes to the task's output file and its delegation record to
-// whichever result first reports the completion. A writer gets its own
-// artifact directory; one sharing the workspace is named by its task ID for
-// file claims.
+// values but not its cancellation: only the task's own stop ends it. The
+// child stays with its task, so send_message can steer or continue it.
 func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest) (tool.DelegateStart, error) {
 	if d.tasks == nil {
-		return tool.DelegateStart{}, errors.New("background subagents are unavailable in this run; run it synchronously")
+		return tool.DelegateStart{}, fmt.Errorf("%w; run it synchronously", tool.ErrNoBackground)
+	}
+	inherit, err := d.prepare(callCtx, request)
+	if err != nil {
+		return tool.DelegateStart{}, err
 	}
 	tree, notes, err := d.isolate(callCtx, request, true)
 	if err != nil {
 		return tool.DelegateStart{}, err
 	}
-	values := context.WithoutCancel(callCtx)
-	status, err := d.tasks.StartRun(tool.TaskAgent, request.Description, func(taskCtx context.Context, id string, out io.Writer) (*llm.ToolDelegation, error) {
-		ctx, cancel := context.WithCancel(values)
-		defer cancel()
-		defer context.AfterFunc(taskCtx, cancel)()
-		child := childRun{background: true, tree: tree}
-		if tree != nil {
-			// Settle the worktree however the run ends; its note follows the report.
-			defer func() { fmt.Fprintln(out, tree.finish(ctx, request.Description)) }()
-		}
-		if !request.ReadOnly {
-			if tree == nil {
-				d.guard.claims.begin(id)
-				defer d.guard.claims.end(id)
-				ctx = withWriter(ctx, id)
-			}
-			child.artifacts = filepath.Join(d.workspace.Path(), ".aice", "agents", id)
-			if err := os.MkdirAll(child.artifacts, 0o700); err != nil {
-				return nil, fmt.Errorf("create artifact directory: %w", err)
-			}
-		}
-		res := d.run(ctx, request, child)
-		report := strings.TrimSpace(res.Report)
-		if report == "" {
-			report = "(the subagent finished without a report)"
-		}
-		fmt.Fprintf(out, "%s\n[subagent: %d turns, %d tool calls, %s", report, res.Turns, res.ToolCalls, res.Duration.Round(time.Second))
-		if res.Transcript != "" {
-			fmt.Fprintf(out, "; transcript: %s", res.Transcript)
-		}
-		if artifacts := child.artifacts; artifacts != "" {
-			if rel, err := filepath.Rel(d.workspace.Path(), artifacts); err == nil {
-				artifacts = rel
-			}
-			fmt.Fprintf(out, "; artifacts: %s", artifacts)
-		}
-		fmt.Fprintln(out, "]")
-		return &llm.ToolDelegation{SessionID: res.SessionID, Usage: res.Usage, Turns: res.Turns, ToolCalls: res.ToolCalls}, res.Err
-	})
+	child := &subagent{request: request, tree: tree, running: true, inherit: inherit, inherited: len(inherit)}
+	status, err := d.tasks.StartRun(tool.TaskAgent, request.Description, child, d.background(context.WithoutCancel(callCtx), child, request.Prompt))
 	if err != nil {
 		if tree != nil {
 			tree.finish(callCtx, request.Description)
@@ -220,8 +227,9 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 	return tool.DelegateStart{Task: status, Notes: notes}, nil
 }
 
-// run executes one child to completion.
-func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, child childRun) (res tool.DelegateResult) {
+// run executes one child turn to completion, with prompt as its input. A
+// background child continues its own Session.
+func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, child childRun, text string) (res tool.DelegateResult) {
 	start := time.Now()
 	defer func() { res.Duration = time.Since(start) }()
 	var guard agent.Guard = d.guard
@@ -244,12 +252,21 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 			return res
 		}
 	}
-	loop, err := d.newLoop(tools, guard, !child.background)
+	if request.Fork {
+		tools = forkTools(d.tools, tools)
+	}
+	ctx = context.WithValue(ctx, askerKey{}, child.label)
+	model, err := d.childModel(request)
 	if err != nil {
 		res.Err = err
 		return res
 	}
-	store, err := d.createStore(ctx)
+	loop, err := d.newLoop(model, tools, guard)
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	store, history, err := d.childStore(ctx, child.agent)
 	if err != nil {
 		res.Err = err
 		return res
@@ -267,33 +284,73 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 	}
 	var memory []llm.AgentMessage
+	// A fork's Session starts with the conversation it inherits.
+	if len(child.inherit) > 0 {
+		history = child.inherit
+		if store == nil {
+			memory = slices.Clone(child.inherit)
+		}
+		for _, message := range child.inherit {
+			if store == nil {
+				break
+			}
+			if err := appendSessionMessage(ctx, store, message); err != nil {
+				res.Err = err
+				return res
+			}
+		}
+	}
 	readMemory := func() []llm.AgentMessage { return memory }
 	parentTranscript, _ := ctx.Value(transcriptContextKey{}).(runTranscript)
 	ctx = withDelegation(ctx, nil)
-	ctx, err = modelSessionContext(ctx, store)
-	if err != nil {
-		res.Err = err
-		return res
+	// A fork continues the parent's conversation, so it keeps the parent's
+	// routing identity, which a provider may route its prompt cache by.
+	if !request.Fork {
+		ctx, err = modelSessionContext(ctx, store)
+		if err != nil {
+			res.Err = err
+			return res
+		}
 	}
 	ctx = withResultReader(ctx, store, readMemory)
-	ctx = context.WithValue(ctx, transcriptContextKey{}, childTranscript(parentTranscript, store, readMemory))
+	ctx = context.WithValue(ctx, transcriptContextKey{}, childTranscript(parentTranscript, store, readMemory, child.inherited))
 
-	prompt, err := llm.NewUserMessage(llm.NewTextContent(request.Prompt).Part())
+	// A fresh child reads its sections in its system prompt; a fork, whose
+	// system prompt is the parent's, before the task in its first message.
+	sections := subagentPrompt
+	if request.Fork {
+		sections = forkPrompt
+		if request.ReadOnly {
+			sections += exploreForkPrompt
+		}
+	}
+	switch {
+	case child.tree != nil:
+		sections += fmt.Sprintf(worktreePrompt, child.tree.workspace, child.tree.base[:12], d.workspace.Path())
+	case child.background && !request.ReadOnly:
+		sections += sharedWriterPrompt
+	}
+	if child.artifacts != "" {
+		sections += fmt.Sprintf(artifactsPrompt, child.artifacts)
+	}
+	systemPrompt := d.systemPrompt + sections
+	if request.Fork {
+		systemPrompt = d.systemPrompt
+		if len(child.inherit) > 0 {
+			text = sections + forkTask + text
+		}
+	}
+	prompt, err := llm.NewUserMessage(llm.NewTextContent(text).Part())
 	if err != nil {
 		res.Err = err
 		return res
 	}
-	systemPrompt := d.systemPrompt + subagentPrompt
-	switch {
-	case child.tree != nil:
-		systemPrompt += fmt.Sprintf(worktreePrompt, child.tree.workspace, child.tree.base[:12], d.workspace.Path())
-	case child.background && !request.ReadOnly:
-		systemPrompt += sharedWriterPrompt
+	input := runScope{mcp: mcp, store: store}.input(model.model, systemPrompt, model.options, history, prompt)
+	if child.agent != nil {
+		// Messages from the parent wait for the child's next step, or keep it
+		// going when it would stop.
+		input.Steering, input.FollowUp = child.agent.takeMessage, child.agent.takeMessage
 	}
-	if child.artifacts != "" {
-		systemPrompt += fmt.Sprintf(artifactsPrompt, child.artifacts)
-	}
-	input := runScope{mcp: mcp, store: store}.input(d.model, systemPrompt, d.options, nil, prompt)
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if store != nil {
 			if err := appendSessionMessage(recordCtx, store, message); err != nil {
@@ -313,7 +370,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 		return nil
 	}
-	input.Compactor = d.compactor(store)
+	input.Compactor = d.compactor(store, &model)
 	result, err := loop.Run(ctx, input, nil)
 	res.Usage = result.Usage
 	res.Err = err
@@ -362,17 +419,58 @@ func (d *delegation) childTools(ctx context.Context, noMCP, readOnly bool) []age
 	return tools
 }
 
-// createStore starts the child Session under the agents directory, which
-// the Session picker does not list.
-func (d *delegation) createStore(ctx context.Context) (*session.Store, error) {
-	if d.sessionDir == "" {
+// childStore opens a child's Session and its history. A synchronous child
+// starts one under the agents directory, which the Session picker does not
+// list, or keeps it in memory without a parent Session. A background child
+// always has one, in the task directory without a parent Session, so later
+// turns continue it; they repair a turn an interrupt cut short.
+func (d *delegation) childStore(ctx context.Context, child *subagent) (*session.Store, []llm.AgentMessage, error) {
+	if child == nil {
+		store, err := d.createStore(ctx, d.sessionDir)
+		return store, nil, err
+	}
+	if path := child.sessionPath(); path != "" {
+		store, err := session.Open(ctx, path)
+		if err != nil {
+			return nil, nil, err
+		}
+		history, err := func() ([]llm.AgentMessage, error) {
+			if err := store.RecoverInterrupted(ctx); err != nil {
+				return nil, err
+			}
+			snapshot, err := store.Snapshot()
+			if err != nil {
+				return nil, err
+			}
+			return sessionHistory(snapshot)
+		}()
+		if err != nil {
+			return nil, nil, errors.Join(err, store.Close())
+		}
+		return store, history, nil
+	}
+	dir := d.sessionDir
+	if dir == "" {
+		dir = d.tasks.Dir()
+	}
+	store, err := d.createStore(ctx, dir)
+	if err == nil {
+		child.setSessionPath(store.Path())
+	}
+	return store, nil, err
+}
+
+// createStore starts a child Session under dir's agents directory; an empty
+// dir keeps it in memory.
+func (d *delegation) createStore(ctx context.Context, sessionDir string) (*session.Store, error) {
+	if sessionDir == "" {
 		return nil, nil
 	}
 	id, err := session.NewID()
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(d.sessionDir, "agents")
+	dir := filepath.Join(sessionDir, "agents")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("app: create subagent Session directory: %w", err)
 	}
@@ -382,9 +480,10 @@ func (d *delegation) createStore(ctx context.Context) (*session.Store, error) {
 }
 
 // childTranscript is what auto mode reviews a child call against: the
-// parent's active branch, then the child's own actions. The child's task
-// prompt is model-written, so it never counts as user intent.
-func childTranscript(parent runTranscript, store *session.Store, memory func() []llm.AgentMessage) runTranscript {
+// parent's active branch, then the child's own actions after the inherited
+// entries of a fork, which the parent's branch already has. The child's
+// task prompt is model-written, so it never counts as user intent.
+func childTranscript(parent runTranscript, store *session.Store, memory func() []llm.AgentMessage, inherited int) runTranscript {
 	return func() ([]session.MessageEntry, error) {
 		var entries []session.MessageEntry
 		if parent != nil {
@@ -398,7 +497,7 @@ func childTranscript(parent runTranscript, store *session.Store, memory func() [
 		if err != nil {
 			return nil, err
 		}
-		for _, entry := range own {
+		for _, entry := range own[min(inherited, len(own)):] {
 			if _, user := entry.Message.(llm.UserMessage); !user {
 				entries = append(entries, entry)
 			}

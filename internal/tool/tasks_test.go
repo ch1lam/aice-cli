@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
@@ -97,8 +96,8 @@ func TestBackgroundTaskLifecycle(t *testing.T) {
 	if report := tt.wait(t, 0, id); !strings.Contains(report, id+" running") {
 		t.Fatalf("snapshot = %q, want running", report)
 	}
-	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("notices before completion = %+v", notices)
+	if _, _, ok := tt.tasks.TakeNotice(); ok {
+		t.Fatal("notice before completion")
 	}
 
 	other := tt.start(t, "echo other")
@@ -107,23 +106,24 @@ func TestBackgroundTaskLifecycle(t *testing.T) {
 		!strings.Contains(report, other+" exited with code 0") {
 		t.Fatalf("report = %q", report)
 	}
-	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("task_output already reported both tasks; notices = %+v", notices)
+	if _, _, ok := tt.tasks.TakeNotice(); ok {
+		t.Fatal("task_output already reported both tasks, yet a notice followed")
 	}
 
+	changed := tt.tasks.Changed()
 	third := tt.start(t, "echo done")
-	deadline := time.Now().Add(10 * time.Second)
-	var notices []agent.ToolResultNotice
-	for len(notices) == 0 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-		notices = tt.tasks.CompletionNotices()
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no change signal for the finished task")
 	}
-	if len(notices) != 1 || !strings.Contains(notices[0].Text, third+" exited with code 0") ||
-		!strings.Contains(notices[0].Text, "done") || notices[0].Delegation != nil {
-		t.Fatalf("notices = %+v", notices)
+	notice, noticeID, ok := tt.tasks.TakeNotice()
+	if text := notice.Content[0].Text; !ok || noticeID != "notice-"+third || !notice.IsNotice() || len(notice.Notice.Delegations) != 0 ||
+		!strings.Contains(text, "not from the user") || !strings.Contains(text, third+" exited with code 0") || !strings.Contains(text, "done") {
+		t.Fatalf("notice %q = %#v", noticeID, notice)
 	}
-	if again := tt.tasks.CompletionNotices(); len(again) != 0 {
-		t.Fatalf("completion reported twice: %+v", again)
+	if _, _, again := tt.tasks.TakeNotice(); again {
+		t.Fatal("completion reported twice")
 	}
 }
 
@@ -147,8 +147,8 @@ func TestBackgroundTaskKill(t *testing.T) {
 	if elapsed := time.Since(started); elapsed < time.Second || elapsed > 10*time.Second {
 		t.Fatalf("kill took %s, want the grace period before the kill", elapsed)
 	}
-	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("killed task produced notices %+v", notices)
+	if _, _, ok := tt.tasks.TakeNotice(); ok {
+		t.Fatal("killed task produced a notice")
 	}
 	if _, err := tt.kill.Execute(t.Context(), toolCall(t, "task_kill", map[string]any{"task_id": id})); err != nil {
 		t.Fatalf("killing a finished task: %v", err)
@@ -192,8 +192,8 @@ func TestBackgroundTasksEndWithSessionAndClose(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("output after KillAll: %v", err)
 	}
-	if notices := tt.tasks.CompletionNotices(); len(notices) != 0 {
-		t.Fatalf("previous Session's tasks reported: %+v", notices)
+	if _, _, ok := tt.tasks.TakeNotice(); ok {
+		t.Fatal("previous Session's tasks reported")
 	}
 	if _, err := tt.output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{id}})); err == nil {
 		t.Fatal("task survived KillAll")

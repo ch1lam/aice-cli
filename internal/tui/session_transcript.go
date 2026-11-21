@@ -48,6 +48,9 @@ func (m *model) replaceTranscript(view *interaction.Transcript) {
 			m.entries = append(m.entries, e)
 		case interaction.TranscriptNotice:
 			m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: item.Text, sourceID: item.ID})
+		case interaction.TranscriptNotification:
+			m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: item.Text, sourceID: item.ID})
+			m.activeProcessID = 0
 		}
 	}
 	m.activeProcessID = 0

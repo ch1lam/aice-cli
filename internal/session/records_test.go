@@ -199,3 +199,42 @@ func TestUsageSummaryIncludesDelegations(t *testing.T) {
 		t.Fatalf("summary = %+v", summary)
 	}
 }
+
+// A notification's delegations survive a JSON round trip and count like a
+// tool result's; Session stats count it as a notice, not a user message.
+func TestNoticeDelegationsCountTowardUsage(t *testing.T) {
+	t.Parallel()
+	notice := textMessages()[0].(llm.UserMessage)
+	notice.Content = []llm.ContentPart{llm.NewTextContent("[AICE notification] task finished").Part()}
+	notice.Notice = &llm.Notice{Delegations: []llm.ToolDelegation{{SessionID: "child", Usage: llm.Usage{TotalTokens: 30}, Turns: 1}}}
+	data, err := json.Marshal(notice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded llm.UserMessage
+	if err := json.Unmarshal(data, &decoded); err != nil || !reflect.DeepEqual(decoded, notice) {
+		t.Fatalf("round trip = %#v, %v", decoded, err)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	writer := mustCreate(t, path)
+	appendMessages(t, writer, "m", append(textMessages(), decoded)...)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	summary, err := reopened.Usage()
+	if err != nil || summary.Delegations != 1 || summary.DelegatedUsage.TotalTokens != 30 {
+		t.Fatalf("summary = %+v, %v", summary, err)
+	}
+	snapshot, err := reopened.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats := session.ComputeStats(snapshot); stats.UserMessages != 1 || stats.Notices != 1 {
+		t.Fatalf("stats user messages = %d, notices = %d", stats.UserMessages, stats.Notices)
+	}
+}

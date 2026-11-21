@@ -41,7 +41,7 @@ configuration and its Guard permissions ([MCP](mcp.md)).
 | `tool_call_update` | Tool end: `completed` or `failed`, `kind` and `locations` from the actions recorded on the result, output text, unified diff text for edits |
 | `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost |
 | `session_info_update` | `title` of the current Session once its generated title is saved, after the first completed prompt of an untitled Session ([Sessions](execution-sessions.md#sessions)); sent asynchronously, possibly after the prompt response |
-| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask repeats the tool start's title and `description` content |
+| `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask repeats the tool start's title and `description` content; a subagent's ask title starts with `[subagent …]` naming it (task ID and description for a background one) |
 | `session/set_mode` | Permission mode `default` or `auto` for the next tool call, not saved |
 | config option `model` | The effective `provider/model`; setting it accepts only that value |
 
@@ -51,6 +51,14 @@ The tool vocabulary is shared with print JSON events
 no progress, Guard denials) is `max_turn_requests`, otherwise `end_turn`. Other
 run failures are JSON-RPC errors. The prompt response `usage` is that prompt's
 usage in ACP's inclusive convention: input includes cache reads and writes.
+
+ACP has no way for the agent to start a turn, so a prompt turn does not end
+while a background subagent runs: the run waits for its notification and
+continues with it, and the response follows their reports
+([background tasks](execution-sessions.md#background-tasks)). `session/cancel`
+also stops this wait; a subagent that finishes after a cancelled turn is
+reported at the start of the next prompt. The notification itself is not
+streamed; the agent's reply to it is.
 
 A Guard deny never becomes a permission request, so no client answer can allow
 it. A cancelled, failed or empty permission answer selects the Guard's deny

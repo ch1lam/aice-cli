@@ -82,6 +82,8 @@ const (
 	settingsKeyModel         = "model"
 	smallModelKey            = "small_model"
 	settingsKeyThinking      = "thinking"
+	subagentModelKey         = "subagent_model"
+	subagentThinkingKey      = "subagent_thinking"
 	settingsKeyCustomBaseURL = "custom_base_url"
 )
 
@@ -89,11 +91,15 @@ const (
 type Setting string
 
 const (
-	SettingProvider      Setting = settingsKeyProvider
-	SettingModel         Setting = settingsKeyModel
-	SettingSmallModel    Setting = smallModelKey
-	SettingThinking      Setting = settingsKeyThinking
-	SettingCustomBaseURL Setting = settingsKeyCustomBaseURL
+	SettingProvider   Setting = settingsKeyProvider
+	SettingModel      Setting = settingsKeyModel
+	SettingSmallModel Setting = smallModelKey
+	SettingThinking   Setting = settingsKeyThinking
+	// SettingSubagentModel and SettingSubagentThinking choose the subagents'
+	// model and reasoning level.
+	SettingSubagentModel    Setting = subagentModelKey
+	SettingSubagentThinking Setting = subagentThinkingKey
+	SettingCustomBaseURL    Setting = settingsKeyCustomBaseURL
 )
 
 // ContextWindow identifies a model without treating its identifier as a Viper key.
@@ -116,6 +122,8 @@ type Settings struct {
 	Model               string            `json:"model,omitempty"`
 	SmallModel          string            `json:"small_model,omitempty"`
 	Thinking            llm.ThinkingLevel `json:"thinking,omitempty"`
+	SubagentModel       string            `json:"subagent_model,omitempty"`
+	SubagentThinking    llm.ThinkingLevel `json:"subagent_thinking,omitempty"`
 	DefaultProjectTrust trust.Default     `json:"default_project_trust,omitempty"`
 	NoDepInstall        bool              `json:"no_dep_install,omitempty"`
 	NoUpdateCheck       bool              `json:"no_update_check,omitempty"`
@@ -153,8 +161,13 @@ type Config struct {
 	Model              string
 	// SmallModel names a fast model on the same provider for side calls: the
 	// auto mode classifier and Session titles. Empty uses Model.
-	SmallModel          string
-	Thinking            llm.ThinkingLevel
+	SmallModel string
+	Thinking   llm.ThinkingLevel
+	// SubagentModel is the subagents' model: a model ID on the main provider,
+	// or provider/model. Empty uses the main model.
+	SubagentModel string
+	// SubagentThinking is the subagents' reasoning level. Empty uses Thinking.
+	SubagentThinking    llm.ThinkingLevel
 	DefaultProjectTrust trust.Default
 	// APIKeys and BaseURLs hold API-key provider settings keyed by provider
 	// ID. Snapshots share these maps; change them only through WithAPIKey.
@@ -235,7 +248,8 @@ func EnvironmentVariables() map[string]string {
 		"run_no_progress_limit": "AICE_RUN_NO_PROGRESS_LIMIT",
 		"run_token_budget":      "AICE_RUN_TOKEN_BUDGET", "run_timeout": "AICE_RUN_TIMEOUT",
 		"provider": EnvProvider, "model": EnvModel, "thinking": EnvThinking,
-		"small_model":           "AICE_SMALL_MODEL",
+		"small_model":    "AICE_SMALL_MODEL",
+		"subagent_model": "AICE_SUBAGENT_MODEL", "subagent_thinking": "AICE_SUBAGENT_THINKING",
 		"default_project_trust": "AICE_DEFAULT_PROJECT_TRUST",
 		"context_windows":       "AICE_CONTEXT_WINDOWS",
 		"no_dep_install":        "AICE_NO_DEP_INSTALL", "no_update_check": "AICE_NO_UPDATE_CHECK",
@@ -482,6 +496,8 @@ func (c Config) settings() Settings {
 		Model:               c.Model,
 		SmallModel:          c.SmallModel,
 		Thinking:            c.Thinking,
+		SubagentModel:       c.SubagentModel,
+		SubagentThinking:    c.SubagentThinking,
 		DefaultProjectTrust: c.DefaultProjectTrust,
 		NoDepInstall:        c.NoDepInstall,
 		NoUpdateCheck:       c.NoUpdateCheck,
@@ -563,6 +579,8 @@ func decodeEffective(v *viper.Viper) (Config, error) {
 		Model:               s.Model,
 		SmallModel:          s.SmallModel,
 		Thinking:            s.Thinking,
+		SubagentModel:       s.SubagentModel,
+		SubagentThinking:    s.SubagentThinking,
 		DefaultProjectTrust: s.DefaultProjectTrust,
 		APIKeys:             apiKeys,
 		BaseURLs:            baseURLs,
@@ -711,17 +729,14 @@ func (s Settings) validate() error {
 	if strings.ContainsAny(s.SmallModel, " \t\r\n") {
 		return fmt.Errorf("small_model must not contain whitespace")
 	}
-	switch s.Thinking {
-	case llm.ThinkingLevelUnknown,
-		llm.ThinkingLevelOff,
-		llm.ThinkingLevelMinimal,
-		llm.ThinkingLevelLow,
-		llm.ThinkingLevelMedium,
-		llm.ThinkingLevelHigh,
-		llm.ThinkingLevelXHigh,
-		llm.ThinkingLevelMax:
-	default:
+	if strings.ContainsAny(s.SubagentModel, " \t\r\n") {
+		return fmt.Errorf("subagent_model must not contain whitespace")
+	}
+	if !knownThinkingLevel(s.Thinking) {
 		return fmt.Errorf("unsupported thinking level %q", s.Thinking)
+	}
+	if !knownThinkingLevel(s.SubagentThinking) {
+		return fmt.Errorf("unsupported subagent_thinking level %q", s.SubagentThinking)
 	}
 	switch s.PermissionMode {
 	case "", PermissionModeDefault, PermissionModeAuto:
@@ -755,4 +770,21 @@ func validateCustomBaseURL(raw string) error {
 		return errors.New("base URL must have a valid host")
 	}
 	return nil
+}
+
+// knownThinkingLevel accepts a requested level; empty leaves the default.
+func knownThinkingLevel(level llm.ThinkingLevel) bool {
+	switch level {
+	case llm.ThinkingLevelUnknown,
+		llm.ThinkingLevelOff,
+		llm.ThinkingLevelMinimal,
+		llm.ThinkingLevelLow,
+		llm.ThinkingLevelMedium,
+		llm.ThinkingLevelHigh,
+		llm.ThinkingLevelXHigh,
+		llm.ThinkingLevelMax:
+		return true
+	default:
+		return false
+	}
 }

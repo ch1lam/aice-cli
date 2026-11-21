@@ -251,11 +251,15 @@ func (s *interactiveSession) PreviewSession(ctx context.Context, key, query stri
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// Search conversation prose only. Tool payloads and encoded images are not
-// indexed; source records are retained unchanged for actual restoration.
+// Search conversation prose only. Tool payloads, AICE notifications and
+// encoded images are not indexed; source records are retained unchanged for
+// actual restoration.
 func sessionMessageText(message llm.AgentMessage) string {
 	switch message := message.(type) {
 	case llm.UserMessage:
+		if message.IsNotice() {
+			return ""
+		}
 		return userContent(message)
 	case llm.AssistantMessage:
 		text, _ := assistantContent(message)

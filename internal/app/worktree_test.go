@@ -133,6 +133,44 @@ func TestWorktreeWithoutChangesLeavesNothing(t *testing.T) {
 	}
 }
 
+// A continued child works on its branch again: reopening checks out what
+// it left, and the next finish adds to the same branch from the same base.
+// A child that changed nothing starts again from the base.
+func TestWorktreeReopensForAContinuedChild(t *testing.T) {
+	t.Parallel()
+	repo := gitRepo(t, map[string]string{"a.txt": "base\n"})
+	tree, err := newWorktree(t.Context(), repo, filepath.Join(t.TempDir(), "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tree.reopen(t.Context()); err != nil {
+		t.Fatalf("reopening an open worktree: %v", err)
+	}
+	tree.finish(t.Context(), "look")
+	if err := tree.reopen(t.Context()); err != nil {
+		t.Fatalf("reopening after an empty turn: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tree.dir, "b.txt"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tree.finish(t.Context(), "first")
+	if err := tree.reopen(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(tree.dir, "b.txt")); err != nil || string(data) != "one\n" {
+		t.Fatalf("reopened b.txt = %q, %v", data, err)
+	}
+	if err := os.WriteFile(filepath.Join(tree.dir, "c.txt"), []byte("two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if note := tree.finish(t.Context(), "second"); !strings.Contains(note, "starting from commit "+tree.base[:12]) {
+		t.Fatalf("note = %q", note)
+	}
+	if got := gitRun(t, repo, "diff", "--name-only", tree.base, tree.branch); got != "b.txt\nc.txt" {
+		t.Fatalf("branch changes = %q", got)
+	}
+}
+
 // Finishing also runs after cancellation and keeps a child's own commits.
 func TestWorktreeFinishAfterCancellationKeepsChildCommits(t *testing.T) {
 	t.Parallel()

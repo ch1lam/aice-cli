@@ -16,7 +16,9 @@ func TestCloneAgentMessagesPreservesMetadataAndOwnership(t *testing.T) {
 	assistant.StopReason = StopReasonToolUse
 	result := ToolResultMessage{Role: RoleToolResult, ToolCallID: "call", ToolName: "read", Content: []ContentPart{NewTextContent("result").Part(), {Type: ContentTypeImage, Image: image}}, Diff: ToolDiff{Text: "diff", StatsKnown: true}, Truncation: ToolTruncation{Reason: TruncationByteLimit, NextOffset: 3}, Timestamp: 3}
 	summary, _ := NewCompactionSummaryMessage("summary", 100)
-	messages := []AgentMessage{user, assistant, result, summary}
+	notice := UserMessage{Role: RoleUser, Content: []ContentPart{NewTextContent("finished").Part()}, Timestamp: 4,
+		Notice: &Notice{Summary: "Task bg-1 finished", Delegations: []ToolDelegation{{SessionID: "child", Turns: 1}}}}
+	messages := []AgentMessage{user, assistant, result, summary, notice}
 	clone, err := CloneAgentMessages(messages)
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +35,9 @@ func TestCloneAgentMessagesPreservesMetadataAndOwnership(t *testing.T) {
 	copiedAssistant.Content[1].ToolCall.Arguments[0] = '!'
 	copiedAssistant.Usage.Cost.Total = 999
 	clone[2].(ToolResultMessage).Content[0].Text = "changed"
-	if string(image.Data) != "preview" || string(image.Original.Data) != "original" || image.Region.X != 2 || assistant.Content[0].Text != "reasoning" || assistant.Usage.Cost.Total != 3 || !json.Valid(assistant.Content[1].ToolCall.Arguments) || result.Content[0].Text != "result" {
+	clone[4].(UserMessage).Notice.Delegations[0].Turns = 9
+	if notice.Notice.Delegations[0].Turns != 1 ||
+		string(image.Data) != "preview" || string(image.Original.Data) != "original" || image.Region.X != 2 || assistant.Content[0].Text != "reasoning" || assistant.Usage.Cost.Total != 3 || !json.Valid(assistant.Content[1].ToolCall.Arguments) || result.Content[0].Text != "result" {
 		t.Fatal("clone aliases caller payload")
 	}
 	// Source mutation must not affect another separately copied occurrence.

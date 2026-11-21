@@ -14,11 +14,14 @@ import (
 )
 
 type interactiveRun struct {
-	session  *interactiveSession
-	prompt   llm.UserMessage
-	sink     interaction.EventSink
-	mailbox  *interaction.Mailbox
-	revision uint64
+	session *interactiveSession
+	prompt  llm.UserMessage
+	// notification takes the prompt from finished background tasks when the
+	// run starts.
+	notification bool
+	sink         interaction.EventSink
+	mailbox      *interaction.Mailbox
+	revision     uint64
 
 	mu        sync.Mutex
 	isStarted bool
@@ -62,25 +65,32 @@ func (s *interactiveSession) NewRun(
 			settings.configuration,
 		)
 	}
+	run := &interactiveRun{
+		session:      s,
+		notification: input.Notification,
+		sink:         sink,
+		mailbox:      interaction.NewMailbox(),
+		revision:     revision,
+		model:        settings.model,
+	}
+	if input.Notification {
+		if input.Prompt != "" || len(input.Images)+len(input.Files)+len(input.Skills) > 0 {
+			return nil, fmt.Errorf("app: a notification run takes no user input")
+		}
+		return run, s.ensureSessionStore(ctx)
+	}
 	input, err = s.prepareAttachedInput(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := newImageInputContext(ctx, input, settings.model)
+	run.prompt, err = newImageInputContext(ctx, input, settings.model)
 	if err != nil {
 		return nil, fmt.Errorf("app: create prompt: %w", err)
 	}
 	if err := s.ensureSessionStore(ctx); err != nil {
 		return nil, err
 	}
-	return &interactiveRun{
-		session:  s,
-		prompt:   prompt,
-		sink:     sink,
-		mailbox:  interaction.NewMailbox(),
-		revision: revision,
-		model:    settings.model,
-	}, nil
+	return run, nil
 }
 
 // ensureSessionStore lazily creates the session file when the first prompt
@@ -157,6 +167,17 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer r.session.releaseMainRun()
+	if r.notification {
+		// An earlier run may have taken the notification already.
+		if r.session.tasks == nil {
+			return nil
+		}
+		notice, _, ok := r.session.tasks.TakeNotice()
+		if !ok {
+			return nil
+		}
+		r.prompt = notice
+	}
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
 		return err
@@ -179,22 +200,21 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer scope.close()
 	ctx = withDelegation(ctx, &delegation{
-		newLoop: func(tools []agent.Tool, guard agent.Guard, asks bool) (*agent.Loop, error) {
-			options := []agent.LoopOption{agent.WithGuard(guard)}
-			if asks {
-				options = append(options, agent.WithGuardAskHandler(r.session.handleGuardAsk))
-			}
-			return r.session.application.newAgentLoopWithOptions(snapshot.configuration, tools, options...)
+		parent: configured,
+		models: sync.OnceValues(func() (configuredModel, error) {
+			return resolveSubagentModel(r.session.providers, configured)
+		}),
+		newLoop: func(child configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return r.session.application.newAgentLoopWithOptions(child.configuration, tools,
+				agent.WithGuard(guard), agent.WithGuardAskHandler(r.session.handleGuardAsk))
 		},
 		tasks: r.session.tasks,
-		compactor: func(store *session.Store) agent.HistoryCompactor {
-			return r.session.application.historyCompactor(store, &configured, nil)
+		compactor: func(store *session.Store, child *configuredModel) agent.HistoryCompactor {
+			return r.session.application.historyCompactor(store, child, nil)
 		},
 		tools:        snapshot.tools,
 		workspace:    r.session.workspace,
 		guard:        r.session.guardAdapter,
-		model:        snapshot.model,
-		options:      snapshot.options,
 		systemPrompt: snapshot.systemPrompt,
 		mcp:          scope.mcp,
 		sessionDir:   r.session.sessionDirectory(),
@@ -210,6 +230,10 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	input.ObserveTools = observeTools
 	input.Steering = mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model)
 	input.FollowUp = mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model)
+	input.Notifications = taskNotifications(r.session.tasks)
+	if r.session.awaitSubagents {
+		input.AwaitNotification = awaitSubagents(r.session.tasks)
+	}
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
 			return err

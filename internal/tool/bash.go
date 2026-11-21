@@ -96,7 +96,7 @@ func (b *Bash) Definition() llm.ToolDefinition {
 		schema += bashBackgroundProperty
 		definition.PromptGuidelines = []string{
 			"Start long-running commands (servers, watchers, long builds or tests) with run_in_background instead of & or nohup; you are told when a task finishes, so do not poll it with sleep",
-			"Use task_output with wait when you need a background task's result, and stop tasks you no longer need with task_kill before finishing",
+			"Use task_output with wait when your next step needs a background command's result, and stop tasks you no longer need with task_kill before finishing",
 		}
 	}
 	definition.InputSchema = jsonSchema(schema + bashSchemaEnd)
