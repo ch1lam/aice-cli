@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,10 @@ func newTaskTools(t *testing.T) taskTools {
 	if err != nil {
 		t.Skipf("native Bash unavailable: %v", err)
 	}
+	// Create the workspace first: cleanups run last-in first-out, so tasks
+	// are closed before its removal. Windows cannot remove the working
+	// directory of a running process.
+	workspace, _ := newWorkspace(t)
 	tasks, err := tool.NewTasks()
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +43,6 @@ func newTaskTools(t *testing.T) taskTools {
 			t.Error(err)
 		}
 	})
-	workspace, _ := newWorkspace(t)
 	bash, err := tool.NewBash(t.Context(), workspace, tool.BashShells{Native: shell}, tasks)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +148,12 @@ func TestBackgroundTaskKill(t *testing.T) {
 		!strings.Contains(report, "ready") {
 		t.Fatalf("kill report = %q", report)
 	}
-	if elapsed := time.Since(started); elapsed < time.Second || elapsed > 10*time.Second {
+	// Windows has no graceful interrupt, so the tree is killed at once.
+	minimum := time.Second
+	if runtime.GOOS == "windows" {
+		minimum = 0
+	}
+	if elapsed := time.Since(started); elapsed < minimum || elapsed > 10*time.Second {
 		t.Fatalf("kill took %s, want the grace period before the kill", elapsed)
 	}
 	if _, _, ok := tt.tasks.TakeNotice(); ok {

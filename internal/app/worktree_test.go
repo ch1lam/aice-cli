@@ -37,6 +37,9 @@ func gitRepo(t *testing.T, files map[string]string) string {
 		}
 	}
 	gitRun(t, repo, "init", "--quiet")
+	// Windows runners default to core.autocrlf=true, which would check out
+	// committed LF content as CRLF in worktrees.
+	gitRun(t, repo, "config", "core.autocrlf", "false")
 	gitRun(t, repo, "add", "--all")
 	gitRun(t, repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "--message", "init")
 	return repo
@@ -248,6 +251,9 @@ func TestWorktreeGuardKeepsChildOutOfMainWorkspace(t *testing.T) {
 	gate := newWorktreeGuard(adapter, tree, main, artifacts)
 
 	outside := filepath.Join(t.TempDir(), "x.txt")
+	// Bash reads backslashes as escapes, so commands name Windows paths with
+	// forward slashes.
+	mainArg := filepath.ToSlash(main)
 	for _, test := range []struct {
 		name, tool string
 		args       map[string]any
@@ -261,8 +267,8 @@ func TestWorktreeGuardKeepsChildOutOfMainWorkspace(t *testing.T) {
 		{"artifact", "write", map[string]any{"path": filepath.Join(artifacts, "r.txt"), "content": "x"}, agent.GuardAllow, ""},
 		{"rule follows", "write", map[string]any{"path": "secret/k", "content": "x"}, agent.GuardDeny, ""},
 		{"elsewhere", "write", map[string]any{"path": outside, "content": "x"}, agent.GuardAsk, ""},
-		{"git -C main", "bash", map[string]any{"command": "git -C " + main + " status", "description": "d"}, agent.GuardDeny, "run commands there"},
-		{"cd main", "bash", map[string]any{"command": "cd " + main + " && ls", "description": "d"}, agent.GuardDeny, "run commands there"},
+		{"git -C main", "bash", map[string]any{"command": "git -C " + mainArg + " status", "description": "d"}, agent.GuardDeny, "run commands there"},
+		{"cd main", "bash", map[string]any{"command": "cd " + mainArg + " && ls", "description": "d"}, agent.GuardDeny, "run commands there"},
 		{"GIT_DIR", "bash", map[string]any{"command": "GIT_DIR=/x/.git git log", "description": "d"}, agent.GuardDeny, "GIT_DIR"},
 		{"own command", "bash", map[string]any{"command": "git status", "description": "d"}, agent.GuardAllow, ""},
 	} {
@@ -371,7 +377,7 @@ func (m *worktreeSubagentModel) Stream(_ context.Context, request llm.Request) (
 		case 2:
 			return call("main", "write", map[string]any{"path": filepath.Join(m.main, "a.txt"), "content": "child"}), nil
 		case 3:
-			return call("git", "bash", map[string]any{"command": "git -C " + m.main + " add a.txt", "description": "stage"}), nil
+			return call("git", "bash", map[string]any{"command": "git -C " + filepath.ToSlash(m.main) + " add a.txt", "description": "stage"}), nil
 		case 4:
 			return call("artifact", "write", map[string]any{"path": filepath.Join(strings.TrimRight(artifacts[1], ".,"), "r.txt"), "content": "ok"}), nil
 		}
