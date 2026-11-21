@@ -200,19 +200,20 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer scope.close()
 	ctx = withDelegation(ctx, &delegation{
-		newLoop: func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
-			return r.session.application.newAgentLoopWithOptions(snapshot.configuration, tools,
+		models: sync.OnceValues(func() (configuredModel, error) {
+			return resolveSubagentModel(r.session.providers, configured)
+		}),
+		newLoop: func(child configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error) {
+			return r.session.application.newAgentLoopWithOptions(child.configuration, tools,
 				agent.WithGuard(guard), agent.WithGuardAskHandler(r.session.handleGuardAsk))
 		},
 		tasks: r.session.tasks,
-		compactor: func(store *session.Store) agent.HistoryCompactor {
-			return r.session.application.historyCompactor(store, &configured, nil)
+		compactor: func(store *session.Store, child *configuredModel) agent.HistoryCompactor {
+			return r.session.application.historyCompactor(store, child, nil)
 		},
 		tools:        snapshot.tools,
 		workspace:    r.session.workspace,
 		guard:        r.session.guardAdapter,
-		model:        snapshot.model,
-		options:      snapshot.options,
 		systemPrompt: snapshot.systemPrompt,
 		mcp:          scope.mcp,
 		sessionDir:   r.session.sessionDirectory(),

@@ -60,16 +60,18 @@ var mcpToolsExcluded = map[string]bool{"tool_search": true, "mcp_resource_list":
 // that may outlive the run: it has no MCP binding, and its asks reach the
 // frontend labeled with its task.
 type delegation struct {
-	// newLoop builds a child Loop with the frontend's ask handler, if any.
-	newLoop   func(tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
-	compactor func(store *session.Store) agent.HistoryCompactor
+	// models resolves the children's model once, on the first call that
+	// needs it, so a bad subagent_model fails only the agent call.
+	models func() (configuredModel, error)
+	// newLoop builds a child Loop on that model with the frontend's ask
+	// handler, if any.
+	newLoop   func(model configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
+	compactor func(store *session.Store, model *configuredModel) agent.HistoryCompactor
 	// tasks runs background children; nil leaves only synchronous ones.
 	tasks        *tool.Tasks
 	tools        []agent.Tool
 	workspace    *tool.Workspace
 	guard        *guardAdapter
-	model        llm.Model
-	options      llm.StreamOptions
 	systemPrompt string
 	mcp          mcpRunBinding
 	// sessionDir holds child Sessions; empty keeps them in memory, as for a
@@ -107,6 +109,9 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	d, _ := ctx.Value(delegationKey{}).(*delegation)
 	if d == nil {
 		return tool.DelegateResult{Err: errNoDelegation}
+	}
+	if _, err := d.models(); err != nil {
+		return tool.DelegateResult{Err: err}
 	}
 	tree, notes, err := d.isolate(ctx, request, false)
 	if err != nil {
@@ -177,6 +182,9 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 	if d.tasks == nil {
 		return tool.DelegateStart{}, fmt.Errorf("%w; run it synchronously", tool.ErrNoBackground)
 	}
+	if _, err := d.models(); err != nil {
+		return tool.DelegateStart{}, err
+	}
 	tree, notes, err := d.isolate(callCtx, request, true)
 	if err != nil {
 		return tool.DelegateStart{}, err
@@ -218,7 +226,12 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 	}
 	ctx = context.WithValue(ctx, askerKey{}, child.label)
-	loop, err := d.newLoop(tools, guard)
+	model, err := d.models()
+	if err != nil {
+		res.Err = err
+		return res
+	}
+	loop, err := d.newLoop(model, tools, guard)
 	if err != nil {
 		res.Err = err
 		return res
@@ -267,7 +280,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 	if child.artifacts != "" {
 		systemPrompt += fmt.Sprintf(artifactsPrompt, child.artifacts)
 	}
-	input := runScope{mcp: mcp, store: store}.input(d.model, systemPrompt, d.options, history, prompt)
+	input := runScope{mcp: mcp, store: store}.input(model.model, systemPrompt, model.options, history, prompt)
 	if child.agent != nil {
 		// Messages from the parent wait for the child's next step, or keep it
 		// going when it would stop.
@@ -292,7 +305,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 		return nil
 	}
-	input.Compactor = d.compactor(store)
+	input.Compactor = d.compactor(store, &model)
 	result, err := loop.Run(ctx, input, nil)
 	res.Usage = result.Usage
 	res.Err = err

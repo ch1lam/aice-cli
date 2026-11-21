@@ -75,9 +75,14 @@ func userTexts(request llm.Request) []string {
 
 func runPrintWith(t *testing.T, model agent.Model) string {
 	t.Helper()
+	return runPrintWithConfig(t, config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, model)
+}
+
+func runPrintWithConfig(t *testing.T, cfg config.Config, model agent.Model) string {
+	t.Helper()
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
-			return config.Config{APIKeys: map[string]string{"deepseek": "test-key"}}, nil
+			return cfg, nil
 		},
 		newModel:    func(config.Config) (agent.Model, error) { return model, nil },
 		userHomeDir: func() (string, error) { return t.TempDir(), nil },

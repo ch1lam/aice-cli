@@ -89,6 +89,8 @@ func SettingDefinitions() []SettingDefinition {
 		{ID: SettingModel, Kind: EnumValue},
 		{ID: SettingSmallModel, Kind: EnumValue},
 		{ID: SettingThinking, Kind: EnumValue, Default: SettingValue{Text: string(llm.DefaultThinkingLevel)}},
+		{ID: SettingSubagentModel, Kind: EnumValue},
+		{ID: SettingSubagentThinking, Kind: EnumValue},
 		{ID: "default_project_trust", Kind: EnumValue, Default: SettingValue{Text: string(trust.DefaultAsk)}},
 		{ID: "permission_mode", Kind: EnumValue, Default: SettingValue{Text: string(PermissionModeAuto)}},
 		{ID: "no_dep_install", Kind: BoolValue},
