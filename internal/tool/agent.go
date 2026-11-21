@@ -40,6 +40,9 @@ type DelegateRequest struct {
 	// Isolation is IsolationNone, IsolationWorktree, or empty for the
 	// delegator's default.
 	Isolation string
+	// Fork starts the child with the caller's conversation instead of a
+	// fresh context.
+	Fork bool
 }
 
 // DelegateStart is a subagent started in the background.
@@ -73,7 +76,8 @@ type Delegator interface {
 	Start(ctx context.Context, request DelegateRequest) (DelegateStart, error)
 }
 
-// Agent delegates a self-contained task to a subagent with a fresh context.
+// Agent delegates a task to a subagent with a fresh context or, forked, with
+// the caller's.
 type Agent struct {
 	delegator Delegator
 }
@@ -90,8 +94,9 @@ func NewAgent(delegator Delegator) (*Agent, error) {
 func (a *Agent) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "agent",
-		Description: "Delegate a self-contained task to a subagent that starts with a fresh context, works with your tools " +
+		Description: "Delegate a task to a subagent that starts with a fresh context, works with your tools " +
 			"until done, and returns only its final report. Its intermediate steps never enter your context. " +
+			"fork starts it instead with a copy of this conversation up to this call, on your model, sharing your prompt cache. " +
 			"By default it runs in the background: the call returns a task id at once, and the report arrives later as a notification, also after you end your turn. " +
 			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
 			"isolation \"worktree\" runs a general subagent in its own git worktree from the current commit: it sees no uncommitted changes, " +
@@ -101,7 +106,8 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"type": "object",
 			"properties": {
 				"description": {"type": "string", "description": "3-5 word label shown to the user"},
-				"prompt": {"type": "string", "description": "The complete task. The subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report."},
+				"prompt": {"type": "string", "description": "The complete task. Unless forked, the subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report. A fork knows the conversation, so say only what to do and report."},
+				"fork": {"type": "boolean", "description": "Start the subagent with a copy of this conversation instead of a fresh context (default: false)"},
 				"type": {"type": "string", "enum": ["general", "explore"]},
 				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: true); false waits for its report in this call and gives it your MCP tools"},
 				"isolation": {"type": "string", "enum": ["none", "worktree"], "description": "Where a general subagent changes files: \"worktree\" (default in the background) or \"none\" to share your workspace (default when synchronous)"}
@@ -117,6 +123,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"When only waiting remains, say what is still running and end your turn; each report arrives as a notification that resumes you. Never poll, sleep or guess a pending result, and collect the reports you need before your final answer",
 			"A report can be confidently wrong. Check the claims your answer depends on; review a writer's changes or branch and run the relevant tests yourself before calling the work done. The user does not see reports: relay what matters",
 			"Set run_in_background to false only when the subagent needs MCP tools or you have nothing else to do until it answers. Writers that share your workspace need disjoint files",
+			"Fork when the task depends on what this conversation has established and restating it would be long or lossy, such as applying a plan you worked out to one part of the code. A fork carries your whole context into every step it takes, so start a fresh subagent when a short prompt can say what it needs, as for independent research",
 		},
 	}
 }
@@ -127,6 +134,7 @@ type agentArguments struct {
 	Type        string `json:"type,omitempty"`
 	Background  *bool  `json:"run_in_background,omitempty"`
 	Isolation   string `json:"isolation,omitempty"`
+	Fork        bool   `json:"fork,omitempty"`
 }
 
 // TruncateAgentReport trims a subagent report and cuts it at
@@ -163,7 +171,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	case args.Isolation == IsolationWorktree && args.Type == AgentExplore:
 		return llm.ToolResult{}, fmt.Errorf("tool %q: an explore subagent changes nothing, so it needs no worktree", "agent")
 	}
-	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation}
+	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation, Fork: args.Fork}
 	// The background is the default; without one, a call that did not ask
 	// for it runs synchronously.
 	if background := args.Background == nil || *args.Background; background {

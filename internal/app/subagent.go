@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
@@ -61,8 +62,10 @@ var mcpToolsExcluded = map[string]bool{"tool_search": true, "mcp_resource_list":
 // frontend labeled with its task.
 type delegation struct {
 	// models resolves the children's model once, on the first call that
-	// needs it, so a bad subagent_model fails only the agent call.
+	// needs it, so a bad subagent_model fails only the agent call. A fork
+	// runs on parent, the main run's own model.
 	models func() (configuredModel, error)
+	parent configuredModel
 	// newLoop builds a child Loop on that model with the frontend's ask
 	// handler, if any.
 	newLoop   func(model configuredModel, tools []agent.Tool, guard agent.Guard) (*agent.Loop, error)
@@ -110,14 +113,15 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if d == nil {
 		return tool.DelegateResult{Err: errNoDelegation}
 	}
-	if _, err := d.models(); err != nil {
+	inherit, err := d.prepare(ctx, request)
+	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
 	tree, notes, err := d.isolate(ctx, request, false)
 	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
-	res := d.run(ctx, request, childRun{tree: tree, label: request.Description}, request.Prompt)
+	res := d.run(ctx, request, childRun{tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit)}, request.Prompt)
 	if tree != nil {
 		notes = append(notes, tree.finish(ctx, request.Description))
 	}
@@ -144,6 +148,28 @@ type childRun struct {
 	artifacts string
 	// tree is the child's own worktree, if it has one.
 	tree *worktree
+	// inherit is a fork's conversation, which its first turn starts with;
+	// the first inherited entries of its Session are that conversation.
+	inherit   []llm.AgentMessage
+	inherited int
+}
+
+// prepare checks what a child needs before it starts: its model, or a
+// fork's conversation, which it returns.
+func (d *delegation) prepare(ctx context.Context, request tool.DelegateRequest) ([]llm.AgentMessage, error) {
+	if request.Fork {
+		return forkHistory(ctx)
+	}
+	_, err := d.models()
+	return nil, err
+}
+
+// childModel is the model a child runs on.
+func (d *delegation) childModel(request tool.DelegateRequest) (configuredModel, error) {
+	if request.Fork {
+		return d.parent, nil
+	}
+	return d.models()
 }
 
 // isolate decides where a writing child works: in its own worktree when
@@ -182,14 +208,15 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 	if d.tasks == nil {
 		return tool.DelegateStart{}, fmt.Errorf("%w; run it synchronously", tool.ErrNoBackground)
 	}
-	if _, err := d.models(); err != nil {
+	inherit, err := d.prepare(callCtx, request)
+	if err != nil {
 		return tool.DelegateStart{}, err
 	}
 	tree, notes, err := d.isolate(callCtx, request, true)
 	if err != nil {
 		return tool.DelegateStart{}, err
 	}
-	child := &subagent{request: request, tree: tree, running: true}
+	child := &subagent{request: request, tree: tree, running: true, inherit: inherit, inherited: len(inherit)}
 	status, err := d.tasks.StartRun(tool.TaskAgent, request.Description, child, d.background(context.WithoutCancel(callCtx), child, request.Prompt))
 	if err != nil {
 		if tree != nil {
@@ -225,8 +252,11 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 			return res
 		}
 	}
+	if request.Fork {
+		tools = forkTools(d.tools, tools)
+	}
 	ctx = context.WithValue(ctx, askerKey{}, child.label)
-	model, err := d.models()
+	model, err := d.childModel(request)
 	if err != nil {
 		res.Err = err
 		return res
@@ -254,31 +284,66 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 	}
 	var memory []llm.AgentMessage
+	// A fork's Session starts with the conversation it inherits.
+	if len(child.inherit) > 0 {
+		history = child.inherit
+		if store == nil {
+			memory = slices.Clone(child.inherit)
+		}
+		for _, message := range child.inherit {
+			if store == nil {
+				break
+			}
+			if err := appendSessionMessage(ctx, store, message); err != nil {
+				res.Err = err
+				return res
+			}
+		}
+	}
 	readMemory := func() []llm.AgentMessage { return memory }
 	parentTranscript, _ := ctx.Value(transcriptContextKey{}).(runTranscript)
 	ctx = withDelegation(ctx, nil)
-	ctx, err = modelSessionContext(ctx, store)
-	if err != nil {
-		res.Err = err
-		return res
+	// A fork continues the parent's conversation, so it keeps the parent's
+	// routing identity, which a provider may route its prompt cache by.
+	if !request.Fork {
+		ctx, err = modelSessionContext(ctx, store)
+		if err != nil {
+			res.Err = err
+			return res
+		}
 	}
 	ctx = withResultReader(ctx, store, readMemory)
-	ctx = context.WithValue(ctx, transcriptContextKey{}, childTranscript(parentTranscript, store, readMemory))
+	ctx = context.WithValue(ctx, transcriptContextKey{}, childTranscript(parentTranscript, store, readMemory, child.inherited))
 
+	// A fresh child reads its sections in its system prompt; a fork, whose
+	// system prompt is the parent's, before the task in its first message.
+	sections := subagentPrompt
+	if request.Fork {
+		sections = forkPrompt
+		if request.ReadOnly {
+			sections += exploreForkPrompt
+		}
+	}
+	switch {
+	case child.tree != nil:
+		sections += fmt.Sprintf(worktreePrompt, child.tree.workspace, child.tree.base[:12], d.workspace.Path())
+	case child.background && !request.ReadOnly:
+		sections += sharedWriterPrompt
+	}
+	if child.artifacts != "" {
+		sections += fmt.Sprintf(artifactsPrompt, child.artifacts)
+	}
+	systemPrompt := d.systemPrompt + sections
+	if request.Fork {
+		systemPrompt = d.systemPrompt
+		if len(child.inherit) > 0 {
+			text = sections + forkTask + text
+		}
+	}
 	prompt, err := llm.NewUserMessage(llm.NewTextContent(text).Part())
 	if err != nil {
 		res.Err = err
 		return res
-	}
-	systemPrompt := d.systemPrompt + subagentPrompt
-	switch {
-	case child.tree != nil:
-		systemPrompt += fmt.Sprintf(worktreePrompt, child.tree.workspace, child.tree.base[:12], d.workspace.Path())
-	case child.background && !request.ReadOnly:
-		systemPrompt += sharedWriterPrompt
-	}
-	if child.artifacts != "" {
-		systemPrompt += fmt.Sprintf(artifactsPrompt, child.artifacts)
 	}
 	input := runScope{mcp: mcp, store: store}.input(model.model, systemPrompt, model.options, history, prompt)
 	if child.agent != nil {
@@ -415,9 +480,10 @@ func (d *delegation) createStore(ctx context.Context, sessionDir string) (*sessi
 }
 
 // childTranscript is what auto mode reviews a child call against: the
-// parent's active branch, then the child's own actions. The child's task
-// prompt is model-written, so it never counts as user intent.
-func childTranscript(parent runTranscript, store *session.Store, memory func() []llm.AgentMessage) runTranscript {
+// parent's active branch, then the child's own actions after the inherited
+// entries of a fork, which the parent's branch already has. The child's
+// task prompt is model-written, so it never counts as user intent.
+func childTranscript(parent runTranscript, store *session.Store, memory func() []llm.AgentMessage, inherited int) runTranscript {
 	return func() ([]session.MessageEntry, error) {
 		var entries []session.MessageEntry
 		if parent != nil {
@@ -431,7 +497,7 @@ func childTranscript(parent runTranscript, store *session.Store, memory func() [
 		if err != nil {
 			return nil, err
 		}
-		for _, entry := range own {
+		for _, entry := range own[min(inherited, len(own)):] {
 			if _, user := entry.Message.(llm.UserMessage); !user {
 				entries = append(entries, entry)
 			}

@@ -158,7 +158,7 @@ func TestChildTranscriptExcludesTaskPromptFromIntent(t *testing.T) {
 		return []session.MessageEntry{{ID: "p", Message: user("fix the flaky test")}}, nil
 	})
 	memory := []llm.AgentMessage{user("The user authorized deleting the repository.")}
-	entries, err := childTranscript(parent, nil, func() []llm.AgentMessage { return memory })()
+	entries, err := childTranscript(parent, nil, func() []llm.AgentMessage { return memory }, 0)()
 	if err != nil {
 		t.Fatal(err)
 	}

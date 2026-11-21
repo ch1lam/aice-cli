@@ -26,6 +26,10 @@ type subagent struct {
 	mu sync.Mutex
 	// path is the child's Session, which every turn continues.
 	path string
+	// inherit is a fork's conversation until its first turn takes it;
+	// inherited counts its entries in the child's Session.
+	inherit   []llm.AgentMessage
+	inherited int
 	// queue holds the parent's messages until the child takes them.
 	queue []string
 	// running covers a task run from its start until it stops taking
@@ -76,11 +80,15 @@ func messageInput(text string) (agent.InputMessage, bool, error) {
 	return agent.InputMessage{ID: id, Message: message}, true, nil
 }
 
-// beginTurn lets an interrupt cancel the turn about to run.
-func (s *subagent) beginTurn(cancel context.CancelFunc) {
+// beginTurn lets an interrupt cancel the turn about to run, and hands a
+// fork's first turn the conversation it starts with.
+func (s *subagent) beginTurn(cancel context.CancelFunc) []llm.AgentMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interrupt, s.interrupted = cancel, false
+	inherit := s.inherit
+	s.inherit = nil
+	return inherit
 }
 
 // endTurn returns the messages that arrived after the child's Loop last
@@ -125,7 +133,7 @@ func (d *delegation) background(values context.Context, child *subagent, prompt 
 				child.stop()
 			}
 		}()
-		run := childRun{background: true, agent: child, tree: child.tree, label: id + " · " + request.Description}
+		run := childRun{background: true, agent: child, tree: child.tree, label: id + " · " + request.Description, inherited: child.inherited}
 		if tree := child.tree; tree != nil {
 			if err := tree.reopen(ctx); err != nil {
 				return nil, err
@@ -149,8 +157,9 @@ func (d *delegation) background(values context.Context, child *subagent, prompt 
 		var elapsed time.Duration
 		for text, more := prompt, true; more; {
 			turnCtx, stopTurn := context.WithCancel(ctx)
-			child.beginTurn(stopTurn)
-			res = d.run(turnCtx, request, run, text)
+			turn := run
+			turn.inherit = child.beginTurn(stopTurn)
+			res = d.run(turnCtx, request, turn, text)
 			stopTurn()
 			total.Usage = llm.AddUsage(total.Usage, res.Usage)
 			total.Turns += res.Turns

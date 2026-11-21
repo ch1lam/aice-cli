@@ -344,6 +344,7 @@ func (a *application) Print(
 		sessionDir = filepath.Join(environment.workspace.Path(), ".aice", "sessions")
 	}
 	ctx = withDelegation(ctx, &delegation{
+		parent: configured,
 		models: sync.OnceValues(func() (configuredModel, error) {
 			child, err := resolveSubagentModel(a.dependencies.providers, configured)
 			if err == nil {

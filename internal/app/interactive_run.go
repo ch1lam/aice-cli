@@ -200,6 +200,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	}
 	defer scope.close()
 	ctx = withDelegation(ctx, &delegation{
+		parent: configured,
 		models: sync.OnceValues(func() (configuredModel, error) {
 			return resolveSubagentModel(r.session.providers, configured)
 		}),

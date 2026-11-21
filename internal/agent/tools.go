@@ -52,11 +52,32 @@ func (e *runExecution) failTruncatedToolCalls(
 	return nil
 }
 
+type requestHistoryKey struct{}
+
+var errNoRequestHistory = errors.New("agent: no model request in this context")
+
+// RequestHistory returns a copy of the history the model request that made
+// the current tool calls was built from: the context before its assistant
+// message, after any compaction. It fails outside a tool call.
+func RequestHistory(ctx context.Context) ([]llm.AgentMessage, error) {
+	history, ok := ctx.Value(requestHistoryKey{}).([]llm.AgentMessage)
+	if !ok {
+		return nil, errNoRequestHistory
+	}
+	return llm.CloneAgentMessages(history)
+}
+
 func (e *runExecution) executeTools(
 	ctx context.Context,
 	turnNumber int,
 	calls []llm.ToolCall,
 ) error {
+	// The calls' assistant message ends the history; the capped slice keeps
+	// later appends from reaching what a tool reads. Only tools see it.
+	toolCtx := ctx
+	if n := len(e.history) - 1; n >= 0 {
+		toolCtx = context.WithValue(ctx, requestHistoryKey{}, e.history[:n:n])
+	}
 	for index := range calls {
 		call := calls[index]
 		if ctxErr := e.checkBudget(ctx); ctxErr != nil {
@@ -79,7 +100,7 @@ func (e *runExecution) executeTools(
 		}
 
 		e.proposal = nil
-		message, toolErr := e.executeTool(ctx, call)
+		message, toolErr := e.executeTool(toolCtx, call)
 		message, err := e.acceptToolResult(ctx, message, true)
 		if err != nil {
 			return err
