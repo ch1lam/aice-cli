@@ -48,6 +48,7 @@ and routes; README files may summarize product behavior and link to details.
 | Providers, models, reasoning, credentials, flags, Skills, TUI input | [Configuration](docs/configuration.md) |
 | Project Trust, prompt precedence, protected resources, `/init` | [Project Trust](docs/project-trust.md) |
 | Tool permissions, Sessions, `/new`, branches, recovery, compaction | [Execution and Sessions](docs/execution-sessions.md) |
+| Subagents (`agent`, forks, `send_message`, worktrees), background tasks and notifications | [Execution and Sessions](docs/execution-sessions.md#background-tasks); loop and concurrency contracts in [Runtime contracts](docs/contracts.md) |
 | Search provider adapters (`internal/web/exa`), fetch hardening | [Web search and fetch](docs/web.md) and [Architecture](docs/architecture.md#package-map) |
 | Package ownership, dependencies, extension boundaries | [Architecture](docs/architecture.md) |
 | Messages, Agent Loop, events, concurrency, TUI boundaries | [Runtime contracts](docs/contracts.md) |

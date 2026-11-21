@@ -459,7 +459,9 @@ events are represented by `tool_execution_end` and are not duplicated. Tool
 result text is limited to 16 KiB per event, including the trailing
 `...[truncated]` marker. Durations and delays are integer milliseconds. The
 `agent_end.usage` value includes every assistant `message_end` observed in the
-run plus automatic summary attempts that report usage. Summary calls do not
+run, automatic summary attempts that report usage, and the usage of subagents
+reported in the run by tool results or notifications. Notifications produce no
+event of their own. Summary calls do not
 produce main-assistant events. Failed summaries and failed checkpoint writes
 still contribute known usage to the current print total; prior Session usage
 is not added again. The text printer reports the same accounting in its total

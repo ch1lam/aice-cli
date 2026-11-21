@@ -167,16 +167,19 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer r.session.releaseMainRun()
+	// A notification run reports its tasks only once it can record the
+	// notice; failing before, it leaves them to a later run.
+	var noticeTasks []string
 	if r.notification {
 		// An earlier run may have taken the notification already.
 		if r.session.tasks == nil {
 			return nil
 		}
-		notice, _, ok := r.session.tasks.TakeNotice()
+		notice, _, tasks, ok := r.session.tasks.PeekNotice()
 		if !ok {
 			return nil
 		}
-		r.prompt = notice
+		r.prompt, noticeTasks = notice, tasks
 	}
 	snapshot, err := r.session.beginMainRun(r.prompt)
 	if err != nil {
@@ -199,6 +202,9 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		return err
 	}
 	defer scope.close()
+	if noticeTasks != nil {
+		r.session.tasks.DeliverNotice(noticeTasks)
+	}
 	ctx = withDelegation(ctx, &delegation{
 		parent: configured,
 		models: sync.OnceValues(func() (configuredModel, error) {
@@ -217,6 +223,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		guard:        r.session.guardAdapter,
 		systemPrompt: snapshot.systemPrompt,
 		mcp:          scope.mcp,
+		store:        r.session.conversation.store,
 		sessionDir:   r.session.sessionDirectory(),
 		worktrees:    r.session.application.worktreeRoot(),
 	})

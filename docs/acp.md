@@ -39,7 +39,7 @@ configuration and its Guard permissions ([MCP](mcp.md)).
 | `agent_message_chunk` / `agent_thought_chunk` | Streamed assistant text and thinking deltas |
 | `tool_call` | Tool start: `kind` and `locations` from the Guard's action extraction, `rawInput` the call's actual arguments; a bash call's title keeps the command and its `description` is text content until the tool end replaces it |
 | `tool_call_update` | Tool end: `completed` or `failed`, `kind` and `locations` from the actions recorded on the result, output text, unified diff text for edits |
-| `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost |
+| `usage_update` | After each assistant message: context occupancy and the Session's cumulative cost, as of the prompt's start plus this turn's main-agent responses; subagent costs reported in the turn join at the next prompt |
 | `session_info_update` | `title` of the current Session once its generated title is saved, after the first completed prompt of an untitled Session ([Sessions](execution-sessions.md#sessions)); sent asynchronously, possibly after the prompt response |
 | `session/request_permission` | A Guard ask, with the Guard's options; `allow-once` maps to `allow_once`, session and saved grants to `allow_always`, the deny option to `reject_once`; a bash ask repeats the tool start's title and `description` content; a subagent's ask title starts with `[subagent …]` naming it (task ID and description for a background one) |
 | `session/set_mode` | Permission mode `default` or `auto` for the next tool call, not saved |

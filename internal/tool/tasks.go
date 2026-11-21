@@ -146,7 +146,7 @@ func (t *Tasks) reserveLocked(kind, command, description string) (*task, *os.Fil
 		return nil, nil, fmt.Errorf("at most %d background tasks may run at once; stop one with task_kill", maxRunningTasks)
 	}
 	if !t.evictLocked() {
-		return nil, nil, fmt.Errorf("at most %d background tasks are retained; read or stop running tasks first", maxRetainedTasks)
+		return nil, nil, fmt.Errorf("at most %d background tasks are retained; read finished ones with task_output or stop running ones first", maxRetainedTasks)
 	}
 	id, err := newTaskID()
 	if err != nil {
@@ -269,14 +269,18 @@ func (t *Tasks) Continue(id string, fn TaskRun) (TaskContinuation, error) {
 	if err := t.admitAgentLocked(previous.kind); err != nil {
 		return TaskContinuation{}, err
 	}
+	// The previous report is rendered before the new run truncates it, and
+	// reported only once the new run can start.
 	var continuation TaskContinuation
-	if status := previous.report(); status.FirstReport {
-		continuation.Unseen = &status
+	if status := previous.status(); !previous.reported {
 		continuation.UnseenReport = taskReport(status, agentNoticeBytes)
 	}
 	output, err := os.OpenFile(previous.path, os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return TaskContinuation{}, fmt.Errorf("reopen task output: %w", err)
+	}
+	if status := previous.report(); status.FirstReport {
+		continuation.Unseen = &status
 	}
 	current := &task{
 		id: id, kind: previous.kind, description: previous.description, path: previous.path, owner: previous.owner,
@@ -623,15 +627,15 @@ func (t *Tasks) runningKindLocked(kind string) int {
 	return running
 }
 
-// evictLocked frees one registry slot, dropping the oldest finished task. It
-// reports false when every retained task is still running.
+// evictLocked frees one registry slot, dropping the oldest reported task. It
+// reports false when every retained task still runs or waits to be reported.
 func (t *Tasks) evictLocked() bool {
 	if len(t.tasks) < maxRetainedTasks {
 		return true
 	}
 	for index, id := range t.order {
 		current := t.tasks[id]
-		if current.status().Running {
+		if current.status().Running || !current.reported {
 			continue
 		}
 		delete(t.tasks, id)

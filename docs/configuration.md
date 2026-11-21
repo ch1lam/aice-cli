@@ -106,9 +106,12 @@ The subagent settings apply to every subagent of a run, taken when its first
 clamped to the subagents' model like the main one, so an unset subagent
 thinking with a different model uses the main Thinking setting at that
 model's nearest supported level. A `provider/model` value whose prefix is not a
-provider ID is a model ID of the main provider. A model AICE cannot resolve,
-or another provider without a credential, fails the `agent` call with an error
-naming `subagent_model`; the run itself continues. The settings view lists
+provider ID is a model ID of the main provider, so a `custom` model ID that
+contains a slash needs the `custom/` prefix. A model AICE cannot resolve, or
+another provider without a credential, fails the `agent` call with an error
+naming `subagent_model`; the run itself continues. A
+[fork](execution-sessions.md#forked-subagents) runs on the main model and
+ignores both settings. Trusted project settings may set them, like Model. The settings view lists
 every provider's models for it and the levels the chosen model supports.
 
 The `web` object and the `web_services` credential namespace in `auth.json`

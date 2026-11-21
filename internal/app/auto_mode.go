@@ -123,7 +123,9 @@ type autoMode struct {
 	// headless runs have no person: escalations deny and the Loop's
 	// GuardDenials limit stops a blocked run.
 	headless bool
-	enabled  atomic.Bool
+	// enabled is shared with the modes of worktree subagents, so a mode
+	// switch reaches them at their next call too.
+	enabled *atomic.Bool
 }
 
 func newAutoMode(classifier classifierFunc, workspace string, settings config.AutoModeSettings, headless, enabled bool) *autoMode {
@@ -132,19 +134,19 @@ func newAutoMode(classifier classifierFunc, workspace string, settings config.Au
 		workspace: workspace,
 		slots:     classify.Slots{Environment: settings.Environment, Block: settings.Block, Allow: settings.Allow},
 		headless:  headless,
+		enabled:   new(atomic.Bool),
 	}
 	a.enabled.Store(enabled)
 	return a
 }
 
-// in returns this mode for a subagent working in another workspace.
+// in returns this mode for a subagent working in another workspace; it
+// follows this mode's switches.
 func (a *autoMode) in(workspace string) *autoMode {
 	if a == nil {
 		return nil
 	}
-	return newAutoMode(a.classify, workspace, config.AutoModeSettings{
-		Environment: a.slots.Environment, Block: a.slots.Block, Allow: a.slots.Allow,
-	}, a.headless, a.enabled.Load())
+	return &autoMode{classify: a.classify, workspace: workspace, slots: a.slots, headless: a.headless, enabled: a.enabled}
 }
 
 // decide routes a default-mode result: denials and human-only approvals

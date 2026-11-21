@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -216,5 +217,77 @@ func TestTaskOutputListsTasks(t *testing.T) {
 	if text := result.Content[0].Text; !strings.Contains(text, "Subagent "+status.ID+" finished: probe") || !strings.Contains(text, "send_message") ||
 		result.Details != nil || !tasks.HasCompletions() {
 		t.Fatalf("list = %q / %#v", text, result.Details)
+	}
+}
+
+// finishRun starts a run task that ends at once and waits for its end.
+func finishRun(t *testing.T, tasks *tool.Tasks, kind, text string) tool.TaskStatus {
+	t.Helper()
+	status, err := tasks.StartRun(kind, text, nil, func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+		fmt.Fprintln(out, text)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := tasks.Done(status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	return status
+}
+
+// Retention drops only reported tasks: a finished one nobody reported keeps
+// its report until a notice delivers it.
+func TestRunTasksRetainUnreportedCompletions(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	for index := range 16 {
+		finishRun(t, tasks, "run", fmt.Sprintf("report %d", index))
+	}
+	if _, err := tasks.StartRun("run", "more", nil, func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) { return nil, nil }); err == nil ||
+		!strings.Contains(err.Error(), "retained") {
+		t.Fatalf("starting past retention with unreported tasks: %v", err)
+	}
+	notice, _, ok := tasks.TakeNotice()
+	if !ok || !strings.Contains(notice.Content[0].Text, "report 0") || !strings.Contains(notice.Content[0].Text, "report 15") {
+		t.Fatalf("notice = %#v", notice)
+	}
+	finishRun(t, tasks, "run", "after the notice")
+}
+
+// A continuation that cannot reopen the output leaves the previous report
+// to be delivered.
+func TestRunTaskFailedContinuationKeepsReport(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	status := finishRun(t, tasks, tool.TaskAgent, "first report")
+	if err := os.Remove(status.OutputPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tasks.Continue(status.ID, func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) { return nil, nil }); err == nil {
+		t.Fatal("continued without its output file")
+	}
+	if !tasks.HasCompletions() {
+		t.Fatal("the failed continuation reported the previous run")
+	}
+}
+
+// PeekNotice renders a notice without reporting it; DeliverNotice reports
+// exactly its tasks.
+func TestPeekNoticeReportsOnDelivery(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	first := finishRun(t, tasks, "run", "first report")
+	peeked, id, ids, ok := tasks.PeekNotice()
+	if !ok || id != "notice-"+first.ID || len(ids) != 1 || !strings.Contains(peeked.Content[0].Text, "first report") || !tasks.HasCompletions() {
+		t.Fatalf("peek = %q, %v, %v", id, ids, ok)
+	}
+	second := finishRun(t, tasks, "run", "second report")
+	tasks.DeliverNotice(ids)
+	notice, id, ok := tasks.TakeNotice()
+	if !ok || id != "notice-"+second.ID || strings.Contains(notice.Content[0].Text, "first report") {
+		t.Fatalf("after delivery: %q, %q", id, notice.Content[0].Text)
 	}
 }

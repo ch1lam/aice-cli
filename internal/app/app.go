@@ -308,12 +308,20 @@ func (a *application) Print(
 		return fmt.Errorf("app: create prompt: %w", err)
 	}
 
+	// Without a Session the run's messages stay here. Background subagents
+	// read them, for auto mode and images, while the Loop appends.
+	var sourceMu sync.Mutex
 	sourceMessages := append([]llm.AgentMessage(nil), history...)
+	readSource := func() []llm.AgentMessage {
+		sourceMu.Lock()
+		defer sourceMu.Unlock()
+		return slices.Clip(sourceMessages)
+	}
 	lookup := func(ctx context.Context, id string) (llm.ImageContent, error) {
 		if store != nil {
 			return store.Image(ctx, id)
 		}
-		return imageFromMessages(sourceMessages, id)
+		return imageFromMessages(readSource(), id)
 	}
 	if err := bindImageReader(environment.workspace, tool.ReadOptions{
 		LookupImage:   lookup,
@@ -330,11 +338,13 @@ func (a *application) Print(
 		if store != nil {
 			return appendSessionMessage(recordCtx, store, message)
 		}
+		sourceMu.Lock()
 		sourceMessages = append(sourceMessages, message)
+		sourceMu.Unlock()
 		return nil
 	}
 
-	ctx, scope, err := bindRunScope(ctx, store, environment.mcp, environment.model, func() []llm.AgentMessage { return sourceMessages })
+	ctx, scope, err := bindRunScope(ctx, store, environment.mcp, environment.model, readSource)
 	if err != nil {
 		return err
 	}
@@ -365,6 +375,7 @@ func (a *application) Print(
 		guard:        environment.guardAdapter,
 		systemPrompt: environment.systemPrompt,
 		mcp:          scope.mcp,
+		store:        store,
 		sessionDir:   sessionDir,
 		worktrees:    a.worktreeRoot(),
 	})

@@ -102,21 +102,28 @@ func (g *guardAdapter) toolWorkspace() (*tool.Workspace, error) {
 }
 
 func (g *guardAdapter) Check(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
-	result, err := g.decide(ctx, call)
-	if err != nil || g == nil || g.inner == nil {
+	result, hints, err := g.evaluate(ctx, call)
+	if err != nil {
 		return result, err
 	}
-	return g.claims.apply(ctx, g.inner.Workspace(), result), nil
+	return g.settle(ctx, call, result, hints)
 }
 
-func (g *guardAdapter) decide(ctx context.Context, call llm.ToolCall) (agent.GuardResult, error) {
-	result, hints, err := g.evaluate(ctx, call)
-	if err != nil || !g.autoActive() {
-		return result, err
+// settle completes a default-mode result: auto mode decides what it may,
+// then file claims apply.
+func (g *guardAdapter) settle(ctx context.Context, call llm.ToolCall, result agent.GuardResult, hints routeHints) (agent.GuardResult, error) {
+	if g.autoActive() {
+		decided, err := g.auto.decide(ctx, call, result, hints)
+		decided.Actions = result.Actions
+		if err != nil {
+			return decided, err
+		}
+		result = decided
 	}
-	decided, err := g.auto.decide(ctx, call, result, hints)
-	decided.Actions = result.Actions
-	return decided, err
+	if g == nil || g.inner == nil {
+		return result, nil
+	}
+	return g.claims.apply(ctx, g.inner.Workspace(), result), nil
 }
 
 // checkInput checks a user attachment. The user chose the file, so auto mode
@@ -361,7 +368,10 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 	if toolName == "" {
 		toolName = call.Name
 	}
-	options := guardAskOptions(s.guard, toolName, result)
+	// A worktree subagent asks through its own gate, so its grants and paths
+	// stay in its worktree.
+	gate := askingGate(ctx, s.guard)
+	options := guardAskOptions(gate, toolName, result)
 	promptCtx, closePrompt := context.WithCancel(ctx)
 	defer closePrompt()
 	reply := make(chan interaction.GuardReply, 1)
@@ -417,11 +427,11 @@ func (s *interactiveSession) handleGuardAsk(ctx context.Context, call llm.ToolCa
 				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
 			}
 		case guardOptionAlwaysDir, guardOptionAlwaysCommand:
-			if err := s.saveGuardRule(ctx, got.OptionID, toolName, result); err != nil {
+			if err := s.saveGuardRule(ctx, gate, got.OptionID, toolName, result); err != nil {
 				return agent.GuardAskReply{Decision: agent.GuardDeny}, err
 			}
 		default:
-			s.applyGuardAskGrant(got.OptionID, toolName, result)
+			applyGuardAskGrant(gate, got.OptionID, toolName, result)
 		}
 		return agent.GuardAskReply{Decision: agent.GuardAllow}, nil
 	}
@@ -540,11 +550,9 @@ func guardAskOnceOrDeny() []interaction.GuardOption {
 	}
 }
 
-func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, result agent.GuardApproval) {
-	if s == nil || s.guard == nil {
-		return
-	}
-	g := s.guard
+// applyGuardAskGrant gives the session grant an option showed to g, the
+// gate that asked.
+func applyGuardAskGrant(g *guard.Guard, optionID, toolName string, result agent.GuardApproval) {
 	switch optionID {
 	case guardOptionAllowOnce:
 		return
@@ -561,10 +569,10 @@ func (s *interactiveSession) applyGuardAskGrant(optionID, toolName string, resul
 	}
 }
 
-// saveGuardRule persists the rule an "always" option showed, then applies
-// it to this process. A failed save allows nothing.
-func (s *interactiveSession) saveGuardRule(ctx context.Context, optionID, toolName string, result agent.GuardApproval) error {
-	g := s.guard
+// saveGuardRule persists the rule an "always" option of g, the gate that
+// asked, showed, then applies it to this process: to the main gate and to g.
+// A failed save allows nothing.
+func (s *interactiveSession) saveGuardRule(ctx context.Context, g *guard.Guard, optionID, toolName string, result agent.GuardApproval) error {
 	var rule string
 	var ok bool
 	if optionID == guardOptionAlwaysDir {
@@ -578,7 +586,12 @@ func (s *interactiveSession) saveGuardRule(ctx context.Context, optionID, toolNa
 	if err := config.SavePermissionRule(ctx, s.configuration.Paths, guard.RuleDecisionAllow, rule); err != nil {
 		return err
 	}
-	return g.AddRule(guard.RuleDecisionAllow, rule)
+	if g != s.guard {
+		if err := g.AddRule(guard.RuleDecisionAllow, rule); err != nil {
+			return err
+		}
+	}
+	return s.guard.AddRule(guard.RuleDecisionAllow, rule)
 }
 
 func resolveGuardAbs(g *guard.Guard, path, toolName string) string {

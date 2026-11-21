@@ -11,7 +11,10 @@ are in the [run limits table](configuration.md#run-limits).
 A run includes its steering and queued follow-up inputs. Automatic compaction
 is charged to the same run. A new user-triggered run starts a fresh budget,
 including when continuing an existing Session; historical usage is not charged
-again. These are run controls, not a persistent Session or Goal budget.
+again. These are run controls, not a persistent Session or Goal budget. A
+[subagent's](#subagents) usage counts toward the run whose message reports it,
+and the wait for background subagents that ends a `--print` run or an ACP turn
+is part of that run, so its timeout bounds the wait.
 
 Token accounting uses provider-reported total tokens, including cached tokens;
 when total is absent it sums normalized input, output, cache-read and cache-write
@@ -100,7 +103,11 @@ active ancestry (see [MCP readback](mcp.md#model-views-and-result-readback));
 Check allows it without path policy.
 `task_output` and `task_kill` are known tools that act only on
 [background tasks](#background-tasks) this process started for the current
-Session, whose bash command the gate already checked; Check allows them.
+Session: commands the gate already checked and subagents whose every call it
+checks; Check allows them. `agent` and `send_message` are known tools Check
+allows for the same reason: a [subagent](#subagents) only works through its
+own Guard. `request_user_input` is known and allowed, since it only asks the
+person.
 `tool_search`, `mcp_resource_list` and `mcp_server_info` are known discovery tools.
 Their application catalog uses only explicitly supplied service bindings and
 checks current eligibility. The lazy connection owner requires a separate saved
@@ -559,8 +566,11 @@ it exits, `task_kill` stops it, it runs for 10 hours, its output exceeds
 64 MiB, the Session changes (`/new` or resume) or AICE exits. Cancelling the
 run or tool call that started it does not stop it. Stopping sends SIGTERM to
 the process group and SIGKILL after 2 seconds; Windows terminates the Job
-Object. At most 8 tasks run at once and 16 are retained; starting more fails
-instead of stopping an existing task.
+Object. At most 8 tasks run at once and 16 are retained. Starting another
+drops the oldest finished task that was already reported, with its output
+file; when every retained task runs or waits to be reported, starting fails
+instead of stopping or dropping one. A Session change deletes the output files
+of the tasks it stops.
 
 stdout and stderr go to one file in a private directory created per process
 (`aice-tasks-*` under the temporary directory, mode 0700) and removed on exit.
@@ -597,10 +607,10 @@ the Session tree labels them `notification`, and Session stats count them as
 `notices`, apart from `user_messages`.
 
 Tasks are not recorded in Session history: calls and results are, and a
-resumed Session refers to IDs that no longer exist. Background tasks need
-native Bash; with WSL `bash` does not offer `run_in_background` and the task
-tools are absent. If AICE is killed outright, Unix process groups of running
-tasks survive; Windows Job Objects end them.
+resumed Session refers to IDs that no longer exist. Background commands need
+native Bash; with WSL `bash` does not offer `run_in_background`, while the
+task tools stay for background subagents. If AICE is killed outright, Unix
+process groups of running tasks survive; Windows Job Objects end them.
 
 ### Subagents
 
@@ -666,8 +676,8 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
   notification carries the whole report and `task_output` shows its first
   4 KiB;
 - is not stopped by cancelling the run that started it; `/new`, resuming
-  another Session, `task_kill` and exit cancel it, and only `task_kill` keeps
-  it from [continuing](#messaging-subagents);
+  another Session, `task_kill` and exit cancel it, and after any of them it
+  cannot [continue](#messaging-subagents);
 - asks the person like the main agent, also between runs: the TUI and ACP
   prompts name the child by task ID and description, and `--print` refuses
   them; rules, Session grants and auto mode decide first as usual;
@@ -696,9 +706,12 @@ explore child never needs one.
   back to the shared workspace and says why.
 - The child's file tools, `bash` and Guard are rooted at its checkout. The
   Guard keeps the parent's rules (relative rules name the checkout's files),
-  read-only roots, credential and control-file protection and permission
-  mode, but no Session grants, MCP services or file claims; the child has no
-  MCP tools. It may read the main workspace, since its task may name paths
+  read-only roots, credential and control-file protection, which also covers
+  the checkout's own copies of the workspace's control files since a change
+  there can be applied back, and permission mode, following later switches.
+  It starts with no Session grants, MCP services or file claims; the child has
+  no MCP tools. A Session grant chosen for one of its asks stays with the
+  child and names its checkout's paths; a saved rule applies to both. It may read the main workspace, since its task may name paths
   there, but a write there, a `bash` command that reaches into it (such as
   `cd` or `git -C`), and a command setting `GIT_DIR` or a similar variable are
   denied. Like file claims, this reads only paths the Guard can name.
@@ -712,8 +725,9 @@ explore child never needs one.
   changed nothing leaves no branch; other branches stay until deleted. A
   [continued](#messaging-subagents) child commits to the same branch.
 - AICE's own git calls run no repository hooks. Starting a worktree first
-  prunes stale worktree records; a checkout left by a crash stays on disk
-  with its branch until removed with `git worktree remove`.
+  prunes stale worktree records. A checkout AICE could not commit or remove
+  stays on disk, and the result says where; one left by a crash stays with its
+  branch. Remove either with `git worktree remove`.
 
 A background `general` child that shares the workspace is a writer of its
 own; the main agent, including the synchronous subagents it waits for, is
@@ -759,13 +773,16 @@ what it needs, since a fork carries the whole context into each step.
   the task. A tool the child lacks (`agent`, `send_message`,
   `request_user_input`, the task tools, `write` and `edit` for explore) keeps
   its definition and fails when called; `bash` refuses `run_in_background`.
-  A background fork has no MCP tools, so a parent with MCP tools loaded shares
-  less of its cache.
+  A fork without MCP, in the background or a worktree, keeps the parent's MCP
+  summary in its system prompt and its first message says the MCP tools are
+  unavailable; when the parent had MCP tools loaded, the tool list differs and
+  the cache is not shared.
 - Type, background, isolation, asks, limits and messaging work as for any
   subagent. Its Session starts with the inherited conversation (a compaction
-  summary becomes the user message requests show for it), so a continued
-  fork keeps it; auto mode reads the inherited part once, from the parent's
-  branch.
+  summary becomes the user message requests show for it) and the parent's
+  recorded request configurations it names, so a continued fork keeps it and
+  each inherited request can be rebuilt; auto mode reads the inherited part
+  once, from the parent's branch.
 
 #### Messaging subagents
 
@@ -780,15 +797,19 @@ The Guard allows it without an ask, since it checks every call the child makes.
   child's current step first; the repaired Session keeps what it completed.
 - A finished child continues as the same task: same ID, type, Guard label,
   file claims name, artifact directory and worktree branch (checked out
-  again, or started again from the base when it changed nothing), with its
-  whole Session and the message as its next prompt. Its output file is
+  again, or started again from the base when it changed nothing or its branch
+  was deleted, which the child is told), with its whole Session and the
+  message as its next prompt. It keeps the model, system prompt and tools of
+  the run that started it, so a later `/model` or settings change does not
+  reach it. Its output file is
   rewritten with the new report, which arrives as a new notification. A
   previous report no result had delivered comes with the `send_message`
   result, with its usage.
 - A continued child counts toward the running limits like a new one. A child
-  stopped with `task_kill`, or evicted from the 16 retained tasks, cannot
-  continue; nor can any child after `/new`, a Session resume or exit, since
-  tasks do not survive them. Synchronous children are not addressable.
+  stopped with `task_kill`, or dropped from the 16 retained tasks, cannot
+  continue; nor can one that failed before its Session existed, or any child
+  after `/new`, a Session resume or exit, since tasks do not survive them.
+  Synchronous children are not addressable.
 
 ### Directory listings
 

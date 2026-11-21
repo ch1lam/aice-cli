@@ -36,7 +36,9 @@ func newBuiltInTools(ctx context.Context, workspace *tool.Workspace, tasks *tool
 	add("edit", edit, err)
 	bash, err := tool.NewBash(ctx, workspace, hostBashShells(), tasks)
 	add("bash", bash, err)
-	if err == nil && bash.SupportsBackground() {
+	// Background subagents need the task tools even where bash cannot run
+	// commands in the background.
+	if tasks != nil {
 		output, err := tool.NewTaskOutput(tasks)
 		add("task_output", output, err)
 		kill, err := tool.NewTaskKill(tasks)
@@ -87,7 +89,13 @@ func awaitSubagents(tasks *tool.Tasks) func(context.Context) (agent.InputMessage
 				return input, ok, err
 			}
 			if tasks.RunningKind(tool.TaskAgent) == 0 {
-				return agent.InputMessage{}, false, nil
+				// The last subagent may have finished after take looked.
+				select {
+				case <-changed:
+					continue
+				default:
+					return agent.InputMessage{}, false, nil
+				}
 			}
 			select {
 			case <-changed:

@@ -100,7 +100,9 @@ func New(workspace string, cfg Config) (*Guard, error) {
 // Rebase returns a Guard with this one's policy over another workspace, such
 // as a subagent's git worktree. Rules are parsed again so relative ones name
 // its files; readOnlyRoots are added to this Guard's. Session grants and
-// bound MCP services stay here; the web search binding carries over.
+// bound MCP services stay here; the web search binding carries over. The
+// workspace's control files are protected in both workspaces, since a change
+// to a copy can be applied back.
 func (g *Guard) Rebase(workspace string, readOnlyRoots ...string) (*Guard, error) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -125,7 +127,7 @@ func (g *Guard) Rebase(workspace string, readOnlyRoots ...string) (*Guard, error
 		readOnlyRoots:       append(slices.Clone(g.readOnlyRoots), resolveReadOnlyRoots(readOnlyRoots, workspace)...),
 		credentialFiles:     g.credentialFiles,
 		credentialDirs:      g.credentialDirs,
-		controlFiles:        g.controlFiles,
+		controlFiles:        rebasedControlFiles(g.controlFiles, workspace, g.workspace, g.physicalWorkspace),
 		sessionAllowedTools: map[string]bool{},
 		sessionCommands:     map[string]bool{},
 		searchTarget:        g.searchTarget,
@@ -579,4 +581,19 @@ func cleanPaths(paths []string) []string {
 		}
 	}
 	return out
+}
+
+// rebasedControlFiles adds to files their counterparts in workspace for
+// those under from, spelled either way.
+func rebasedControlFiles(files []string, workspace string, from ...string) []string {
+	rebased := slices.Clone(files)
+	for _, file := range files {
+		for _, root := range from {
+			if rel, err := filepath.Rel(root, file); err == nil && filepath.IsLocal(rel) {
+				rebased = append(rebased, filepath.Join(workspace, rel))
+				break
+			}
+		}
+	}
+	return rebased
 }
