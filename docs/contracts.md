@@ -513,7 +513,9 @@ The runtime boundary preserves these ownership rules:
 - A synchronous subagent's child Loop runs inside the parent's `agent` tool
   call, on its goroutine and context, so the parent Loop is blocked and
   cancellation reaches the child. The main run binds its frozen settings for
-  children in the context; the child owns its Session store, result reader and
+  children in the context, with the children's model resolved once from
+  `subagent_model`/`subagent_thinking` on first use (an error fails that
+  `agent` call); a child on another provider gets that provider's service; the child owns its Session store, result reader and
   run counters and shares the parent's Guard, ask handler and MCP run binding.
   A background child is a `tool.Tasks` run task: it keeps the call's context
   values but not its cancellation, has no MCP run binding, and may outlive the

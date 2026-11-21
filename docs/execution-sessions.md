@@ -623,8 +623,10 @@ end its turn when only waiting remains; and to verify reports before relying
 on them. The child's prompt section asks for the outcome first, then the
 evidence, then what it could not verify, without narrating its steps.
 
-- The child shares the parent run's model settings, system prompt (with a
-  subagent section), Guard, permission mode, Session grants and MCP binding.
+- The child runs on the [subagent model and thinking](configuration.md#settings-and-precedence)
+  settings, by default the parent run's own, and shares the parent's system
+  prompt (with a subagent section), Guard, permission mode, Session grants
+  and MCP binding.
   Its asks reach the same frontend, which names the child in the prompt;
   `--print` refuses them as usual. It lacks
   `agent` (depth is 1), `send_message`, `request_user_input`, `task_output` and `task_kill`,
