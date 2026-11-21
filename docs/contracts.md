@@ -245,6 +245,10 @@ retain the short content summary; Session keeps the additive metadata.
   its operation slot, before sending. It is a bounded local check, does not
   reenter the transport or hold a Guard lock across I/O, and cannot authorize or
   replay work. It catches permission changes while waiting after initial approval.
+  `agent.RequestHistory(ctx)` likewise gives an executing tool a copy of the
+  history its calls' request was built from (after any compaction, before
+  their assistant message); a fork starts from it. Message recording keeps
+  the caller's context.
   A Guard result may also carry `Review`, the provenance of an automatic
   decision; the Loop copies it into the tool result's `ToolResultDetails.Review`
   without reading it. Every Guard result also carries `Actions`, the call's
@@ -515,7 +519,12 @@ The runtime boundary preserves these ownership rules:
   cancellation reaches the child. The main run binds its frozen settings for
   children in the context, with the children's model resolved once from
   `subagent_model`/`subagent_thinking` on first use (an error fails that
-  `agent` call); a child on another provider gets that provider's service; the child owns its Session store, result reader and
+  `agent` call); a child on another provider gets that provider's service.
+  A fork instead runs on the main run's model with its request history, the
+  parent's system prompt, the parent's routing identity (`llm.SessionID`,
+  which a provider may route its cache by) and the parent's tool definitions in order (a tool it
+  may not use keeps its definition and fails when called), so its first
+  request extends the parent's last one; the child owns its Session store, result reader and
   run counters and shares the parent's Guard, ask handler and MCP run binding.
   A background child is a `tool.Tasks` run task: it keeps the call's context
   values but not its cancellation, has no MCP run binding, and may outlive the

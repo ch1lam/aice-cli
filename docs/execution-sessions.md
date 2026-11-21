@@ -605,7 +605,8 @@ tasks survive; Windows Job Objects end them.
 ### Subagents
 
 The `agent` tool delegates a self-contained task to a subagent: a child Agent
-Loop that starts from the task prompt alone, works with the parent's tools
+Loop that starts from the task prompt alone (or, [forked](#forked-subagents),
+from the parent's conversation), works with the parent's tools
 until done, and returns only its final message as the report. Its steps never
 enter the parent's context. By default the child runs in the
 [background](#background-tasks) and its report arrives as a notification;
@@ -624,7 +625,7 @@ on them. The child's prompt section asks for the outcome first, then the
 evidence, then what it could not verify, without narrating its steps.
 
 - The child runs on the [subagent model and thinking](configuration.md#settings-and-precedence)
-  settings, by default the parent run's own, and shares the parent's system
+  settings, by default the parent run's own (a fork always on the parent's), and shares the parent's system
   prompt (with a subagent section), Guard, permission mode, Session grants
   and MCP binding.
   Its asks reach the same frontend, which names the child in the prompt;
@@ -737,6 +738,34 @@ after the task ends.
 
 Subagents are one level deep: a child has no `agent` tool, and its context
 carries no delegation, so it cannot start another subagent either way.
+
+#### Forked subagents
+
+`fork: true` starts a subagent with a copy of the parent's conversation
+instead of a fresh context: the history of the model request that made the
+`agent` call, after any compaction, without that request's own response.
+The tool's guideline offers it for a task that depends on what the
+conversation established, and a fresh subagent when a short prompt can say
+what it needs, since a fork carries the whole context into each step.
+
+- Its first request is the parent's last one plus one message, so a provider
+  can serve the inherited part from the parent's prompt cache. It runs on the
+  main run's model and thinking, not the
+  [subagent model](configuration.md#settings-and-precedence), and keeps the
+  parent's system prompt, tool definitions in the parent's order, and
+  provider routing identity (OpenCode Go routes its cache by it).
+- The subagent section, and the worktree, shared-writer and artifact
+  sections, open that first message instead of the system prompt, followed by
+  the task. A tool the child lacks (`agent`, `send_message`,
+  `request_user_input`, the task tools, `write` and `edit` for explore) keeps
+  its definition and fails when called; `bash` refuses `run_in_background`.
+  A background fork has no MCP tools, so a parent with MCP tools loaded shares
+  less of its cache.
+- Type, background, isolation, asks, limits and messaging work as for any
+  subagent. Its Session starts with the inherited conversation (a compaction
+  summary becomes the user message requests show for it), so a continued
+  fork keeps it; auto mode reads the inherited part once, from the parent's
+  branch.
 
 #### Messaging subagents
 
