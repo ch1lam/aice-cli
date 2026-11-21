@@ -43,6 +43,8 @@ type worktree struct {
 	workspace string
 	base      string // the commit it started from
 	branch    string
+	// changed records that finish left changes on the branch.
+	changed bool
 }
 
 // worktreeRoot holds worktree subagents' checkouts, outside every
@@ -103,23 +105,32 @@ func newWorktree(ctx context.Context, workspace, root string) (*worktree, error)
 }
 
 // reopen checks a continued child's branch out again; finish removed the
-// checkout, unless it kept one it could not settle. A branch finish deleted
-// because the child changed nothing starts again from the base.
-func (w *worktree) reopen(ctx context.Context) error {
+// checkout, unless it kept one it could not settle. A missing branch starts
+// again from the base: finish deleted it because the child changed nothing,
+// or someone deleted it, perhaps after applying it, which note tells the
+// child.
+func (w *worktree) reopen(ctx context.Context) (note string, err error) {
 	if _, err := os.Stat(w.dir); err == nil {
-		return nil
+		return "", nil
 	}
 	worktreeMu.Lock()
 	defer worktreeMu.Unlock()
 	if _, err := runGit(ctx, w.repo, "worktree", "prune"); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := runGit(ctx, w.repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.branch); err == nil {
 		_, err := runGit(ctx, w.repo, "worktree", "add", "--quiet", w.dir, w.branch)
-		return err
+		return "", err
 	}
-	_, err := runGit(ctx, w.repo, "worktree", "add", "--quiet", "-b", w.branch, w.dir, w.base)
-	return err
+	if _, err := runGit(ctx, w.repo, "worktree", "add", "--quiet", "-b", w.branch, w.dir, w.base); err != nil {
+		return "", err
+	}
+	if w.changed {
+		w.changed = false
+		note = fmt.Sprintf("[AICE: your branch %s was deleted, perhaps after the agent that started you applied it, so your worktree starts again from commit %s without your earlier changes.]\n\n",
+			w.branch, w.base[:12])
+	}
+	return note, nil
 }
 
 // dirtyWorkspace reports whether workspace has uncommitted changes a worktree child
@@ -146,7 +157,8 @@ func (w *worktree) finish(ctx context.Context, description string) string {
 	if _, err := runGit(ctx, w.repo, "worktree", "remove", "--force", w.dir); err != nil {
 		return fmt.Sprintf("The subagent's changes are on branch %s, but its worktree %s could not be removed: %v", w.branch, w.dir, err)
 	}
-	if tip == w.base {
+	w.changed = tip != w.base
+	if !w.changed {
 		if _, err := runGit(ctx, w.repo, "branch", "--quiet", "-D", w.branch); err != nil {
 			return fmt.Sprintf("The subagent changed nothing; its empty branch %s could not be deleted: %v", w.branch, err)
 		}

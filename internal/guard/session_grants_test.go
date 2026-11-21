@@ -50,12 +50,13 @@ func TestResetSessionGrants(t *testing.T) {
 }
 
 // A rebased Guard applies the same policy to another workspace: relative
-// rules name its files, extra read-only roots are readable, and Session
-// grants stay with the original.
+// rules name its files, extra read-only roots are readable, the workspace's
+// control files are protected in it too, and Session grants stay with the
+// original.
 func TestRebaseKeepsPolicyButNotSessionGrants(t *testing.T) {
 	t.Parallel()
 	workspace, other, readRoot, outside := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
-	g, err := New(workspace, Config{Rules: Rules{Deny: []string{"write(secret/**)"}}})
+	g, err := New(workspace, Config{Rules: Rules{Deny: []string{"write(secret/**)"}}, ControlFiles: []string{filepath.Join(workspace, ".mcp.json")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +73,7 @@ func TestRebaseKeepsPolicyButNotSessionGrants(t *testing.T) {
 		want Decision
 	}{
 		{toolCall("write", map[string]any{"path": "notes.txt"}), DecisionAllow},
+		{toolCall("write", map[string]any{"path": ".mcp.json"}), DecisionAsk},
 		{toolCall("write", map[string]any{"path": filepath.Join(other, "secret", "k")}), DecisionDeny},
 		{toolCall("write", map[string]any{"path": filepath.Join(workspace, "secret", "k")}), DecisionAsk},
 		{toolCall("bash", map[string]any{"command": "make deploy"}), DecisionDeny},

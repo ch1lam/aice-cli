@@ -135,7 +135,8 @@ func TestWorktreeWithoutChangesLeavesNothing(t *testing.T) {
 
 // A continued child works on its branch again: reopening checks out what
 // it left, and the next finish adds to the same branch from the same base.
-// A child that changed nothing starts again from the base.
+// A child that changed nothing starts again from the base, and one whose
+// branch was deleted is told it does.
 func TestWorktreeReopensForAContinuedChild(t *testing.T) {
 	t.Parallel()
 	repo := gitRepo(t, map[string]string{"a.txt": "base\n"})
@@ -143,19 +144,19 @@ func TestWorktreeReopensForAContinuedChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tree.reopen(t.Context()); err != nil {
-		t.Fatalf("reopening an open worktree: %v", err)
+	if note, err := tree.reopen(t.Context()); err != nil || note != "" {
+		t.Fatalf("reopening an open worktree: %q, %v", note, err)
 	}
 	tree.finish(t.Context(), "look")
-	if err := tree.reopen(t.Context()); err != nil {
-		t.Fatalf("reopening after an empty turn: %v", err)
+	if note, err := tree.reopen(t.Context()); err != nil || note != "" {
+		t.Fatalf("reopening after an empty turn: %q, %v", note, err)
 	}
 	if err := os.WriteFile(filepath.Join(tree.dir, "b.txt"), []byte("one\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	tree.finish(t.Context(), "first")
-	if err := tree.reopen(t.Context()); err != nil {
-		t.Fatal(err)
+	if note, err := tree.reopen(t.Context()); err != nil || note != "" {
+		t.Fatalf("reopening its branch: %q, %v", note, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(tree.dir, "b.txt")); err != nil || string(data) != "one\n" {
 		t.Fatalf("reopened b.txt = %q, %v", data, err)
@@ -168,6 +169,15 @@ func TestWorktreeReopensForAContinuedChild(t *testing.T) {
 	}
 	if got := gitRun(t, repo, "diff", "--name-only", tree.base, tree.branch); got != "b.txt\nc.txt" {
 		t.Fatalf("branch changes = %q", got)
+	}
+	// The parent applied the branch and deleted it: the child is told.
+	gitRun(t, repo, "branch", "-D", tree.branch)
+	note, err := tree.reopen(t.Context())
+	if err != nil || !strings.Contains(note, "was deleted") {
+		t.Fatalf("reopening a deleted branch: %q, %v", note, err)
+	}
+	if _, err := os.Stat(filepath.Join(tree.dir, "b.txt")); !os.IsNotExist(err) {
+		t.Fatalf("b.txt after restarting from the base: %v", err)
 	}
 }
 

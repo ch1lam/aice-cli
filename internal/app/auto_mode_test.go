@@ -414,3 +414,16 @@ func TestAutoModePrefersRunScopedClassifier(t *testing.T) {
 		t.Fatalf("decision=%v run=%d startup=%d, want the run's classifier only", result.Decision, len(run.requests), len(startup.requests))
 	}
 }
+
+// A worktree subagent's auto mode follows the parent's mode switches.
+func TestAutoModeInFollowsSwitches(t *testing.T) {
+	t.Parallel()
+	parent := &guardAdapter{auto: newAutoMode(nil, t.TempDir(), config.AutoModeSettings{}, false, true)}
+	child := &guardAdapter{auto: parent.auto.in(t.TempDir())}
+	if err := parent.setPermissionMode(config.PermissionModeDefault); err != nil {
+		t.Fatal(err)
+	}
+	if child.autoActive() {
+		t.Fatal("the worktree child stayed in auto mode")
+	}
+}

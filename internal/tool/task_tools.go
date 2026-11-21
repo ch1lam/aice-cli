@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -165,6 +166,45 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 	if len(completions) == 0 {
 		return llm.UserMessage{}, "", false
 	}
+	message, id = renderNotice(completions)
+	return message, id, true
+}
+
+// PeekNotice renders the notification TakeNotice would return without
+// reporting its tasks, for a caller that may fail before delivering it.
+// DeliverNotice with the returned tasks then reports them; nothing else may
+// report tasks in between.
+func (t *Tasks) PeekNotice() (message llm.UserMessage, id string, tasks []string, ok bool) {
+	t.mu.Lock()
+	var completions []TaskStatus
+	for _, current := range t.finished {
+		if !current.reported {
+			completions = append(completions, current.status())
+			tasks = append(tasks, current.id)
+		}
+	}
+	t.mu.Unlock()
+	if len(completions) == 0 {
+		return llm.UserMessage{}, "", nil, false
+	}
+	message, id = renderNotice(completions)
+	return message, id, tasks, true
+}
+
+// DeliverNotice reports the tasks of a notification PeekNotice rendered.
+func (t *Tasks) DeliverNotice(tasks []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.finished = slices.DeleteFunc(t.finished, func(current *task) bool {
+		if slices.Contains(tasks, current.id) {
+			current.reported = true
+		}
+		return current.reported
+	})
+}
+
+// renderNotice is the notification of finished tasks and its input ID.
+func renderNotice(completions []TaskStatus) (llm.UserMessage, string) {
 	reports := []string{noticeHeader}
 	summaries := make([]string, 0, len(completions))
 	notice := &llm.Notice{}
@@ -185,7 +225,7 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 		Content:   []llm.ContentPart{llm.NewTextContent(strings.Join(reports, "\n\n")).Part()},
 		Timestamp: time.Now().UnixMilli(),
 		Notice:    notice,
-	}, "notice-" + completions[0].ID, true
+	}, "notice-" + completions[0].ID
 }
 
 // taskSummary names a task and its state in one line.

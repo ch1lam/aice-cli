@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 )
 
 // A fork starts with the parent's conversation, system prompt, tool
@@ -26,18 +28,62 @@ const exploreForkPrompt = `
 
 You change nothing: file writes, bash commands not known to be read-only and MCP tools are denied, so report what should change instead.`
 
+// forkNoMCPPrompt follows for a fork without MCP, whose system prompt still
+// describes the parent's MCP servers.
+const forkNoMCPPrompt = `
+
+MCP tools are unavailable to you here, though the system prompt describes them: report what you would need from them instead.`
+
 // forkTask introduces the task after the fork's sections.
 const forkTask = "\n\n# Task\n\n"
 
-// forkHistory is the conversation a fork starts with: the history of the
-// request that called the agent tool. A compaction summary becomes the user
-// message every request shows for it, which a Session can record.
-func forkHistory(ctx context.Context) ([]llm.AgentMessage, error) {
+// inheritance is what a fork starts with: the history of the request that
+// called the agent tool, and the recorded configurations its assistant
+// messages name, which the fork's Session records before them.
+type inheritance struct {
+	messages []llm.AgentMessage
+	configs  []session.RunConfig
+}
+
+// inherit takes a fork's inheritance from the calling request; store is the
+// parent's Session, if any. A compaction summary becomes the user message
+// every request shows for it, which a Session can record.
+func inherit(ctx context.Context, store *session.Store) (inheritance, error) {
 	history, err := agent.RequestHistory(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("a fork needs the conversation of a model request: %w", err)
+		return inheritance{}, fmt.Errorf("a fork needs the conversation of a model request: %w", err)
 	}
-	return projectSummaries(history)
+	if history, err = projectSummaries(history); err != nil {
+		return inheritance{}, err
+	}
+	var configs []session.RunConfig
+	for _, message := range history {
+		assistant, ok := message.(llm.AssistantMessage)
+		if !ok || assistant.RequestConfig == "" || slices.ContainsFunc(configs, func(record session.RunConfig) bool { return record.ID == assistant.RequestConfig }) {
+			continue
+		}
+		record, ok := store.RunConfig(assistant.RequestConfig)
+		if !ok {
+			return inheritance{}, fmt.Errorf("fork: the parent's Session lacks run config %q", assistant.RequestConfig)
+		}
+		configs = append(configs, record)
+	}
+	return inheritance{messages: history, configs: configs}, nil
+}
+
+// record writes the inheritance to a fork's new Session.
+func (i inheritance) record(ctx context.Context, store *session.Store) error {
+	for _, record := range i.configs {
+		if err := store.AppendRunConfig(ctx, record); err != nil {
+			return err
+		}
+	}
+	for _, message := range i.messages {
+		if err := appendSessionMessage(ctx, store, message); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // projectSummaries replaces compaction summaries with their projection.

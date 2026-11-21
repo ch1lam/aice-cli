@@ -10,7 +10,7 @@ import (
 )
 
 // TestNewBuiltInToolsDegradesGracefully verifies that when bash and ripgrep are
-// missing from PATH the app still builds the full 7-tool set and the affected
+// missing from PATH the app still builds the full tool set and the affected
 // tools become unavailable stubs instead of failing startup.
 func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	workspace, err := tool.NewWorkspace(t.TempDir())
@@ -25,7 +25,7 @@ func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	t.Setenv("ProgramFiles(x86)", "")
 	t.Setenv("LocalAppData", "")
 
-	// Background tasks exist, but without bash their tools are not offered.
+	// Without bash the task tools still observe and stop background subagents.
 	tasks, err := tool.NewTasks()
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestNewBuiltInToolsDegradesGracefully(t *testing.T) {
 	for index, current := range tools {
 		names[index] = current.Definition().Name
 	}
-	want := []string{"read", "write", "edit", "bash", "grep", "find", "ls"}
+	want := []string{"read", "write", "edit", "bash", "task_output", "task_kill", "grep", "find", "ls"}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("newBuiltInTools() names = %v, want %v", names, want)
 	}

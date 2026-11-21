@@ -22,13 +22,17 @@ import (
 type subagent struct {
 	request tool.DelegateRequest
 	tree    *worktree
+	// delegation is the settings of the run that started it, which its
+	// continuations keep, so its Session goes on with one model, system
+	// prompt and tool set.
+	delegation *delegation
 
 	mu sync.Mutex
 	// path is the child's Session, which every turn continues.
 	path string
 	// inherit is a fork's conversation until its first turn takes it;
 	// inherited counts its entries in the child's Session.
-	inherit   []llm.AgentMessage
+	inherit   inheritance
 	inherited int
 	// queue holds the parent's messages until the child takes them.
 	queue []string
@@ -82,12 +86,12 @@ func messageInput(text string) (agent.InputMessage, bool, error) {
 
 // beginTurn lets an interrupt cancel the turn about to run, and hands a
 // fork's first turn the conversation it starts with.
-func (s *subagent) beginTurn(cancel context.CancelFunc) []llm.AgentMessage {
+func (s *subagent) beginTurn(cancel context.CancelFunc) inheritance {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.interrupt, s.interrupted = cancel, false
 	inherit := s.inherit
-	s.inherit = nil
+	s.inherit = inheritance{}
 	return inherit
 }
 
@@ -135,9 +139,11 @@ func (d *delegation) background(values context.Context, child *subagent, prompt 
 		}()
 		run := childRun{background: true, agent: child, tree: child.tree, label: id + " · " + request.Description, inherited: child.inherited}
 		if tree := child.tree; tree != nil {
-			if err := tree.reopen(ctx); err != nil {
+			note, err := tree.reopen(ctx)
+			if err != nil {
 				return nil, err
 			}
+			prompt = note + prompt
 			// Settle the worktree however the run ends; its note follows the report.
 			defer func() { fmt.Fprintln(out, tree.finish(ctx, request.Description)) }()
 		}
@@ -197,13 +203,13 @@ func (messageRouter) Send(ctx context.Context, request tool.MessageRequest) (too
 	if d == nil || d.tasks == nil {
 		return tool.MessageResult{}, errNoDelegation
 	}
-	return d.send(ctx, request)
+	return send(ctx, d.tasks, request)
 }
 
 // send queues a message for a running child, interrupting its turn when
 // asked, or continues a finished child with it as a new task run.
-func (d *delegation) send(ctx context.Context, request tool.MessageRequest) (tool.MessageResult, error) {
-	owner, err := d.tasks.Owner(request.To)
+func send(ctx context.Context, tasks *tool.Tasks, request tool.MessageRequest) (tool.MessageResult, error) {
+	owner, err := tasks.Owner(request.To)
 	if err != nil {
 		return tool.MessageResult{}, err
 	}
@@ -223,13 +229,15 @@ func (d *delegation) send(ctx context.Context, request tool.MessageRequest) (too
 		child.mu.Unlock()
 		return tool.MessageResult{Text: text + " Its report arrives as a notification."}, nil
 	}
+	if child.path == "" {
+		child.mu.Unlock()
+		return tool.MessageResult{}, fmt.Errorf("subagent %s failed before it started, so it has no conversation to continue; start a new subagent", request.To)
+	}
 	child.running = true
 	child.mu.Unlock()
-	continuation, err := d.continueChild(ctx, child, request)
+	continuation, err := child.continueRun(ctx, tasks, request)
 	if err != nil {
-		child.mu.Lock()
-		child.queue, child.running = nil, false
-		child.mu.Unlock()
+		child.stop()
 		return tool.MessageResult{}, err
 	}
 	text := fmt.Sprintf("Subagent %s continues in the background with your message and its whole conversation; "+
@@ -244,10 +252,10 @@ func (d *delegation) send(ctx context.Context, request tool.MessageRequest) (too
 	return result, nil
 }
 
-// continueChild starts a finished child's next task run once its last run
-// has published its end.
-func (d *delegation) continueChild(ctx context.Context, child *subagent, request tool.MessageRequest) (tool.TaskContinuation, error) {
-	done, err := d.tasks.Done(request.To)
+// continueRun starts a finished child's next task run, on the settings it
+// started with, once its last run has published its end.
+func (s *subagent) continueRun(ctx context.Context, tasks *tool.Tasks, request tool.MessageRequest) (tool.TaskContinuation, error) {
+	done, err := tasks.Done(request.To)
 	if err != nil {
 		return tool.TaskContinuation{}, err
 	}
@@ -256,5 +264,5 @@ func (d *delegation) continueChild(ctx context.Context, child *subagent, request
 	case <-ctx.Done():
 		return tool.TaskContinuation{}, ctx.Err()
 	}
-	return d.tasks.Continue(request.To, d.background(context.WithoutCancel(ctx), child, request.Message))
+	return tasks.Continue(request.To, s.delegation.background(context.WithoutCancel(ctx), s, request.Message))
 }

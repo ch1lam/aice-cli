@@ -109,7 +109,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 				"prompt": {"type": "string", "description": "The complete task. Unless forked, the subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report. A fork knows the conversation, so say only what to do and report."},
 				"fork": {"type": "boolean", "description": "Start the subagent with a copy of this conversation instead of a fresh context (default: false)"},
 				"type": {"type": "string", "enum": ["general", "explore"]},
-				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: true); false waits for its report in this call and gives it your MCP tools"},
+				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: true); false waits for its report in this call and, unless it works in a worktree, gives it your MCP tools"},
 				"isolation": {"type": "string", "enum": ["none", "worktree"], "description": "Where a general subagent changes files: \"worktree\" (default in the background) or \"none\" to share your workspace (default when synchronous)"}
 			},
 			"required": ["description", "prompt"],

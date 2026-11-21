@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 // messagingModel drives a parent that starts one background explore child
@@ -80,6 +83,12 @@ func runPrintWith(t *testing.T, model agent.Model) string {
 
 func runPrintWithConfig(t *testing.T, cfg config.Config, model agent.Model) string {
 	t.Helper()
+	return runPrintIn(t, cfg, model, t.TempDir())
+}
+
+// runPrintIn runs --print in workspace, with extra flags before it.
+func runPrintIn(t *testing.T, cfg config.Config, model agent.Model, workspace string, extra ...string) string {
+	t.Helper()
 	command, err := newTestCommand(t, dependencies{
 		loadConfig: func(config.LoadOptions) (config.Config, error) {
 			return cfg, nil
@@ -92,7 +101,7 @@ func runPrintWithConfig(t *testing.T, cfg config.Config, model agent.Model) stri
 	}
 	output := new(bytes.Buffer)
 	command.SetOut(output)
-	command.SetArgs([]string{"--workspace", t.TempDir(), "--print", "investigate"})
+	command.SetArgs(append(append([]string{"--workspace", workspace}, extra...), "--print", "investigate"))
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := command.ExecuteContext(ctx); err != nil {
@@ -225,5 +234,28 @@ func TestSendMessageInterruptsRunningSubagent(t *testing.T) {
 	}
 	if texts := userTexts(model.children[len(model.children)-1]); len(texts) != 2 || texts[1] != "stop that; check the cache" {
 		t.Fatalf("interrupted child saw users %q", texts)
+	}
+}
+
+// A child that failed before its Session existed has nothing to continue.
+func TestSendMessageRefusesChildThatNeverStarted(t *testing.T) {
+	t.Parallel()
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	child := &subagent{}
+	status, err := tasks.StartRun(tool.TaskAgent, "probe", child, func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) {
+		return nil, errors.New("worktree unavailable")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, _ := tasks.Done(status.ID)
+	<-done
+	_, err = send(t.Context(), tasks, tool.MessageRequest{To: status.ID, Message: "retry"})
+	if err == nil || !strings.Contains(err.Error(), "failed before it started") || child.running {
+		t.Fatalf("send = %v, running %v", err, child.running)
 	}
 }

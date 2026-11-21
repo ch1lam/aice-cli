@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -77,8 +78,9 @@ type delegation struct {
 	guard        *guardAdapter
 	systemPrompt string
 	mcp          mcpRunBinding
-	// sessionDir holds child Sessions; empty keeps them in memory, as for a
-	// parent without a Session.
+	// store is the parent's Session, if any; sessionDir holds child
+	// Sessions, and empty keeps them in memory, as for a parent without one.
+	store      *session.Store
 	sessionDir string
 	// worktrees holds worktree children's checkouts; empty leaves every
 	// child in the parent's workspace.
@@ -90,10 +92,26 @@ type delegationKey struct{}
 // askerKey names the subagent whose Guard asks a context carries.
 type askerKey struct{}
 
+// asker is a subagent asking through the frontend: its label, and its own
+// gate when it has one, which the grants it is given belong to.
+type asker struct {
+	label string
+	gate  *guard.Guard
+}
+
 // askingAgent is the subagent label for a Guard ask, empty for the main agent.
 func askingAgent(ctx context.Context) string {
-	label, _ := ctx.Value(askerKey{}).(string)
-	return label
+	current, _ := ctx.Value(askerKey{}).(asker)
+	return current.label
+}
+
+// askingGate is the gate a Guard ask came from: a worktree child's own, or
+// fallback, the main agent's.
+func askingGate(ctx context.Context, fallback *guard.Guard) *guard.Guard {
+	if current, _ := ctx.Value(askerKey{}).(asker); current.gate != nil {
+		return current.gate
+	}
+	return fallback
 }
 
 func withDelegation(ctx context.Context, d *delegation) context.Context {
@@ -121,7 +139,7 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
-	res := d.run(ctx, request, childRun{tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit)}, request.Prompt)
+	res := d.run(ctx, request, childRun{tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit.messages)}, request.Prompt)
 	if tree != nil {
 		notes = append(notes, tree.finish(ctx, request.Description))
 	}
@@ -150,18 +168,18 @@ type childRun struct {
 	tree *worktree
 	// inherit is a fork's conversation, which its first turn starts with;
 	// the first inherited entries of its Session are that conversation.
-	inherit   []llm.AgentMessage
+	inherit   inheritance
 	inherited int
 }
 
 // prepare checks what a child needs before it starts: its model, or a
-// fork's conversation, which it returns.
-func (d *delegation) prepare(ctx context.Context, request tool.DelegateRequest) ([]llm.AgentMessage, error) {
+// fork's inheritance, which it returns.
+func (d *delegation) prepare(ctx context.Context, request tool.DelegateRequest) (inheritance, error) {
 	if request.Fork {
-		return forkHistory(ctx)
+		return inherit(ctx, d.store)
 	}
 	_, err := d.models()
-	return nil, err
+	return inheritance{}, err
 }
 
 // childModel is the model a child runs on.
@@ -216,7 +234,7 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 	if err != nil {
 		return tool.DelegateStart{}, err
 	}
-	child := &subagent{request: request, tree: tree, running: true, inherit: inherit, inherited: len(inherit)}
+	child := &subagent{request: request, tree: tree, delegation: d, running: true, inherit: inherit, inherited: len(inherit.messages)}
 	status, err := d.tasks.StartRun(tool.TaskAgent, request.Description, child, d.background(context.WithoutCancel(callCtx), child, request.Prompt))
 	if err != nil {
 		if tree != nil {
@@ -232,9 +250,9 @@ func (d *delegation) start(callCtx context.Context, request tool.DelegateRequest
 func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, child childRun, text string) (res tool.DelegateResult) {
 	start := time.Now()
 	defer func() { res.Duration = time.Since(start) }()
-	var guard agent.Guard = d.guard
+	var gate agent.Guard = d.guard
 	if request.ReadOnly {
-		guard = exploreGuard{inner: d.guard}
+		gate = exploreGuard{inner: d.guard}
 	}
 	// A background child may outlive the run whose MCP binding it would use,
 	// and a worktree child's Guard has no MCP services bound.
@@ -245,28 +263,31 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		ctx = context.WithValue(ctx, mcpRunContextKey{}, noMCPRun{})
 	}
 	tools := d.childTools(ctx, noMCP, request.ReadOnly)
+	current := asker{label: child.label}
 	if child.tree != nil {
 		var err error
-		if tools, guard, err = d.inWorktree(ctx, child, tools); err != nil {
+		var own *guardAdapter
+		if tools, gate, own, err = d.inWorktree(ctx, child, tools); err != nil {
 			res.Err = err
 			return res
 		}
+		current.gate = own.inner
 	}
 	if request.Fork {
 		tools = forkTools(d.tools, tools)
 	}
-	ctx = context.WithValue(ctx, askerKey{}, child.label)
+	ctx = context.WithValue(ctx, askerKey{}, current)
 	model, err := d.childModel(request)
 	if err != nil {
 		res.Err = err
 		return res
 	}
-	loop, err := d.newLoop(model, tools, guard)
+	loop, err := d.newLoop(model, tools, gate)
 	if err != nil {
 		res.Err = err
 		return res
 	}
-	store, history, err := d.childStore(ctx, child.agent)
+	store, history, err := d.childStore(ctx, child.agent, child.inherit)
 	if err != nil {
 		res.Err = err
 		return res
@@ -284,21 +305,8 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		}
 	}
 	var memory []llm.AgentMessage
-	// A fork's Session starts with the conversation it inherits.
-	if len(child.inherit) > 0 {
-		history = child.inherit
-		if store == nil {
-			memory = slices.Clone(child.inherit)
-		}
-		for _, message := range child.inherit {
-			if store == nil {
-				break
-			}
-			if err := appendSessionMessage(ctx, store, message); err != nil {
-				res.Err = err
-				return res
-			}
-		}
+	if store == nil {
+		memory = slices.Clone(history)
 	}
 	readMemory := func() []llm.AgentMessage { return memory }
 	parentTranscript, _ := ctx.Value(transcriptContextKey{}).(runTranscript)
@@ -320,8 +328,11 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 	sections := subagentPrompt
 	if request.Fork {
 		sections = forkPrompt
-		if request.ReadOnly {
+		switch {
+		case request.ReadOnly:
 			sections += exploreForkPrompt
+		case noMCP && d.mcp.summary != "":
+			sections += forkNoMCPPrompt
 		}
 	}
 	switch {
@@ -335,8 +346,13 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 	}
 	systemPrompt := d.systemPrompt + sections
 	if request.Fork {
+		// The parent's system prompt includes its MCP summary, which a fork
+		// without MCP keeps so the prompts stay equal.
 		systemPrompt = d.systemPrompt
-		if len(child.inherit) > 0 {
+		if noMCP {
+			systemPrompt += d.mcp.summary
+		}
+		if len(child.inherit.messages) > 0 {
 			text = sections + forkTask + text
 		}
 	}
@@ -382,19 +398,20 @@ type noMCPRun struct{}
 
 // inWorktree rebinds a worktree child's file tools and Guard to its
 // worktree. It may read the main workspace and write its artifact directory.
-func (d *delegation) inWorktree(ctx context.Context, child childRun, tools []agent.Tool) ([]agent.Tool, agent.Guard, error) {
+// adapter is the gate its grants belong to.
+func (d *delegation) inWorktree(ctx context.Context, child childRun, tools []agent.Tool) ([]agent.Tool, agent.Guard, *guardAdapter, error) {
 	workspace, err := tool.NewWorkspace(child.tree.workspace)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	adapter, err := d.guard.rebase(workspace.PhysicalPath(), d.workspace.PhysicalPath())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if child.artifacts != "" {
 		adapter.inner.AllowPathSession(child.artifacts, true, true)
 	}
-	return worktreeTools(ctx, tools, workspace), newWorktreeGuard(adapter, child.tree, d.workspace.PhysicalPath(), child.artifacts), nil
+	return worktreeTools(ctx, tools, workspace), newWorktreeGuard(adapter, child.tree, d.workspace.PhysicalPath(), child.artifacts), adapter, nil
 }
 
 // childTools are the parent's host tools without those a child must not
@@ -423,11 +440,12 @@ func (d *delegation) childTools(ctx context.Context, noMCP, readOnly bool) []age
 // starts one under the agents directory, which the Session picker does not
 // list, or keeps it in memory without a parent Session. A background child
 // always has one, in the task directory without a parent Session, so later
-// turns continue it; they repair a turn an interrupt cut short.
-func (d *delegation) childStore(ctx context.Context, child *subagent) (*session.Store, []llm.AgentMessage, error) {
+// turns continue it; they repair a turn an interrupt cut short. A new Session
+// starts with a fork's inheritance.
+func (d *delegation) childStore(ctx context.Context, child *subagent, inherit inheritance) (*session.Store, []llm.AgentMessage, error) {
 	if child == nil {
-		store, err := d.createStore(ctx, d.sessionDir)
-		return store, nil, err
+		store, err := d.createStore(ctx, d.sessionDir, inherit)
+		return store, inherit.messages, err
 	}
 	if path := child.sessionPath(); path != "" {
 		store, err := session.Open(ctx, path)
@@ -453,16 +471,17 @@ func (d *delegation) childStore(ctx context.Context, child *subagent) (*session.
 	if dir == "" {
 		dir = d.tasks.Dir()
 	}
-	store, err := d.createStore(ctx, dir)
-	if err == nil {
-		child.setSessionPath(store.Path())
+	store, err := d.createStore(ctx, dir, inherit)
+	if err != nil {
+		return nil, nil, err
 	}
-	return store, nil, err
+	child.setSessionPath(store.Path())
+	return store, inherit.messages, nil
 }
 
-// createStore starts a child Session under dir's agents directory; an empty
-// dir keeps it in memory.
-func (d *delegation) createStore(ctx context.Context, sessionDir string) (*session.Store, error) {
+// createStore starts a child Session under dir's agents directory, with a
+// fork's whole inheritance or not at all; an empty dir keeps it in memory.
+func (d *delegation) createStore(ctx context.Context, sessionDir string, inherit inheritance) (*session.Store, error) {
 	if sessionDir == "" {
 		return nil, nil
 	}
@@ -474,9 +493,17 @@ func (d *delegation) createStore(ctx context.Context, sessionDir string) (*sessi
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("app: create subagent Session directory: %w", err)
 	}
-	return session.Create(ctx, filepath.Join(dir, id+".jsonl"), session.Metadata{
+	path := filepath.Join(dir, id+".jsonl")
+	store, err := session.Create(ctx, path, session.Metadata{
 		ID: id, CreatedAt: time.Now().UnixMilli(), WorkingDirectory: d.workspace.Path(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := inherit.record(ctx, store); err != nil {
+		return nil, errors.Join(fmt.Errorf("app: start forked Session: %w", err), store.Close(), os.Remove(path))
+	}
+	return store, nil
 }
 
 // childTranscript is what auto mode reviews a child call against: the
@@ -534,5 +561,5 @@ func (g exploreGuard) Check(ctx context.Context, call llm.ToolCall) (agent.Guard
 		return agent.GuardResult{Decision: agent.GuardDeny, RuleID: ruleExplore, Actions: res.Actions,
 			Reason: reason + "; report what should change instead"}, nil
 	}
-	return g.inner.Check(ctx, call)
+	return g.inner.settle(ctx, call, res, hints)
 }

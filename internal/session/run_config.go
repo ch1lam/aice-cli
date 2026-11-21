@@ -108,6 +108,20 @@ func (s *Store) AppendRunConfig(ctx context.Context, record RunConfig) error {
 	return nil
 }
 
+// RunConfig returns the recorded configuration id names.
+func (s *Store) RunConfig(id string) (RunConfig, bool) {
+	if s == nil {
+		return RunConfig{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.index.runConfigs[id]
+	if ok {
+		record.Config = record.Config.Clone()
+	}
+	return record, ok
+}
+
 func (s *storeState) retainRunConfig(record RunConfig) {
 	s.runConfigs = append(s.runConfigs, record)
 	s.index.runConfigs[record.ID] = record

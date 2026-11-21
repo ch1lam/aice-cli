@@ -512,6 +512,42 @@ func TestHandleGuardAskCommandDescription(t *testing.T) {
 	}
 }
 
+// A worktree subagent's session grant belongs to its own gate: the main
+// agent still asks for the same command.
+func TestHandleGuardAskGrantsTheAskingGate(t *testing.T) {
+	t.Parallel()
+	session := newGuardAskSession(t, t.TempDir(), guard.Config{})
+	child, err := session.guard.Rebase(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(t.Context(), askerKey{}, asker{label: "bg-000001 · fix", gate: child})
+	go func() {
+		request := <-session.guardRequests
+		request.Reply <- interaction.GuardReply{OptionID: guardOptionAllowRunCommand}
+	}()
+	call := llm.ToolCall{ID: "call-1", Name: "bash", Arguments: mustCommandArgs(t, "git push")}
+	asked, err := child.Check(t.Context(), call)
+	if err != nil || asked.Decision != guard.DecisionAsk {
+		t.Fatalf("child Check() = %s, %v", asked.Decision, err)
+	}
+	reply, err := session.handleGuardAsk(ctx, call, agent.GuardApproval{
+		RuleID: asked.Approvals[0].RuleID,
+		Action: agent.GuardAction{Kind: "command", Command: "git push", ToolName: "bash"},
+	})
+	if err != nil || reply.Decision != agent.GuardAllow {
+		t.Fatalf("handleGuardAsk() = %#v, %v", reply, err)
+	}
+	for _, test := range []struct {
+		gate *guard.Guard
+		want guard.Decision
+	}{{child, guard.DecisionAllow}, {session.guard, guard.DecisionAsk}} {
+		if result, err := test.gate.Check(t.Context(), call); err != nil || result.Decision != test.want {
+			t.Fatalf("Check() = %s, %v; want %s", result.Decision, err, test.want)
+		}
+	}
+}
+
 func TestHandleGuardAskAllowRunFileGrantsPathNotParent(t *testing.T) {
 	t.Parallel()
 

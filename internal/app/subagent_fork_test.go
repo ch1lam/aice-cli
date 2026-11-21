@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -58,6 +59,19 @@ func forkCall(request llm.Request, id, name string, arguments any) llm.Stream {
 // options, and the same history, so a provider can reuse the parent's cache.
 func TestForkRepeatsTheParentRequest(t *testing.T) {
 	t.Parallel()
+	t.Run("without a Session", func(t *testing.T) {
+		t.Parallel()
+		testForkRepeatsTheParentRequest(t, false)
+	})
+	// The fork's Session records the parent's request configurations its
+	// inherited messages name.
+	t.Run("with a Session", func(t *testing.T) {
+		t.Parallel()
+		testForkRepeatsTheParentRequest(t, true)
+	})
+}
+
+func testForkRepeatsTheParentRequest(t *testing.T, withSession bool) {
 	model := &forkingModel{
 		parent: func(m *forkingModel, request llm.Request) llm.Stream {
 			switch len(m.parents) {
@@ -73,8 +87,16 @@ func TestForkRepeatsTheParentRequest(t *testing.T) {
 		},
 	}
 	cfg := config.Config{APIKeys: map[string]string{"deepseek": "test-key"}, SubagentModel: deepseek.ModelV4Pro}
-	if output := runPrintWithConfig(t, cfg, model); !strings.HasSuffix(output, "parent done\n") {
+	workspace := t.TempDir()
+	var extra []string
+	if withSession {
+		extra = []string{"--session", filepath.Join(t.TempDir(), "parent.jsonl")}
+	}
+	if output := runPrintIn(t, cfg, model, workspace, extra...); !strings.HasSuffix(output, "parent done\n") {
 		t.Fatalf("output = %q", output)
+	}
+	if withSession {
+		assertForkSessionRebuilds(t, workspace)
 	}
 	if len(model.children) != 1 || len(model.parents) != 3 {
 		t.Fatalf("requests: %d parent, %d fork", len(model.parents), len(model.children))
@@ -230,5 +252,38 @@ func TestForkTranscriptSkipsInheritedEntries(t *testing.T) {
 	}
 	if len(entries) != 3 || entries[2].Message.(llm.AssistantMessage).Content[0].Text != "fork step" {
 		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+// assertForkSessionRebuilds checks that the fork's Session can rebuild the
+// request of every assistant message, inherited ones included.
+func assertForkSessionRebuilds(t *testing.T, workspace string) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(workspace, ".aice", "sessions", "agents", "*.jsonl"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("child Sessions = %v, %v", paths, err)
+	}
+	store, err := session.Open(t.Context(), paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	snapshot, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistants := 0
+	for _, entry := range snapshot.Messages {
+		if _, ok := entry.Message.(llm.AssistantMessage); !ok {
+			continue
+		}
+		assistants++
+		if _, err := session.RebuildRequest(snapshot, entry.ID); err != nil {
+			t.Fatalf("rebuild %s: %v", entry.ID, err)
+		}
+	}
+	// The parent's ls call and the fork's report.
+	if assistants != 2 {
+		t.Fatalf("child Session has %d assistant messages", assistants)
 	}
 }

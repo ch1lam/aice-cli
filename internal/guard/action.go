@@ -70,8 +70,9 @@ var fileTools = map[string]bool{
 var searchTools = map[string]bool{"grep": true, "find": true, "ls": true}
 
 // isKnownTool lists tools the gate can describe. task_output and task_kill
-// act only on background tasks whose bash command this gate already checked;
-// send_message only steers a subagent whose every call it checks.
+// act only on background tasks: commands this gate already checked and
+// subagents whose every call it checks; agent and send_message only start or
+// steer such subagents.
 func isKnownTool(name string) bool {
 	return fileTools[name] || name == "bash" || name == "task_output" || name == "task_kill" || name == "skill" || name == "tool_search" || name == "mcp_resource_list" || name == "mcp_server_info" || name == "tool_result_read" || name == "request_user_input" || name == "agent" || name == "send_message" || isNetworkTool(name)
 }
