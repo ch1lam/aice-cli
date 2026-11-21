@@ -121,7 +121,11 @@ func composeTools(base []agent.Tool, web webState, configuration config.Config) 
 	if err != nil {
 		return nil, err
 	}
-	result = append(result, readResult, delegate)
+	message, err := tool.NewSendMessage(messageRouter{})
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, readResult, delegate, message)
 	if len(configuration.MCP.Servers) == 0 {
 		return result, nil
 	}

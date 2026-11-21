@@ -38,6 +38,8 @@ const (
 var (
 	errTaskUnknown = errors.New("unknown task; background tasks end when AICE exits or the Session changes")
 	errTasksClosed = errors.New("background tasks are closed")
+	// ErrTaskClosed refuses to continue a run task stopped with task_kill.
+	ErrTaskClosed = errors.New("it was stopped with task_kill and cannot continue")
 )
 
 // Task kinds.
@@ -87,6 +89,11 @@ type task struct {
 	delegation *llm.ToolDelegation
 	// reported is guarded by Tasks.mu.
 	reported bool
+	// owner is the state its starter keeps with a run task, kept across
+	// continuations. closed, guarded by Tasks.mu, refuses them after
+	// task_kill.
+	owner  any
+	closed bool
 }
 
 // TaskStatus is a snapshot of one task.
@@ -202,19 +209,119 @@ func (t *Tasks) start(shellPath, dir, command, description string) (TaskStatus, 
 	return current.status(), nil
 }
 
-// StartRun runs fn as a background task labeled by description. Stopping the
-// task cancels fn's context and waits for it to return.
-func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, error) {
+// StartRun runs fn as a background task labeled by description, keeping owner
+// with it for Owner. Stopping the task cancels fn's context and waits for it
+// to return.
+func (t *Tasks) StartRun(kind, description string, owner any, fn TaskRun) (TaskStatus, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if kind == TaskAgent && t.runningKindLocked(TaskAgent) >= maxRunningAgents {
-		return TaskStatus{}, fmt.Errorf("at most %d background subagents may run at once; wait for one or stop it with task_kill", maxRunningAgents)
+	if err := t.admitAgentLocked(kind); err != nil {
+		return TaskStatus{}, err
 	}
 	current, output, err := t.reserveLocked(kind, "", description)
 	if err != nil {
 		return TaskStatus{}, err
 	}
+	current.owner = owner
 	t.registerLocked(current)
+	t.runLocked(current, output, fn)
+	return current.status(), nil
+}
+
+func (t *Tasks) admitAgentLocked(kind string) error {
+	if kind == TaskAgent && t.runningKindLocked(TaskAgent) >= maxRunningAgents {
+		return fmt.Errorf("at most %d background subagents may run at once; wait for one or stop it with task_kill", maxRunningAgents)
+	}
+	return nil
+}
+
+// TaskContinuation is a finished run task started again under its ID.
+type TaskContinuation struct {
+	Task TaskStatus
+	// Unseen is the previous run when no result had reported it, with its
+	// report rendered before the new run rewrote the output. Its delegation
+	// must be recorded with the result that reports it.
+	Unseen       *TaskStatus
+	UnseenReport string
+}
+
+// Continue runs fn again as the finished run task id, with the same ID,
+// description, owner and output file, which the new run rewrites. A task
+// stopped with task_kill is closed and cannot continue.
+func (t *Tasks) Continue(id string, fn TaskRun) (TaskContinuation, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	previous, ok := t.tasks[id]
+	switch {
+	case t.closed:
+		return TaskContinuation{}, errTasksClosed
+	case !ok:
+		return TaskContinuation{}, fmt.Errorf("%s: %w", id, errTaskUnknown)
+	case previous.kind == TaskBash:
+		return TaskContinuation{}, fmt.Errorf("%s is a command, not a run that can continue", id)
+	case previous.status().Running:
+		return TaskContinuation{}, fmt.Errorf("%s is still running", id)
+	case previous.closed:
+		return TaskContinuation{}, fmt.Errorf("%s: %w", id, ErrTaskClosed)
+	case t.runningLocked() >= maxRunningTasks:
+		return TaskContinuation{}, fmt.Errorf("at most %d background tasks may run at once; stop one with task_kill", maxRunningTasks)
+	}
+	if err := t.admitAgentLocked(previous.kind); err != nil {
+		return TaskContinuation{}, err
+	}
+	var continuation TaskContinuation
+	if status := previous.report(); status.FirstReport {
+		continuation.Unseen = &status
+		continuation.UnseenReport = taskReport(status, agentNoticeBytes)
+	}
+	output, err := os.OpenFile(previous.path, os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return TaskContinuation{}, fmt.Errorf("reopen task output: %w", err)
+	}
+	current := &task{
+		id: id, kind: previous.kind, description: previous.description, path: previous.path, owner: previous.owner,
+		started: time.Now(), stopReq: make(chan string, 1), done: make(chan struct{}),
+	}
+	t.tasks[id] = current
+	// A continued task is the most recent, so eviction reaches it last.
+	t.order = append(slices.DeleteFunc(t.order, func(other string) bool { return other == id }), id)
+	t.runLocked(current, output, fn)
+	continuation.Task = current.status()
+	return continuation, nil
+}
+
+// Owner returns the state the starter of run task id keeps with it.
+func (t *Tasks) Owner(id string) (any, error) {
+	tasks, err := t.lookup([]string{id})
+	if err != nil {
+		return nil, err
+	}
+	return tasks[0].owner, nil
+}
+
+// Done returns a channel closed when task id's current run finishes, without
+// reporting it.
+func (t *Tasks) Done(id string) (<-chan struct{}, error) {
+	tasks, err := t.lookup([]string{id})
+	if err != nil {
+		return nil, err
+	}
+	return tasks[0].done, nil
+}
+
+// List snapshots every retained task in start order, without reporting any.
+func (t *Tasks) List() []TaskStatus {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	statuses := make([]TaskStatus, 0, len(t.order))
+	for _, id := range t.order {
+		statuses = append(statuses, t.tasks[id].status())
+	}
+	return statuses
+}
+
+// runLocked starts fn's supervised run; the caller holds Tasks.mu.
+func (t *Tasks) runLocked(current *task, output *os.File, fn TaskRun) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.wg.Add(1)
 	go func() {
@@ -233,7 +340,6 @@ func (t *Tasks) StartRun(kind, description string, fn TaskRun) (TaskStatus, erro
 		}
 		t.finish(current)
 	}()
-	return current.status(), nil
 }
 
 // finish publishes a completion. Under Tasks.mu a task stops running exactly
@@ -382,6 +488,9 @@ func (t *Tasks) Kill(ctx context.Context, id string) (TaskStatus, error) {
 		return TaskStatus{}, err
 	}
 	current := tasks[0]
+	t.mu.Lock()
+	current.closed = true
+	t.mu.Unlock()
 	select {
 	case current.stopReq <- "killed by task_kill":
 	default:

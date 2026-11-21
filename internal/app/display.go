@@ -234,6 +234,8 @@ func toolCallDetail(call llm.ToolCall) string {
 		TaskID  string   `json:"task_id"`
 		TaskIDs []string `json:"task_ids"`
 		Desc    string   `json:"description"`
+		To      string   `json:"to"`
+		Message string   `json:"message"`
 	}
 	if err := json.Unmarshal(call.Arguments, &arguments); err != nil {
 		return ""
@@ -247,6 +249,8 @@ func toolCallDetail(call llm.ToolCall) string {
 		return arguments.TaskID
 	case "agent":
 		return strings.Join(strings.Fields(arguments.Desc), " ")
+	case "send_message":
+		return arguments.To + " " + firstRunes(strings.Join(strings.Fields(arguments.Message), " "), 80)
 	case "skill":
 		return arguments.Name
 	case "request_user_input":

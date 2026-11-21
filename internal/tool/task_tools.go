@@ -15,10 +15,9 @@ const (
 	taskOutputSchema = `{
   "type": "object",
   "properties": {
-    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash or agent"},
+    "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8, "description": "Background task ids returned by bash or agent; omit to list every task"},
     "wait": {"type": "number", "minimum": 0, "maximum": 600, "description": "Seconds to wait for every listed task to finish before returning (default: 0, maximum: 600)"}
   },
-  "required": ["task_ids"],
   "additionalProperties": false
 }`
 	taskKillSchema = `{
@@ -59,7 +58,7 @@ func NewTaskKill(tasks *Tasks) (*TaskKill, error) {
 func (*TaskOutput) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_output",
-		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish. The full output stays in each task's output file; a subagent's file holds its report. A subagent's report arrives on its own as a notification: to wait only for subagents, end your turn instead of waiting here.",
+		Description:   "Report the status and recent output of background tasks, optionally waiting for them to finish; without task_ids, list every task of this Session. The full output stays in each task's output file; a subagent's file holds its latest report. A subagent's report arrives on its own as a notification: to wait only for subagents, end your turn instead of waiting here.",
 		InputSchema:   jsonSchema(taskOutputSchema),
 		PromptSnippet: "Check or wait for background tasks started by bash or agent",
 	}
@@ -75,8 +74,11 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 	if err != nil {
 		return llm.ToolResult{}, err
 	}
+	if len(args.TaskIDs) == 0 && args.Wait == 0 {
+		return textResult(call, taskList(o.tasks.List()), false), nil
+	}
 	if len(args.TaskIDs) == 0 || len(args.TaskIDs) > maxTaskOutputIDs {
-		return llm.ToolResult{}, fmt.Errorf("tool \"task_output\": task_ids must list 1 to %d tasks", maxTaskOutputIDs)
+		return llm.ToolResult{}, fmt.Errorf("tool \"task_output\": task_ids must list 1 to %d tasks to wait for", maxTaskOutputIDs)
 	}
 	wait := time.Duration(args.Wait * float64(time.Second))
 	if args.Wait < 0 || wait > maxTaskWait {
@@ -91,6 +93,19 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 		reports[index] = taskReport(status, taskOutputPreviewBytes)
 	}
 	return withTaskDelegations(textResult(call, strings.Join(reports, "\n\n"), false), statuses...), nil
+}
+
+// taskList names every task in one line each. It reports no completion: a
+// finished task is still reported by its notification or task_output.
+func taskList(statuses []TaskStatus) string {
+	if len(statuses) == 0 {
+		return "No background tasks in this Session."
+	}
+	lines := make([]string, 0, len(statuses)+1)
+	for _, status := range statuses {
+		lines = append(lines, taskSummary(status))
+	}
+	return strings.Join(append(lines, "A finished subagent continues with send_message unless it was stopped with task_kill."), "\n")
 }
 
 // withTaskDelegations records the subagent tasks a result reports first, so
@@ -111,7 +126,7 @@ func withTaskDelegations(result llm.ToolResult, statuses ...TaskStatus) llm.Tool
 func (*TaskKill) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:          "task_kill",
-		Description:   "Stop a background task: a command and its child processes are interrupted, then killed after a short grace period; a subagent is cancelled. Stopping a finished task is not an error.",
+		Description:   "Stop a background task: a command and its child processes are interrupted, then killed after a short grace period; a subagent is cancelled and closed, so it cannot continue. Stopping a finished task is not an error.",
 		InputSchema:   jsonSchema(taskKillSchema),
 		PromptSnippet: "Stop a background task started by bash or agent",
 	}

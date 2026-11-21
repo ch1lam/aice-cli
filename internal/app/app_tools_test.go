@@ -59,7 +59,7 @@ func TestApplicationPrintRunsMutatingBuiltInToolsThroughCommand(t *testing.T) {
 	if len(model.requests) != 5 {
 		t.Fatalf("model requests = %d, want 5", len(model.requests))
 	}
-	wantTools := []string{"read", "write", "edit", "bash", "task_output", "task_kill", "grep", "find", "ls", "skill", "tool_result_read", "agent"}
+	wantTools := []string{"read", "write", "edit", "bash", "task_output", "task_kill", "grep", "find", "ls", "skill", "tool_result_read", "agent", "send_message"}
 	for requestIndex, request := range model.requests {
 		names := make([]string, len(request.Tools))
 		for index, definition := range request.Tools {

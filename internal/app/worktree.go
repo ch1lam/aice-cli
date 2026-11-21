@@ -102,6 +102,26 @@ func newWorktree(ctx context.Context, workspace, root string) (*worktree, error)
 	return w, nil
 }
 
+// reopen checks a continued child's branch out again; finish removed the
+// checkout, unless it kept one it could not settle. A branch finish deleted
+// because the child changed nothing starts again from the base.
+func (w *worktree) reopen(ctx context.Context) error {
+	if _, err := os.Stat(w.dir); err == nil {
+		return nil
+	}
+	worktreeMu.Lock()
+	defer worktreeMu.Unlock()
+	if _, err := runGit(ctx, w.repo, "worktree", "prune"); err != nil {
+		return err
+	}
+	if _, err := runGit(ctx, w.repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+w.branch); err == nil {
+		_, err := runGit(ctx, w.repo, "worktree", "add", "--quiet", w.dir, w.branch)
+		return err
+	}
+	_, err := runGit(ctx, w.repo, "worktree", "add", "--quiet", "-b", w.branch, w.dir, w.base)
+	return err
+}
+
 // dirtyWorkspace reports whether workspace has uncommitted changes a worktree child
 // will not see. AICE's own directory is not part of the project.
 func dirtyWorkspace(ctx context.Context, workspace string) bool {

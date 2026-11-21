@@ -32,7 +32,7 @@ func TestAwaitSubagentsWaitsOnlyForSubagents(t *testing.T) {
 	if _, ok, err := await(t.Context()); ok || err != nil {
 		t.Fatalf("await with nothing running = %v, %v", ok, err)
 	}
-	if _, err := tasks.StartRun(tool.TaskBash, "server", func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+	if _, err := tasks.StartRun(tool.TaskBash, "server", nil, func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}); err != nil {
@@ -43,7 +43,7 @@ func TestAwaitSubagentsWaitsOnlyForSubagents(t *testing.T) {
 	}
 
 	release := make(chan struct{})
-	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+	if _, err := tasks.StartRun(tool.TaskAgent, "probe", nil, func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
 		<-release
 		_, err := io.WriteString(out, "found it")
 		return &llm.ToolDelegation{SessionID: "child"}, err
@@ -84,7 +84,7 @@ func TestInteractiveNotificationRunAnswersFinishedTasks(t *testing.T) {
 
 	waited := make(chan error, 1)
 	go func() { waited <- runner.AwaitCompletion(t.Context()) }()
-	if _, err := tasks.StartRun(tool.TaskAgent, "probe", func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+	if _, err := tasks.StartRun(tool.TaskAgent, "probe", nil, func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
 		_, err := io.WriteString(out, "found it in loader.go")
 		return &llm.ToolDelegation{SessionID: "child", Usage: llm.Usage{TotalTokens: 7}}, err
 	}); err != nil {

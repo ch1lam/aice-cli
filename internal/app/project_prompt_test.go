@@ -605,7 +605,11 @@ func defaultPromptWithSkillsFor(t *testing.T, workspace *tool.Workspace) string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools = append(tools, delegate)
+	message, err := tool.NewSendMessage(messageRouter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools = append(tools, delegate, message)
 	return appendSkillsPrompt(
 		buildDefaultSystemPrompt(tools, workspace.Path()),
 		catalog,
