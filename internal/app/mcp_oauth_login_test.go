@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -106,10 +105,15 @@ func (f *mcpOAuthLoginFixture) callback(t *testing.T, address string) string {
 
 func assertMCPCallbackClosed(t *testing.T, redirect string) {
 	t.Helper()
-	u, _ := url.Parse(redirect)
-	connection, err := net.DialTimeout("tcp", u.Host, time.Second)
-	if err == nil {
-		connection.Close()
+	// Parallel tests may reuse the freed port, so only a response from the
+	// callback server itself counts as a leak.
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Get(redirect)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+	if resp.Header.Get("Content-Security-Policy") == "default-src 'none'" && resp.Header.Get("Referrer-Policy") == "no-referrer" {
 		t.Fatal("OAuth callback listener leaked")
 	}
 }
