@@ -14,6 +14,8 @@ shipped versions.
 - A Go runtime with an explicit Agent Loop, a TUI and a non-interactive CLI.
 - Multiple model providers, file and shell tools, MCP and Agent Skills.
 - Saved sessions, branches, context compaction and tool permission checks.
+- Background commands and subagents: background by default, forks of the
+  conversation, follow-up messages and git worktree isolation.
 - Web, browser and desktop integrations with documented platform limits.
 - An [ACP frontend](docs/acp.md) (`aice acp`) for editors and evaluation harnesses.
 - [Harbor runs](docs/evaluation.md) through the ACP frontend, paired comparison
