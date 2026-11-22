@@ -3,10 +3,13 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
+	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
 func (s *interactiveSession) slashResume(ctx context.Context, request interaction.CommandRequest) (string, error) {
@@ -58,9 +61,9 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 		return "", errors.Join(err, store.Close())
 	}
 	previous := c.installStore(store, history, snapshot.LeafID, true)
-	s.resetSessionScope(session.TotalUsage(snapshot), view)
+	reportErr := s.resetSessionScope(ctx, previous, session.TotalUsage(snapshot), view)
 	// Once installed, cleanup failures are warnings, not a failed switch.
-	cleanupErr := closeInteractiveStore(previous)
+	cleanupErr := errors.Join(reportErr, closeInteractiveStore(previous))
 	output := "Resumed session " + shortSessionID(snapshot.Header.ID)
 	if cleanupErr != nil {
 		output += "\nCleanup warning: " + cleanupErr.Error()
@@ -70,13 +73,14 @@ func (s *interactiveSession) slashResume(ctx context.Context, request interactio
 
 // resetSessionScope drops what belonged to the previous Session after a switch
 // or /new: BTW threads, background tasks, temporary Guard grants and measured
-// throughput. It publishes view, which tells the frontend to discard its side
-// threads too.
-func (s *interactiveSession) resetSessionScope(usage llm.Usage, view *interaction.Transcript) {
+// throughput. Subagents it stops are reported to previous, still open. It
+// publishes view, which tells the frontend to discard its side threads too.
+// A failed report is returned as a warning; the switch has happened.
+func (s *interactiveSession) resetSessionScope(ctx context.Context, previous *session.Store, usage llm.Usage, view *interaction.Transcript) error {
 	s.sideMu.Lock()
 	clear(s.sideThreads)
 	s.sideMu.Unlock()
-	s.tasks.KillAll()
+	reportErr := reportStoppedSubagents(ctx, s.tasks, previous)
 	if s.guard != nil {
 		s.guard.ResetSessionGrants()
 	}
@@ -86,6 +90,25 @@ func (s *interactiveSession) resetSessionScope(usage llm.Usage, view *interactio
 	s.throughput = interaction.DisplayThroughput{}
 	s.stateMu.Unlock()
 	s.publishTranscript(view)
+	return reportErr
+}
+
+// reportStoppedSubagents stops every background task and records the
+// notification of the subagents no result reported into store, the Session
+// that started them, so their reports and usage stay in its history and
+// totals. Without a store there is nowhere to keep them.
+func reportStoppedSubagents(ctx context.Context, tasks *tool.Tasks, store *session.Store) error {
+	notice, ok := tasks.KillAll()
+	if !ok || store == nil {
+		return nil
+	}
+	// Leaving a Session, also by an interrupt, still records what it spent.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := appendSessionMessage(ctx, store, notice); err != nil {
+		return fmt.Errorf("app: record stopped subagents: %w", err)
+	}
+	return nil
 }
 
 func (s *interactiveSession) publishTranscript(view *interaction.Transcript) {

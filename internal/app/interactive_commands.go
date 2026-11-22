@@ -549,12 +549,13 @@ func (s *interactiveSession) slashNew(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.installStore(nil, nil, "", false)
-	s.resetSessionScope(llm.Usage{}, &interaction.Transcript{})
+	reportErr := s.resetSessionScope(ctx, previous, llm.Usage{}, &interaction.Transcript{})
 	if previous == nil {
 		return "Started new session", nil
 	}
 	// Once detached, cleanup failures are warnings, not a failed switch.
 	output, err := releasePreviousSession(previous)
+	err = errors.Join(reportErr, err)
 	if err != nil {
 		output += "\nCleanup warning: " + err.Error()
 	}

@@ -298,6 +298,11 @@ func (a *application) Print(
 		defer func() {
 			returnErr = errors.Join(returnErr, store.Close())
 		}()
+		// A cancelled or limited run can leave subagents running; their
+		// reports and usage still belong to the Session.
+		defer func() {
+			returnErr = errors.Join(returnErr, reportStoppedSubagents(ctx, environment.tasks, store))
+		}()
 	}
 	input, err := prepareFileInput(ctx, interaction.RunInput{Prompt: request.Prompt, Files: interaction.FileReferences(request.Prompt)}, environment.workspace, environment.guardAdapter, nil)
 	if err != nil {
@@ -539,13 +544,15 @@ func (a *application) Interactive(
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          buildinfo.Version,
 	})
+	// Subagents still running are stopped and reported to the Session first.
+	reportErr := reportStoppedSubagents(ctx, environment.tasks, runner.conversation.store)
 	stopAgents()
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate. A title
 	// still being generated is abandoned first.
 	runner.titles.close()
-	closeErr := closeInteractiveStore(runner.conversation.store)
+	closeErr := errors.Join(reportErr, closeInteractiveStore(runner.conversation.store))
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}

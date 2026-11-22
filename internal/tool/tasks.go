@@ -568,16 +568,24 @@ func (t *Tasks) TakeCompletions() []TaskStatus {
 }
 
 // KillAll terminates every task and deletes their output, leaving Tasks
-// usable. A new Session starts without tasks it cannot know about. A nil
-// Tasks has nothing to stop.
-func (t *Tasks) KillAll() {
+// usable. A new Session starts without tasks it cannot know about. It returns
+// the notification of the subagents no result reported yet, stopped now or
+// finished before, so the Session that started them can still record their
+// reports and usage; ok is false when there is none. Commands are not
+// reported: their output means nothing once they are gone. A nil Tasks has
+// nothing to stop.
+func (t *Tasks) KillAll() (notice llm.UserMessage, ok bool) {
 	if t == nil {
-		return
+		return llm.UserMessage{}, false
 	}
 	t.mu.Lock()
 	tasks := make([]*task, 0, len(t.tasks))
+	var unreported []*task
 	for _, current := range t.tasks {
-		// Their completions belong to the Session that started them.
+		if current.kind == TaskAgent && !current.reported {
+			unreported = append(unreported, current)
+		}
+		// No later notification reports them to the next Session.
 		current.reported = true
 		tasks = append(tasks, current)
 	}
@@ -592,8 +600,21 @@ func (t *Tasks) KillAll() {
 	}
 	for _, current := range tasks {
 		<-current.done
+	}
+	// Rendered before the output is removed: the notice carries the reports.
+	if len(unreported) > 0 {
+		slices.SortFunc(unreported, func(a, b *task) int { return a.started.Compare(b.started) })
+		statuses := make([]TaskStatus, 0, len(unreported))
+		for _, current := range unreported {
+			statuses = append(statuses, current.status())
+		}
+		notice, _ = renderNotice(statuses, 0)
+		ok = true
+	}
+	for _, current := range tasks {
 		_ = os.Remove(current.path)
 	}
+	return notice, ok
 }
 
 // Close terminates every task, waits for their supervisors and removes the

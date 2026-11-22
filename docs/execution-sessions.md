@@ -698,7 +698,12 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
   4 KiB;
 - is not stopped by cancelling the run that started it; `/new`, resuming
   another Session, `task_kill` and exit cancel it, and after any of them it
-  cannot [continue](#messaging-subagents);
+  cannot [continue](#messaging-subagents). `/new`, resuming and exit leave no
+  run to report to, so the Session that started it records one notification
+  for its subagents nothing reported yet, stopped then or finished before,
+  with their reports and usage; the next run of that Session, after it is
+  resumed, reads it like any notification. Commands stopped this way are not
+  reported;
 - asks the person like the main agent, also between runs: the TUI and ACP
   prompts name the child by task ID and description, and `--print` refuses
   them; rules, Session grants and auto mode decide first as usual;

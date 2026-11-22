@@ -235,8 +235,8 @@ Context shows occupancy, capacity, estimate status, window source and model.
 Session usage counts recorded input/output/cache tokens across every branch and
 compaction, excluding temporary BTW answers. It includes subagent runs once
 their result or report is recorded, listed apart as **Subagents**; a subagent
-stopped by `/new`, resuming or exit never reports, so its usage is missing,
-and auto mode decisions inside a subagent stay in its own Session. The status
+stopped by `/new`, resuming or exit is reported to its Session as it stops.
+Auto mode decisions inside a subagent stay in its own Session. The status
 bar's totals update during a run, after each response, tool result and
 notification. Reasoning tokens are an output subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
 to the original records' price coverage; current prices are never applied

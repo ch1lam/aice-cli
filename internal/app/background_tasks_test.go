@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/deps"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
+	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -140,5 +142,43 @@ func TestInteractiveSessionNewStopsBackgroundTasks(t *testing.T) {
 	}
 	if running := tasks.Running(); running != 0 {
 		t.Fatalf("running tasks after /new = %d", running)
+	}
+}
+
+// A subagent /new stops is reported to the Session that started it, so its
+// report stays in that history and its usage in that Session's totals.
+func TestInteractiveSessionNewRecordsStoppedSubagents(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	if _, err := tasks.StartRun(tool.TaskAgent, "survey", nil, func(ctx context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+		_, _ = io.WriteString(out, "partial survey")
+		<-ctx.Done()
+		return &llm.ToolDelegation{SessionID: "child", Usage: llm.Usage{InputTokens: 300, OutputTokens: 40}}, ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	store := createAppTestSession(t, path, workspace)
+	runner := &interactiveSession{conversation: conversationState{store: store}, tasks: tasks}
+	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "new"})
+	if err != nil || strings.Contains(output, "warning") {
+		t.Fatalf("/new = %q, %v", output, err)
+	}
+	reopened, err := session.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	summary, err := reopened.Usage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Delegations != 1 || summary.DelegatedUsage.InputTokens != 300 || summary.Total.OutputTokens != 40 {
+		t.Fatalf("previous Session usage = %+v, want the stopped subagent's", summary)
 	}
 }

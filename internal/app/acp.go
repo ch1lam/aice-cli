@@ -52,7 +52,8 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 		Host:      runner,
 	}, request.Input, request.Output)
 	runner.titles.close()
-	return errors.Join(serveErr, closeInteractiveStore(runner.conversation.store))
+	reportErr := reportStoppedSubagents(ctx, environment.tasks, runner.conversation.store)
+	return errors.Join(serveErr, reportErr, closeInteractiveStore(runner.conversation.store))
 }
 
 // StartSession makes a fresh durable Session current for a protocol client

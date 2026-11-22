@@ -26,7 +26,7 @@ func (s *interactiveSession) ReadUsage(ctx context.Context) (interaction.UsageSn
 		Provider: string(settings.model.Provider), Model: settings.model.ID,
 		Context:      s.contextSnapshotFor(settings.model, settings.configuration, settings.systemPrompt),
 		WindowSource: contextWindowInformation(settings.model, settings.configuration), CostStatus: "Unavailable",
-		Scope: "Recorded usage across all branches, compactions and reported subagent runs; excludes temporary BTW answers. Interrupted requests, and subagents stopped by /new, resume or exit, may be unreported.", Throughput: throughput}
+		Scope: "Recorded usage across all branches, compactions and reported subagent runs; excludes temporary BTW answers. Interrupted requests may be unreported.", Throughput: throughput}
 	// The preparation reservation excludes a Session switch, so the current
 	// Store stays open without holding the commit lock.
 	store := s.conversation.currentStore()
