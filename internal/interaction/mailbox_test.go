@@ -170,3 +170,36 @@ func TestMailboxNeverStrandsAnAcceptedDeliveryAtTerminalBoundary(t *testing.T) {
 		}
 	}
 }
+
+// A run that waits for other work keeps the mailbox open: deliveries wake
+// it, and it seals only once nothing waits.
+func TestMailboxStaysOpenWhileARunWaits(t *testing.T) {
+	t.Parallel()
+
+	mailbox := NewMailbox()
+	if _, ok := mailbox.TakeQueued(); ok {
+		t.Fatal("empty mailbox reported a delivery")
+	}
+	changed := mailbox.Changed()
+	if err := mailbox.Deliver(Delivery{ID: "steer", Text: "one", Kind: DeliveryKindSteer}); err != nil {
+		t.Fatalf("Deliver after TakeQueued error = %v", err)
+	}
+	select {
+	case <-changed:
+	default:
+		t.Fatal("Changed did not close on a delivery")
+	}
+	if mailbox.SealIfEmpty() {
+		t.Fatal("SealIfEmpty sealed over a waiting delivery")
+	}
+	next, ok := mailbox.TakeQueued()
+	if !ok || next.ID != "steer" || next.Kind != DeliveryKindFollowUp {
+		t.Fatalf("TakeQueued() = %#v, %v; want the steer as a follow-up", next, ok)
+	}
+	if !mailbox.SealIfEmpty() {
+		t.Fatal("SealIfEmpty kept an empty mailbox open")
+	}
+	if err := mailbox.Deliver(Delivery{ID: "late", Text: "two", Kind: DeliveryKindFollowUp}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Deliver after seal error = %v, want ErrClosed", err)
+	}
+}

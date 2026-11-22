@@ -6,7 +6,7 @@
 | --- | --- |
 | Process | One AICE invocation; `internal/app` prepares its workspace, startup prompt, skills, and dependencies |
 | Session | One durable JSONL tree, potentially resumed by later processes; `/new` detaches it |
-| Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups and awaited notifications, with frozen dependencies |
+| Agent run | One `Loop.Run` call: the initial interaction plus queued follow-ups and awaited inputs, with frozen dependencies |
 | Interaction | Initial/follow-up input, in-interaction steers and notifications, and model/tool rounds until settlement; its source messages are persisted individually |
 | Model round | One assistant response and its paired tool results; `turn_start`/`turn_end` events refer to this level |
 | Side thread | Ephemeral `/btw` context and answers, owned separately from main Session history |
@@ -190,12 +190,12 @@ retain the short content summary; Session keeps the additive metadata.
   for deriving context when the assistant declares tool calls.
 - One run has two explicit levels. The inner loop continues through tool calls,
   steering and notifications. When it would otherwise stop naturally, the
-  outer loop polls one follow-up, or else awaits one notification through
-  `RunInput.AwaitNotification` when the application supplies it; either starts
+  outer loop polls one follow-up, or else awaits one follow-up or notification
+  through `RunInput.AwaitInput` when the application supplies it; either starts
   another interaction inside the same run. The application and frontend must
   not reproduce this stopping decision.
 - Runs have no model-round or tool-step ceiling by default. A run ends when the model
-  completes naturally and no follow-up or awaited notification arrives, or on cancellation/deadline,
+  completes naturally and no follow-up or awaited input arrives, or on cancellation/deadline,
   context protection, configured turn/resource limits, repeated-tool detection,
   or an unrecoverable provider, protocol, runtime, or event-sink failure.
 - `RunLimits` are immutable configuration with per-run counters. Steering,
@@ -316,11 +316,13 @@ retain the short content summary; Session keeps the additive metadata.
   waiting notification continues the interaction instead of ending it. At most
   one notification follows the steer in a turn. Only an input of
   `InputKindNotification` may carry `Notice`, and it must; a mismatch ends the
-  run with an error. `AwaitNotification` is called only after the follow-up
-  poll comes back empty; it may block, honors cancellation, and returns false
-  when nothing outstanding can produce a notification. The application uses
-  both for [background task](execution-sessions.md#background-tasks)
-  completions.
+  run with an error. `AwaitInput` is called only after the follow-up poll
+  comes back empty; it may block, honors cancellation, and returns false when
+  nothing outstanding can produce an input. Its input's kind follows the
+  message: one carrying `Notice` is a notification, any other a follow-up.
+  The application uses both for [background task](execution-sessions.md#background-tasks)
+  completions, and the await also returns the person's input sent while the
+  run waits for subagents.
 - Poll follow-up input only at a natural stop boundary after steering has been
   checked. Emit `interaction_end` for the completed initial/follow-up
   interaction before polling again. A normally delivered run emits one
@@ -484,7 +486,10 @@ The runtime boundary preserves these ownership rules:
 - App/interaction own the ordered bounded mailbox. The Loop accepts steers only
   after complete tool pairs and follow-ups only at natural settlement. The
   mailbox atomically seals when empty or promotes remaining steers; run-end races
-  cannot drop accepted input. TUI pending messages are presentation copies.
+  cannot drop accepted input. A run that awaits subagents takes follow-ups
+  without sealing (`TakeQueued`), wakes on `Mailbox.Changed`, and seals with
+  `SealIfEmpty` once it decides to end. TUI pending messages are presentation
+  copies.
 - App owns each BTW thread's frozen context and private history. TUI controllers
   route events by source and cancel/join all thread runs on shutdown. Side
   execution never mutates main history, usage, settings or its mailbox.

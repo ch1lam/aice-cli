@@ -245,8 +245,8 @@ last-call rate reveals a changed prompt prefix before the Session rate moves.
 It stays “No cache tokens reported” until a provider reports a cache read or
 write, because zero cannot distinguish a miss from absent telemetry.
 
-Output speed is output tokens over generation time, measured in this process
-only: each main-run call counts from its first streamed content to its last
+Output speed (main agent) is output tokens over generation time, measured in
+this process only: each main-run call, not a subagent's, counts from its first streamed content to its last
 stream event, excluding request latency, tool execution and Session writes.
 Calls without reported output or that arrived in under 100 ms are excluded.
 Timing is not recorded, so `/new` and resuming start the measurement empty.

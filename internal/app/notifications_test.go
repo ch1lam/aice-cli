@@ -27,7 +27,7 @@ func TestAwaitSubagentsWaitsOnlyForSubagents(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = tasks.Close() })
-	await := awaitSubagents(tasks)
+	await := awaitSubagents(tasks, nil, nil)
 
 	if _, ok, err := await(t.Context()); ok || err != nil {
 		t.Fatalf("await with nothing running = %v, %v", ok, err)
@@ -60,6 +60,47 @@ func TestAwaitSubagentsWaitsOnlyForSubagents(t *testing.T) {
 	if err != nil || !ok || !input.Message.IsNotice() || !strings.HasPrefix(input.ID, "notice-bg-") ||
 		!strings.Contains(input.Message.Content[0].Text, "found it") || len(input.Message.Notice.Delegations) != 1 {
 		t.Fatalf("await = %#v, %v, %v", input, ok, err)
+	}
+}
+
+// While a run waits for a subagent, the person's input arrives at once as a
+// follow-up, steers included; the wait seals the mailbox only once no
+// subagent runs and nothing is queued.
+func TestAwaitSubagentsTakesInputWhileWaiting(t *testing.T) {
+	t.Parallel()
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	mailbox := interaction.NewMailbox()
+	await := awaitSubagents(tasks, mailbox, mailboxInputSource(mailbox.TakeQueued, "follow-up", llm.Model{ID: "test"}))
+
+	release := make(chan struct{})
+	if _, err := tasks.StartRun(tool.TaskAgent, "probe", nil, func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+		<-release
+		_, err := io.WriteString(out, "found it")
+		return &llm.ToolDelegation{SessionID: "child"}, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_ = mailbox.Deliver(interaction.Delivery{ID: "d1", Text: "status?", Kind: interaction.DeliveryKindSteer})
+	}()
+	input, ok, err := await(t.Context())
+	if err != nil || !ok || input.ID != "d1" || input.Message.IsNotice() {
+		t.Fatalf("await = %#v, %v, %v; want the delivery as a follow-up", input, ok, err)
+	}
+	close(release)
+	if input, ok, err = await(t.Context()); err != nil || !ok || !input.Message.IsNotice() {
+		t.Fatalf("await = %#v, %v, %v; want the notification", input, ok, err)
+	}
+	if _, ok, err := await(t.Context()); ok || err != nil {
+		t.Fatalf("await with nothing left = %v, %v", ok, err)
+	}
+	if err := mailbox.Deliver(interaction.Delivery{ID: "late", Text: "x", Kind: interaction.DeliveryKindFollowUp}); !errors.Is(err, interaction.ErrClosed) {
+		t.Fatalf("Deliver after the run ended = %v, want ErrClosed", err)
 	}
 }
 

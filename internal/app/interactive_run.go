@@ -238,11 +238,12 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	input := scope.input(snapshot.model, snapshot.systemPrompt, snapshot.options, snapshot.history, r.prompt)
 	input.ObserveTools = observeTools
 	input.Steering = mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model)
-	input.FollowUp = mailboxInputSource(r.mailbox.TakeFollowUp, "follow-up", snapshot.model)
+	// The run waits for its subagents, so one prompt's turn lasts until their
+	// reports are answered; the mailbox stays open meanwhile, and the wait
+	// seals it once the run ends.
+	input.FollowUp = mailboxInputSource(r.mailbox.TakeQueued, "follow-up", snapshot.model)
 	input.Notifications = taskNotifications(r.session.tasks)
-	if r.session.awaitSubagents {
-		input.AwaitNotification = awaitSubagents(r.session.tasks)
-	}
+	input.AwaitInput = awaitSubagents(r.session.tasks, r.mailbox, input.FollowUp)
 	input.MessageRecorder = func(recordCtx context.Context, message llm.AgentMessage) error {
 		if err := r.session.conversation.recordMessage(recordCtx, snapshot.state, message); err != nil {
 			return err

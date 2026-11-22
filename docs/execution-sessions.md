@@ -13,8 +13,8 @@ is charged to the same run. A new user-triggered run starts a fresh budget,
 including when continuing an existing Session; historical usage is not charged
 again. These are run controls, not a persistent Session or Goal budget. A
 [subagent's](#subagents) usage counts toward the run whose message reports it,
-and the wait for background subagents that ends a `--print` run or an ACP turn
-is part of that run, so its timeout bounds the wait.
+and the wait for background subagents that ends a run is part of that run,
+so its timeout bounds the wait.
 
 Token accounting uses provider-reported total tokens, including cached tokens;
 when total is absent it sums normalized input, output, cache-read and cache-write
@@ -589,18 +589,24 @@ carrying each finished task's status with a command's last 2 KiB of output or
 a subagent's whole report. Through
 [Loop notifications](contracts.md#agent-loop) the run takes it after the
 current tool round, or when the model would otherwise stop, and continues with
-it. A task that finishes while no run is active wakes the interactive TUI:
-once idle, it starts a run whose prompt is the notification, shown as a
-`•` line with one summary per task, and the model answers it without the user
-typing. Elsewhere such a task is reported at the start of the next run of the
-same Session.
+it. A task that finishes while no run is active, such as one whose run was
+cancelled, wakes the interactive TUI: once idle, it starts a run whose prompt
+is the notification, shown as a `•` line with one summary per task, and the
+model answers it without the user typing. Elsewhere such a task is reported at
+the start of the next run of the same Session.
 
-A `--print` run, and an ACP prompt turn, does not end while a background
-subagent still runs: when the model stops, it waits for the next notification
-and continues with it, so their reports are never lost to the process or turn
-ending. Background commands are not waited for, since a server never finishes;
-cancelling the run stops the wait. The interactive TUI shows the running
-count beside the model name.
+A run does not end while a background subagent still runs, in every
+frontend: when the model stops, the run waits for the next notification and
+continues with it, so one prompt's turn lasts until the subagents' reports
+are answered and their reports are never lost to the process or turn ending.
+Background commands are not waited for, since a server never finishes;
+cancelling the run stops the wait but not the subagents. While the TUI waits
+it shows `Waiting for N subagents...`, and a message sent meanwhile, steer or
+queued, starts the next interaction at once; the wait resumes after it. The
+response to a report keeps timing from the prompt, so the turn's last
+duration is the whole turn's, wait included; a process header counts the
+subagents its `agent` calls started and their tool calls. The interactive TUI
+shows the running task count beside the model name.
 
 Auto mode never reads a notification as user intent, and it does not end the
 user's block streak. Session titles, search and previews skip notifications,

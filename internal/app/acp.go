@@ -46,9 +46,6 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	}
 	// The client is told about generated titles as session_info_update.
 	runner.titleUpdates = make(chan interaction.SessionTitle, 4)
-	// A prompt turn ends only when its subagents have reported: ACP has no
-	// way for the agent to start a turn.
-	runner.awaitSubagents = true
 	serveErr := acp.Serve(ctx, runner.frontend(), acp.Options{
 		Workspace: environment.workspace.PhysicalPath(),
 		Version:   buildinfo.Build(),

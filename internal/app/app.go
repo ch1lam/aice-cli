@@ -384,7 +384,7 @@ func (a *application) Print(
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
 	runInput.Notifications = taskNotifications(environment.tasks)
-	runInput.AwaitNotification = awaitSubagents(environment.tasks)
+	runInput.AwaitInput = awaitSubagents(environment.tasks, nil, nil)
 	_, loopErr := loop.Run(ctx, runInput, func(eventCtx context.Context, event agent.AgentEvent) error {
 		// Subagent usage reaches the totals through the messages that record it.
 		for _, delegation := range eventDelegations(event) {
@@ -922,25 +922,22 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
-	mcp           *mcpOwner
-	mcpLoaded     *mcpLoadedTools // protected by stateMu; current main Run only
-	lifecycle     settingsLifecycle
-	catalog       sessionCatalog
-	browserBin    string
-	modelErr      error
-	application   *application
-	stateMu       sync.RWMutex
-	loop          *agent.Loop
-	conversation  conversationState
-	model         llm.Model
-	options       llm.StreamOptions
-	configuration config.Config
-	tools         []agent.Tool
-	baseTools     []agent.Tool
-	tasks         *tool.Tasks
-	// awaitSubagents keeps a main run going until its running subagents
-	// report, for a frontend that cannot start a run on its own.
-	awaitSubagents bool
+	mcp            *mcpOwner
+	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
+	lifecycle      settingsLifecycle
+	catalog        sessionCatalog
+	browserBin     string
+	modelErr       error
+	application    *application
+	stateMu        sync.RWMutex
+	loop           *agent.Loop
+	conversation   conversationState
+	model          llm.Model
+	options        llm.StreamOptions
+	configuration  config.Config
+	tools          []agent.Tool
+	baseTools      []agent.Tool
+	tasks          *tool.Tasks
 	web            webState
 	desktop        *desktopPreset
 	systemPrompt   string

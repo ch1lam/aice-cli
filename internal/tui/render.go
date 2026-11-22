@@ -613,26 +613,18 @@ func (m model) processHeader(start, end int, collapsed bool) string {
 		}
 	}
 
-	toolCalls := 0
-	for index := start; index < end; index++ {
-		if index < 0 || index >= len(m.entries) {
-			continue
-		}
-		if m.entries[index].kind == entryTool {
-			toolCalls++
-		}
-	}
-
-	details := make([]string, 0, 2)
+	counts := m.processCounts(start, end)
+	details := make([]string, 0, 3)
 	if start >= 0 && start < len(m.entries) {
 		if duration, timed := m.processDuration(m.entries[start].processID); timed {
 			details = append(details, formatRunDuration(duration))
 		}
 	}
-	if toolCalls == 1 {
-		details = append(details, "1 tool call")
-	} else if toolCalls > 1 {
-		details = append(details, fmt.Sprintf("%d tool calls", toolCalls))
+	if counts.tools > 0 {
+		details = append(details, count(counts.tools, "tool call"))
+	}
+	if counts.agents > 0 {
+		details = append(details, fmt.Sprintf("%s (%s)", count(counts.agents, "subagent"), count(counts.agentTools, "tool call")))
 	}
 
 	detail := strings.Join(details, " · ")
@@ -660,6 +652,28 @@ func (m model) processHeader(start, end int, collapsed bool) string {
 		brandStyle.Render(star) + "\n" +
 			mutedStyle.Render(action),
 	)
+}
+
+// processActivity counts a process's tool calls, the subagents its agent
+// calls started and the tool calls those subagents made.
+type processActivity struct {
+	tools, agents, agentTools int
+}
+
+func (m model) processCounts(start, end int) processActivity {
+	var counts processActivity
+	for index := max(start, 0); index < min(end, len(m.entries)); index++ {
+		entry := m.entries[index]
+		if entry.kind != entryTool {
+			continue
+		}
+		counts.tools++
+		if entry.toolName == "agent" && entry.toolAgent != (agentStatus{}) {
+			counts.agents++
+			counts.agentTools += entry.toolAgent.tools
+		}
+	}
+	return counts
 }
 
 func joinTranscriptViewParts(parts []transcriptViewPart) string {
@@ -762,6 +776,18 @@ func (m model) pendingActivityView() string {
 		)
 }
 
+// awaitingAgents counts the subagents a run waits for: its response
+// concluded, and the run keeps going until their reports arrive.
+func (m model) awaitingAgents() int {
+	if !m.run.running() || m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
+		return 0
+	}
+	if entry := m.entries[m.assistantEntry]; !entry.complete || !entry.conclusion {
+		return 0
+	}
+	return len(m.runningAgents())
+}
+
 func (m model) hasActiveAssistant() bool {
 	if m.assistantEntry < 0 || m.assistantEntry >= len(m.entries) {
 		return false
@@ -797,6 +823,10 @@ func (m model) activityIndicator() string {
 		status = "Cancelling command..."
 	case m.run.cancelRequested:
 		status = "Cancelling current response..."
+	case m.awaitingAgents() == 1:
+		status = "Waiting for 1 subagent..."
+	case m.awaitingAgents() > 1:
+		status = fmt.Sprintf("Waiting for %d subagents...", m.awaitingAgents())
 	case status == "":
 		status = "Working..."
 	}

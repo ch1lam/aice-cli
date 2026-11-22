@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -143,14 +144,24 @@ func (m *model) applySteer(steering interaction.InputDisplay) bool {
 }
 
 // applyNotification shows an AICE notification entering the run, such as
-// finished background tasks; the response to it starts a new process.
+// finished background tasks; the response to it starts a new process. Inside
+// a run the notification continues the person's turn, so the new process
+// keeps the turn's start and its time covers the wait for the subagents.
 func (m *model) applyNotification(notification interaction.InputDisplay) bool {
 	if strings.TrimSpace(notification.Text) == "" {
 		return false
 	}
+	now := time.Now()
+	var turn processGroup
+	if group := m.processGroup(m.activeProcessID); group != nil {
+		m.updateActiveProcessDuration(now)
+		turn = *group
+	}
 	m.activeProcessID = 0
 	m.entries = append(m.entries, transcriptEntry{kind: entryNotice, text: notification.Text})
-	m.beginProcess()
+	if group := m.processGroup(m.beginProcess()); group != nil && !turn.startedAt.IsZero() {
+		group.startedAt, group.elapsed = turn.startedAt, turn.elapsed
+	}
 	m.assistantEntry = -1
 	m.status = "Reading notification..."
 	m.resizeLayout()

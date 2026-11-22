@@ -60,7 +60,7 @@ func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 		speed = fmt.Sprintf("%.1f tok/s · %d output tokens over %s of generation (this process)",
 			rate, u.Throughput.OutputTokens, u.Throughput.Duration.Round(100*time.Millisecond))
 	}
-	add("usage", "Output speed", speed)
+	add("usage", "Output speed (main agent)", speed)
 	cost := u.CostStatus
 	if cost != "Unavailable" {
 		cost = fmt.Sprintf("$%.6f · %s", u.Usage.TotalCost, cost)
