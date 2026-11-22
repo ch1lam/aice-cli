@@ -169,8 +169,11 @@ type model struct {
 	taskPollPending bool
 	// awaitTasks waits for a finished task to report while the view is idle;
 	// taskWaitPending marks the one wait in flight.
-	awaitTasks            func() tea.Cmd
-	taskWaitPending       bool
+	awaitTasks      func() tea.Cmd
+	taskWaitPending bool
+	// agentUpdates delivers subagent runs, which agents shows in start order.
+	agentUpdates          <-chan interaction.AgentUpdate
+	agents                []*agentView
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	throughput            interaction.DisplayThroughput
@@ -325,6 +328,9 @@ func (m model) Init() tea.Cmd {
 	}
 	if m.taskWaitPending {
 		commands = append(commands, m.awaitTasks())
+	}
+	if m.agentUpdates != nil {
+		commands = append(commands, waitForAgentUpdates(m.agentUpdates))
 	}
 	return tea.Batch(commands...)
 }
@@ -567,6 +573,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.followBackgroundTasks(message.running)
 	case taskCompletionMsg:
 		return m.wakeForTasks(message)
+	case agentUpdatesMsg:
+		return m.applyAgentUpdates(message)
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.run.running()
 		command := m.welcomeAnimation.Update(message, active)

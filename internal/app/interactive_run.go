@@ -226,6 +226,8 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		store:        r.session.conversation.store,
 		sessionDir:   r.session.sessionDirectory(),
 		worktrees:    r.session.application.worktreeRoot(),
+		publish:      r.session.agentPublisher(),
+		describe:     r.session.toolDescriber(),
 	})
 	observeTools, clearLoadedTools := r.session.beginMCPLoadedTools(scope.mcp.catalog)
 	defer clearLoadedTools()
@@ -264,13 +266,9 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		if r.sink == nil {
 			return nil
 		}
-		display := translateAgentEvent(event)
+		display := r.session.toolDescriber().display(event, scope.mcp.catalog)
 		if display == nil {
 			return nil
-		}
-		toolDescriber{guard: r.session.guard, workspace: r.session.workspacePath}.annotate(event, display)
-		if label, ok := scope.mcp.catalog.displayName(display.Tool.Name); ok && display.Kind == interaction.EventToolStart {
-			display.Tool.Name = label
 		}
 		if display.Kind != interaction.EventAssistantDelta {
 			usage := contextDisplay(snapshot.model, snapshot.configuration,

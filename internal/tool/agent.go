@@ -43,6 +43,8 @@ type DelegateRequest struct {
 	// Fork starts the child with the caller's conversation instead of a
 	// fresh context.
 	Fork bool
+	// CallID is the agent call that started the child.
+	CallID string
 }
 
 // DelegateStart is a subagent started in the background.
@@ -171,7 +173,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	case args.Isolation == IsolationWorktree && args.Type == AgentExplore:
 		return llm.ToolResult{}, fmt.Errorf("tool %q: an explore subagent changes nothing, so it needs no worktree", "agent")
 	}
-	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation, Fork: args.Fork}
+	request := DelegateRequest{Description: args.Description, Prompt: args.Prompt, ReadOnly: args.Type == AgentExplore, Isolation: args.Isolation, Fork: args.Fork, CallID: call.ID}
 	// The background is the default; without one, a call that did not ask
 	// for it runs synchronously.
 	if background := args.Background == nil || *args.Background; background {

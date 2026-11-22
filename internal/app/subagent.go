@@ -11,6 +11,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/guard"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/session"
 	"github.com/ch1lam/aice-cli/internal/tool"
@@ -85,6 +86,10 @@ type delegation struct {
 	// worktrees holds worktree children's checkouts; empty leaves every
 	// child in the parent's workspace.
 	worktrees string
+	// publish delivers children's runs to a frontend that follows them; nil
+	// when none does. describe projects their tool calls for it.
+	publish  func(context.Context, interaction.AgentUpdate)
+	describe toolDescriber
 }
 
 type delegationKey struct{}
@@ -139,7 +144,7 @@ func (delegationRouter) Delegate(ctx context.Context, request tool.DelegateReque
 	if err != nil {
 		return tool.DelegateResult{Err: err}
 	}
-	res := d.run(ctx, request, childRun{tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit.messages)}, request.Prompt)
+	res := d.run(ctx, request, childRun{id: syncAgentID(), tree: tree, label: request.Description, inherit: inherit, inherited: len(inherit.messages)}, request.Prompt)
 	if tree != nil {
 		notes = append(notes, tree.finish(ctx, request.Description))
 	}
@@ -157,6 +162,8 @@ func (delegationRouter) Start(ctx context.Context, request tool.DelegateRequest)
 
 // childRun is how one child runs.
 type childRun struct {
+	// id names the child to a frontend: its task, or the call that runs it.
+	id         string
 	background bool
 	// agent is a background child's state across its turns.
 	agent *subagent
@@ -287,6 +294,9 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		res.Err = err
 		return res
 	}
+	events, settle := d.followChild(ctx, request, child, model, mcp.catalog, text)
+	// Runs after the Session closed, so the end reports a failed close too.
+	defer func() { settle(res) }()
 	store, history, err := d.childStore(ctx, child.agent, child.inherit)
 	if err != nil {
 		res.Err = err
@@ -387,7 +397,7 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		return nil
 	}
 	input.Compactor = d.compactor(store, &model)
-	result, err := loop.Run(ctx, input, nil)
+	result, err := loop.Run(ctx, input, events)
 	res.Usage = result.Usage
 	res.Err = err
 	return res

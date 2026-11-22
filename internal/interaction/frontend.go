@@ -24,6 +24,8 @@ type Frontend struct {
 	// Tasks follows background tasks: their running count and completions
 	// that should wake an idle Session.
 	Tasks BackgroundTasks
+	// Agents follows subagents as they run.
+	Agents Agents
 	// CheckUpdate, when set, performs the welcome-screen update check.
 	CheckUpdate UpdateChecker
 }

@@ -30,3 +30,18 @@ func (d toolDescriber) annotate(event agent.AgentEvent, display *interaction.Eve
 	}
 	display.Tool.Kind, display.Tool.Locations = d.describe(*event.ToolCall, event.ToolResult)
 }
+
+// display translates an Agent event for a frontend, with the shared tool
+// vocabulary and the run's MCP tool labels; nil for events frontends do not
+// show.
+func (d toolDescriber) display(event agent.AgentEvent, catalog *mcpCatalog) *interaction.Event {
+	display := translateAgentEvent(event)
+	if display == nil {
+		return nil
+	}
+	d.annotate(event, display)
+	if label, ok := catalog.displayName(display.Tool.Name); ok && display.Kind == interaction.EventToolStart {
+		display.Tool.Name = label
+	}
+	return display
+}
