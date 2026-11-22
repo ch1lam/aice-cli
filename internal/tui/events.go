@@ -178,18 +178,12 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			m.sessionID = update.state.SessionID
 			m.contextUsage = update.state.Context
 			m.throughput = update.state.Throughput
+			commands = append(commands, m.setSessionUsage(update.state.Usage))
 			m.currentModel = update.state.Model
 			m.thinking = update.state.Thinking
 			m.permissionMode = update.state.PermissionMode
 			m.apiKeyConfigured = update.state.APIKeyConfigured
 			commands = append(commands, m.followBackgroundTasks(update.state.BackgroundTasks))
-			if update.state.Usage != m.sessionUsage {
-				commands = append(
-					commands,
-					m.usageAnimation.Start(m.sessionUsage, update.state.Usage),
-				)
-				m.sessionUsage = update.state.Usage
-			}
 			if update.state.Transcript != nil || update.state.SessionChanged {
 				// The previous Session's subagents stopped with it.
 				m.agents, m.agentFocus = nil, false
@@ -265,10 +259,31 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(commands...)
 }
 
+// setSessionUsage shows new Session totals, animating the change.
+func (m *model) setSessionUsage(usage interaction.DisplayUsage) tea.Cmd {
+	if usage == m.sessionUsage {
+		return nil
+	}
+	command := m.usageAnimation.Start(m.sessionUsage, usage)
+	m.sessionUsage = usage
+	return command
+}
+
 func (m *model) applyAgentEvent(event interaction.Event) (bool, tea.Cmd) {
 	if event.Context != nil {
 		m.contextUsage = *event.Context
 	}
+	if event.Throughput != nil {
+		m.throughput = *event.Throughput
+	}
+	if event.Usage != nil {
+		changed, command := m.applyAgentEventContent(event)
+		return changed, tea.Batch(command, m.setSessionUsage(*event.Usage))
+	}
+	return m.applyAgentEventContent(event)
+}
+
+func (m *model) applyAgentEventContent(event interaction.Event) (bool, tea.Cmd) {
 	switch event.Kind {
 	case interaction.EventAssistantStart:
 		m.entries = append(m.entries, transcriptEntry{

@@ -233,14 +233,19 @@ and Enter for scrollable text.
 
 Context shows occupancy, capacity, estimate status, window source and model.
 Session usage counts recorded input/output/cache tokens across every branch and
-compaction, excluding temporary BTW answers. Reasoning tokens are an output
-subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
+compaction, excluding temporary BTW answers. It includes subagent runs once
+their result or report is recorded, listed apart as **Subagents**; a subagent
+stopped by `/new`, resuming or exit never reports, so its usage is missing,
+and auto mode decisions inside a subagent stay in its own Session. The status
+bar's totals update during a run, after each response, tool result and
+notification. Reasoning tokens are an output subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
 to the original records' price coverage; current prices are never applied
 retroactively. Missing reports from interrupted requests remain unreported.
 This is not an account balance or subscription quota display.
 
 Cache hit rate is cache reads over all prompt tokens (input, cache reads and
-cache writes), shown for the Session and for the last recorded call; a falling
+cache writes), shown for the Session (subagent calls included, whatever their
+model) and for the main agent's last recorded call; a falling
 last-call rate reveals a changed prompt prefix before the Session rate moves.
 It stays “No cache tokens reported” until a provider reports a cache read or
 write, because zero cannot distinguish a miss from absent telemetry.

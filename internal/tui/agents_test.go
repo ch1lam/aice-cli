@@ -413,3 +413,16 @@ func TestRunWaitingForSubagentsKeepsOneTurn(t *testing.T) {
 		t.Fatalf("response process elapsed = %s, want the whole turn", elapsed)
 	}
 }
+
+// Session totals an event carries update the status line during the run.
+func TestRunEventsUpdateSessionTotals(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 24)
+	m.run.kind = runPrompt
+	usage := interaction.DisplayUsage{InputTokens: 1200, OutputTokens: 80}
+	throughput := interaction.DisplayThroughput{OutputTokens: 80, Duration: time.Second}
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "agent"}, Usage: &usage, Throughput: &throughput})
+	if m.sessionUsage != usage || m.throughput != throughput {
+		t.Fatalf("totals = %+v / %+v, want the event's", m.sessionUsage, m.throughput)
+	}
+}

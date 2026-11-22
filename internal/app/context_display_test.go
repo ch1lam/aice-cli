@@ -22,7 +22,7 @@ func TestInteractiveContextTracksToolsAndCompactionWithOverride(t *testing.T) {
 	service := &roundCompactionModel{}
 	configuration, home := compactPrintConfig(t, info)
 	configuration.ContextWindows = map[string]int64{"test-provider/test": 10000}
-	var sawUsage, sawToolGrowth, sawCompaction bool
+	var sawUsage, sawToolGrowth, sawCompaction, sawTotals bool
 	command, err := newTestCommand(t, dependencies{
 		loadConfig:  func(config.LoadOptions) (config.Config, error) { return configuration, nil },
 		newModel:    func(config.Config) (agent.Model, error) { return service, nil },
@@ -34,6 +34,13 @@ func TestInteractiveContextTracksToolsAndCompactionWithOverride(t *testing.T) {
 				t.Fatalf("startup context = %+v", options.Context)
 			}
 			active, err := runner.NewRun(context.Background(), interaction.RunInput{Prompt: "inspect large.txt"}, func(_ context.Context, event interaction.Event) error {
+				// Session totals follow the run, not only its end.
+				if event.Kind == interaction.EventAssistantEnd {
+					if event.Usage == nil || event.Throughput == nil {
+						t.Fatalf("assistant end without totals: %+v", event)
+					}
+					sawTotals = true
+				}
 				if event.Context == nil {
 					return nil
 				}
@@ -73,8 +80,8 @@ func TestInteractiveContextTracksToolsAndCompactionWithOverride(t *testing.T) {
 	if err := command.ExecuteContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if service.summaries != 1 || !sawUsage || !sawToolGrowth || !sawCompaction {
-		t.Fatalf("summaries=%d usage=%t tool growth=%t compaction=%t", service.summaries, sawUsage, sawToolGrowth, sawCompaction)
+	if service.summaries != 1 || !sawUsage || !sawToolGrowth || !sawCompaction || !sawTotals {
+		t.Fatalf("summaries=%d usage=%t tool growth=%t compaction=%t totals=%t", service.summaries, sawUsage, sawToolGrowth, sawCompaction, sawTotals)
 	}
 }
 

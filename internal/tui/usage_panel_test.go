@@ -37,3 +37,16 @@ func TestUsageFieldsShowCacheHitRateAndOutputSpeed(t *testing.T) {
 		t.Fatalf("output speed = %q", got)
 	}
 }
+
+// Subagent runs are counted apart, since their usage is part of the totals.
+func TestUsageFieldsShowSubagentShare(t *testing.T) {
+	t.Parallel()
+	fields := map[string]string{}
+	for _, field := range usageFields(interaction.UsageSnapshot{CostStatus: "Unavailable", Delegations: 2,
+		DelegatedUsage: interaction.DisplayUsage{InputTokens: 300, OutputTokens: 40}}).Fields {
+		fields[field.Label] = field.Value.Text
+	}
+	if got := fields["Subagents"]; got != "2 runs · 300 input / 40 output tokens (included above)" {
+		t.Fatalf("subagents = %q", got)
+	}
+}

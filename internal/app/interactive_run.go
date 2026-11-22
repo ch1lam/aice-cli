@@ -276,6 +276,13 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 				input.SystemPrompt, snapshot.tools, contextHistory)
 			display.Context = &usage
 		}
+		switch display.Kind {
+		case interaction.EventAssistantEnd, interaction.EventToolEnd, interaction.EventNotification:
+			// The message is recorded before its event, so the totals
+			// include it, and a subagent's usage its result or report carries.
+			usage, throughput := r.session.usageSnapshot(), r.session.currentThroughput()
+			display.Usage, display.Throughput = &usage, &throughput
+		}
 		return r.sink(eventCtx, *display)
 	})
 

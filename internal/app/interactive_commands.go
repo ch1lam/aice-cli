@@ -710,6 +710,13 @@ func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 	return newDisplayUsage(s.totalUsage)
 }
 
+// currentThroughput is the measured main-run generation so far.
+func (s *interactiveSession) currentThroughput() interaction.DisplayThroughput {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.throughput
+}
+
 // addThroughput accumulates one measured main-run model call.
 func (s *interactiveSession) addThroughput(tokens int64, span time.Duration) {
 	s.stateMu.Lock()
