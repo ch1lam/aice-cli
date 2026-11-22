@@ -217,12 +217,17 @@ func TestRunTaskContinues(t *testing.T) {
 	t.Parallel()
 	tasks, output, kill := newRunTasks(t)
 	owner := new(int)
-	report := func(text string, tokens int64) tool.TaskRun {
+	// gated runs wait for release, so a test can look before they finish.
+	gated := func(text string, tokens int64, release <-chan struct{}) tool.TaskRun {
 		return func(_ context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
 			fmt.Fprintln(out, text)
+			<-release
 			return &llm.ToolDelegation{SessionID: "child", Usage: llm.Usage{TotalTokens: tokens}}, nil
 		}
 	}
+	released := make(chan struct{})
+	close(released)
+	report := func(text string, tokens int64) tool.TaskRun { return gated(text, tokens, released) }
 	status, err := tasks.StartRun(tool.TaskAgent, "probe", owner, report("first report", 3))
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +244,10 @@ func TestRunTaskContinues(t *testing.T) {
 		t.Fatalf("list = %+v; listing must not report the completion", list)
 	}
 
-	continued, err := tasks.Continue(status.ID, report("second report", 5))
+	// The second run finishes only after the check: its own completion
+	// would otherwise count as unreported.
+	release := make(chan struct{})
+	continued, err := tasks.Continue(status.ID, gated("second report", 5, release))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +255,7 @@ func TestRunTaskContinues(t *testing.T) {
 		!strings.Contains(continued.UnseenReport, "first report") || tasks.HasCompletions() {
 		t.Fatalf("continuation = %+v", continued)
 	}
+	close(release)
 	result, err := output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{status.ID}, "wait": 10}))
 	if err != nil {
 		t.Fatal(err)
