@@ -662,8 +662,18 @@ evidence, then what it could not verify, without narrating its steps.
   `--session`) keeps its children in memory.
 
 While a synchronous child runs, steering messages wait in the parent's mailbox
-until the `agent` call returns, and the TUI shows the call as running without
-the child's individual steps.
+until the `agent` call returns.
+
+The TUI shows every subagent as it runs, synchronous or in the background.
+A panel above the composer lists the running ones (at most five rows, the
+rest counted): each row names the task, what the child does now (thinking,
+responding, or the tool it runs with its target), how many tool calls it
+finished, its model and how long it has run. The `agent` call that started a child shows the same activity under
+its heading while the child runs, and then how the run ended: its duration,
+turns and tool calls, the error it failed with, or that it was stopped. A
+continued child updates the same call. The panel gives way to menus, dialogs,
+side threads and the history reader. `--print` and ACP show only the parent's
+`agent` call and its result.
 
 A background subagent runs as a
 [background task](#background-tasks): the call returns its task ID and report

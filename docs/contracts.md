@@ -563,7 +563,11 @@ The runtime boundary preserves these ownership rules:
   capability (`--print`, ACP) a child Loop runs without a sink. The TUI keeps
   one presentation-only transcript model per child, built by the same
   `applyAgentEvent` as the main transcript; only a start creates one, a
-  Session change drops them, and at most 16 finished children stay.
+  Session change drops them, and at most 16 finished children stay. A
+  child's state reaches its `agent` call card as a comparable entry field, so
+  the card's cached view changes with it; the call may be shown after the
+  child's first updates, since the two travel apart, and a later update links
+  it. The panel above the composer is its own layout row (`chrome.agents`).
 - The Guard adapter owns file write claims. A background writer's context
   names it by task ID; any other context is the main agent. Its task registers
   and releases the writer; a permitted write claims its files in

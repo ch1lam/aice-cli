@@ -94,6 +94,8 @@ type transcriptEntry struct {
 	toolEvidence *interaction.EvidenceDisplay
 	// toolReview is auto mode's decision, when it made one.
 	toolReview *interaction.ReviewDisplay
+	// toolAgent is the state of the subagent an agent call started.
+	toolAgent agentStatus
 }
 
 type processGroup struct {
@@ -592,7 +594,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.run.running() || m.side.anyRunning() {
+		if m.run.running() || m.side.anyRunning() || len(m.runningAgents()) > 0 {
 			m.thinkingShimmer++
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
@@ -638,6 +640,9 @@ func (m model) View() tea.View {
 		m.headerView(width),
 		transcript,
 		m.commandMenuView(width),
+	}
+	if panel := m.agentPanelView(width); panel != "" {
+		frame = append(frame, panel)
 	}
 	// The Q&A dialog and answer input share one frame: the question owns the
 	// top edge, and the composer continues its walls and closes the bottom.

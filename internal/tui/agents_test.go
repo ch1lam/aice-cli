@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
@@ -163,4 +166,77 @@ func TestWaitForAgentUpdatesBatches(t *testing.T) {
 	if next.(model).agentUpdates != nil || command != nil {
 		t.Fatal("a closed channel is still awaited")
 	}
+}
+
+// Running children show above the composer with what they do, their model
+// and how long they ran; the transcript yields the rows they take.
+func TestAgentPanelShowsRunningChildren(t *testing.T) {
+	t.Parallel()
+	base := testModel(t, 100, 30)
+	m := applyAgents(t, base,
+		agentStart("bg-1", "task"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "read", Detail: "internal/agent/loop.go"}}),
+		agentStart("bg-2", "task"),
+		agentStart("bg-3", "task"),
+		agentEnd("bg-3", nil, time.Second),
+	)
+	m = applyAgents(t, m,
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "read"}}),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t2", Name: "read", Detail: "internal/agent/loop.go"}}),
+	)
+	view := ansiStripped(m)
+	for _, want := range []string{"Subagents 2", "find loader · Running read internal/agent/loop.go · 1 tool", "child-model 0s", "find loader · Starting"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+	if m.chrome.agents != 3 || m.viewport.Height() != base.viewport.Height()-3 {
+		t.Fatalf("panel takes %d rows, viewport %d (was %d)", m.chrome.agents, m.viewport.Height(), base.viewport.Height())
+	}
+
+	m = applyAgents(t, m, agentEnd("bg-1", nil, time.Second), agentEnd("bg-2", nil, time.Second))
+	if view := ansiStripped(m); strings.Contains(view, "Subagents") || m.chrome.agents != 0 || m.viewport.Height() != base.viewport.Height() {
+		t.Fatalf("panel stays without running children (%d rows):\n%s", m.chrome.agents, view)
+	}
+}
+
+// The panel shows at most a few rows and counts the rest.
+func TestAgentPanelCountsChildrenBeyondItsRows(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	for i := range maximumAgentRows + 2 {
+		m = applyAgents(t, m, agentStart(fmt.Sprintf("bg-%d", i), "task"))
+	}
+	view := ansiStripped(m)
+	if !strings.Contains(view, "Subagents 7") || !strings.Contains(view, "+3 more") || m.chrome.agents != maximumAgentRows+1 {
+		t.Fatalf("panel of %d rows:\n%s", m.chrome.agents, view)
+	}
+}
+
+// The agent call that started a child shows what the child does and, once
+// it ended, how it ended.
+func TestAgentCallShowsItsChild(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	m.entries = []transcriptEntry{{kind: entryTool, toolID: "call-bg-1", toolName: "agent", toolDetail: "find loader", toolState: toolSucceeded}}
+	m = applyAgents(t, m,
+		agentStart("bg-1", "task"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "bash", Detail: "go test ./...", Description: "run the tests"}}),
+	)
+	if view := m.transcriptView(); !strings.Contains(view, "↳ running · Running bash run the tests") {
+		t.Fatalf("running call:\n%s", view)
+	}
+	m = applyAgents(t, m, agentEnd("bg-1", nil, 3*time.Second))
+	if view := m.transcriptView(); !strings.Contains(view, "↳ completed in 3s · 1 turn · 1 tool call") {
+		t.Fatalf("finished call:\n%s", view)
+	}
+
+	m = applyAgents(t, m, agentStart("bg-1", "more"), agentEnd("bg-1", errors.New("quota exceeded"), time.Second))
+	if view := m.transcriptView(); !strings.Contains(view, "↳ failed: quota exceeded") {
+		t.Fatalf("failed call:\n%s", view)
+	}
+}
+
+func ansiStripped(m model) string {
+	return ansi.Strip(m.View().Content)
 }

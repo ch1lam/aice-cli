@@ -395,7 +395,7 @@ func (m model) layoutQuestionDialog(width int) questionDialogLayout {
 	}
 	// Only the top border adds a row; the input continues the same walls.
 	c := m.chrome
-	budget := max(m.layoutHeight()-c.header-c.menu-c.composer-c.footer-minimumViewport-1, 1)
+	budget := max(m.layoutHeight()-c.header-c.menu-c.agents-c.composer-c.footer-minimumViewport-1, 1)
 	l.height = min(len(l.rows), budget)
 	l.offset = panel.scroll
 	if l.offset < 0 {

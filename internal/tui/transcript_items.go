@@ -130,6 +130,9 @@ func (m *model) transcriptEntryItem(index int, e transcriptEntry, active bool, m
 		}
 		if e.kind == entryTool {
 			content := transcriptContent{view: m.toolHeaderView(e)}
+			if line := agentCallLine(e, m.contentWidth()-2); line != "" {
+				content.view += "\n" + line
+			}
 			content.append(m.toolBodyContent(e), "\n\n")
 			return m.indentTranscript(content)
 		}

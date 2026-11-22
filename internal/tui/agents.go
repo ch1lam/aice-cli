@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -23,6 +25,10 @@ type agentView struct {
 	// transcript holds every run of the child, a continued one included.
 	transcript *model
 	running    bool
+	// activity is what the running child does now, as the panel shows it;
+	// tools counts the tool calls its runs finished, as progress.
+	activity string
+	tools    int
 	// startedAt is when the current run started; elapsed sums finished runs.
 	startedAt time.Time
 	elapsed   time.Duration
@@ -69,14 +75,28 @@ func waitForAgentUpdates(updates <-chan interaction.AgentUpdate) tea.Cmd {
 
 func (m model) applyAgentUpdates(batch agentUpdatesMsg) (tea.Model, tea.Cmd) {
 	now := time.Now()
+	running := m.runningAgents()
+	started := false
 	for _, update := range batch.updates {
 		m.applyAgentUpdate(update, now)
+		started = started || update.Start != nil
+	}
+	if len(m.runningAgents()) != len(running) {
+		// The panel above the composer grew or shrank.
+		m.resizeLayout()
+	}
+	m.refreshViewport(false)
+	var commands []tea.Cmd
+	if started {
+		// Animates the panel while no run does; extra tick chains collapse.
+		commands = append(commands, m.spinner.Tick)
 	}
 	if batch.closed {
 		m.agentUpdates = nil
-		return m, nil
+	} else {
+		commands = append(commands, waitForAgentUpdates(m.agentUpdates))
 	}
-	return m, waitForAgentUpdates(m.agentUpdates)
+	return m, tea.Batch(commands...)
 }
 
 // applyAgentUpdate folds one update into its view. Only a start creates a
@@ -95,16 +115,116 @@ func (m *model) applyAgentUpdate(update interaction.AgentUpdate, now time.Time) 
 		transcript.entries = append(transcript.entries, transcriptEntry{kind: entryUser, text: update.Start.Prompt})
 		transcript.activeProcessID = 0
 		transcript.beginProcess()
-		transcript.status = "Starting..."
+		view.activity = "Starting"
 	case view == nil || !view.running:
+		return
 	case update.Event != nil:
 		view.transcript.applyAgentEvent(*update.Event)
+		if update.Event.Kind == interaction.EventToolEnd {
+			view.tools++
+		}
+		previous := view.activity
+		view.activity = agentActivity(*update.Event, view.activity)
+		if view.activity == previous {
+			return
+		}
 	case update.End != nil:
-		view.running, view.end = false, update.End
+		view.running, view.end, view.activity = false, update.End, ""
 		view.elapsed += update.End.Duration
 		view.transcript.settleAgentRun(update.End.Err, now)
+	}
+	m.showAgentOnCall(view)
+	if update.End != nil {
 		m.pruneAgents()
 	}
+}
+
+// agentActivity names what a child does after event, keeping current when
+// the event changes nothing.
+func agentActivity(event interaction.Event, current string) string {
+	switch event.Kind {
+	case interaction.EventAssistantStart, interaction.EventToolEnd:
+		return "Thinking"
+	case interaction.EventAssistantDelta:
+		switch event.Delta.Kind {
+		case interaction.DeltaText:
+			return "Responding"
+		case interaction.DeltaThinking:
+			return "Thinking"
+		}
+	case interaction.EventToolStart:
+		tool := event.Tool
+		detail := tool.Detail
+		if tool.Description != "" {
+			detail = tool.Description
+		}
+		activity := "Running " + sanitizeSingleLineText(tool.Name)
+		if detail = strings.Join(strings.Fields(sanitizeSingleLineText(detail)), " "); detail != "" {
+			activity += " " + detail
+		}
+		return activity
+	case interaction.EventRetryStart:
+		return "Retrying"
+	}
+	return current
+}
+
+func (m model) runningAgents() []*agentView {
+	var running []*agentView
+	for _, view := range m.agents {
+		if view.running {
+			running = append(running, view)
+		}
+	}
+	return running
+}
+
+// showAgentOnCall writes the child's state onto the agent call that started
+// it in the main transcript. The call's card may arrive after the child's
+// first updates, since they travel apart; a later update links it then.
+func (m *model) showAgentOnCall(view *agentView) {
+	call := view.start.ToolCallID
+	if call == "" {
+		return
+	}
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		entry := &m.entries[i]
+		if entry.kind == entryTool && entry.toolName == "agent" && entry.toolID == call {
+			entry.toolAgent = view.status()
+			return
+		}
+	}
+}
+
+// agentStatus is a child's state shown on its call; comparable, so the
+// card's cached view changes with it.
+type agentStatus struct {
+	running bool
+	failed  bool
+	text    string
+}
+
+func (v *agentView) status() agentStatus {
+	if v.running {
+		return agentStatus{running: true, text: v.activity}
+	}
+	switch end := v.end; {
+	case end == nil:
+		return agentStatus{}
+	case errors.Is(end.Err, context.Canceled):
+		return agentStatus{failed: true, text: "stopped after " + formatRunDuration(v.elapsed)}
+	case end.Err != nil:
+		return agentStatus{failed: true, text: "failed: " + sanitizeSingleLineText(end.Err.Error())}
+	}
+	return agentStatus{text: fmt.Sprintf("completed in %s · %s · %s", formatRunDuration(v.elapsed),
+		count(v.end.Turns, "turn"), count(v.end.ToolCalls, "tool call"))}
+}
+
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 func (m *model) agentView(id string) *agentView {

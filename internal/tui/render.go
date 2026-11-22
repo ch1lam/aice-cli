@@ -34,12 +34,15 @@ func (m *model) resizeLayout() {
 		menu:   lipgloss.Height(m.commandMenuView(width)),
 		footer: lipgloss.Height(m.footerView(width)),
 	}
+	if panel := m.agentPanelView(width); panel != "" {
+		m.chrome.agents = lipgloss.Height(panel)
+	}
 	if m.reading == nil {
 		m.chrome.composer = lipgloss.Height(m.composerViewWithStyle(width, m.composerFrameStyle(width)))
 	}
 	m.chrome.question = m.questionDialogHeight(width)
 	c := m.chrome
-	m.viewport.SetHeight(max(m.layoutHeight()-c.header-c.menu-c.question-c.composer-c.footer, minimumViewport))
+	m.viewport.SetHeight(max(m.layoutHeight()-c.header-c.menu-c.agents-c.question-c.composer-c.footer, minimumViewport))
 }
 
 func (m *model) refreshViewport(forceBottom bool) {
