@@ -925,6 +925,24 @@ a reconstructed diff. Before execution, writes may show a bounded argument
 preview labelled `not executed`; it grants no authority. Display limits never
 limit file mutations or rewrite Session content.
 
+### Subagents
+
+While subagents exist in the Session, `Tab` in the main composer moves the
+keyboard to the [subagent panel](execution-sessions.md#subagents) above it,
+which then lists the recent finished children too:
+
+| Key | Effect in the subagent panel |
+| --- | --- |
+| `↑`/`↓` or `k`/`j` | Select a child |
+| `Enter` | Open the child's transcript; it follows the child live |
+| `x` | Stop a running background child; the parent agent is told |
+| `Esc`, `Tab`, or `Ctrl+C` | Return to the composer |
+
+In a child's transcript, `Esc` or `Enter` returns to the panel, and the
+history reader's scrolling, folding and `T` question keys apply. A
+synchronous child stops with the response that waits for it (`Esc` in the
+composer). A permission prompt or question still takes the keyboard first.
+
 ### Sending input while working
 
 The composer remains active while an Agent run is working:

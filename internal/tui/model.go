@@ -174,8 +174,14 @@ type model struct {
 	awaitTasks      func() tea.Cmd
 	taskWaitPending bool
 	// agentUpdates delivers subagent runs, which agents shows in start order.
-	agentUpdates          <-chan interaction.AgentUpdate
-	agents                []*agentView
+	agentUpdates <-chan interaction.AgentUpdate
+	agents       []*agentView
+	// agentFocus moves the keyboard from the composer to the subagent panel,
+	// where agentSelected names the selected child. stopAgent stops a
+	// background child.
+	agentFocus            bool
+	agentSelected         string
+	stopAgent             func(id string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	throughput            interaction.DisplayThroughput
@@ -364,6 +370,9 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		next, command := m.reading.previous.update(message)
 		live := next.(model)
 		m.reading.previous = &live
+		if m.reading.agent != "" {
+			m.followAgent(live)
+		}
 		return m, command
 	}
 	switch message := message.(type) {
@@ -575,6 +584,8 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.followBackgroundTasks(message.running)
 	case taskCompletionMsg:
 		return m.wakeForTasks(message)
+	case agentStopMsg:
+		return m.applyAgentStop(message)
 	case agentUpdatesMsg:
 		return m.applyAgentUpdates(message)
 	case welcomeTickMsg:

@@ -199,9 +199,8 @@ func (m *model) showAgentOnCall(view *agentView) {
 // agentStatus is a child's state shown on its call; comparable, so the
 // card's cached view changes with it.
 type agentStatus struct {
-	running bool
-	failed  bool
-	text    string
+	running, failed, stopped bool
+	text                     string
 }
 
 func (v *agentView) status() agentStatus {
@@ -212,7 +211,7 @@ func (v *agentView) status() agentStatus {
 	case end == nil:
 		return agentStatus{}
 	case errors.Is(end.Err, context.Canceled):
-		return agentStatus{failed: true, text: "stopped after " + formatRunDuration(v.elapsed)}
+		return agentStatus{stopped: true, text: "stopped after " + formatRunDuration(v.elapsed)}
 	case end.Err != nil:
 		return agentStatus{failed: true, text: "failed: " + sanitizeSingleLineText(end.Err.Error())}
 	}

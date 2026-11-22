@@ -45,6 +45,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 			return m.handleCommandAction(match)
 		case inputSecret:
 			return m.handleSecretAction(match)
+		case inputAgents:
+			return m.handleAgentAction(match)
 		default:
 			return m.handleComposerAction(match)
 		}
@@ -139,6 +141,9 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m.openSessionPicker()
 	case inputActionTurns:
 		return m.openCurrentReading(), nil, true
+	case inputActionAgents:
+		m.focusAgents()
+		return m, nil, true
 	case inputActionPaste:
 		m.clipboardRead = clipboardRead{pending: true, inSide: m.side.isVisible, sideID: m.side.activeID}
 		return m, m.clipboard, true

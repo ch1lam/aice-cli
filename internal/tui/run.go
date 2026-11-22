@@ -150,6 +150,7 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 	}
 	if frontend.Agents != nil {
 		initialModel.agentUpdates = frontend.Agents.AgentUpdates()
+		initialModel.stopAgent = agentStopCommand(frontend.Agents)
 	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking

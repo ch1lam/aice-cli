@@ -133,6 +133,9 @@ func (m model) headerView(width int) string {
 		if m.reading.directory {
 			label = "HISTORY · USER QUESTIONS"
 		}
+		if label, ok := m.agentReadingLabel(); ok && !m.reading.directory {
+			return lipgloss.NewStyle().Width(width).Padding(0, 1, 1).Render(ansi.Truncate(label, width-2, "…"))
+		}
 		return lipgloss.NewStyle().Width(width).Padding(0, 1, 1).Render(ansi.Truncate(label, width-2, "…"))
 	}
 	layout := m.headerLayout(width)

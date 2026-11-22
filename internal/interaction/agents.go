@@ -44,4 +44,8 @@ type AgentEnd struct {
 // continuously: children wait for room on the channel.
 type Agents interface {
 	AgentUpdates() <-chan AgentUpdate
+	// StopAgent stops a background child for the person, without waiting;
+	// the parent agent is told. A synchronous child stops with the response
+	// that waits for it.
+	StopAgent(id string) error
 }

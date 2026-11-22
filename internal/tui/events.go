@@ -192,7 +192,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			}
 			if update.state.Transcript != nil || update.state.SessionChanged {
 				// The previous Session's subagents stopped with it.
-				m.agents = nil
+				m.agents, m.agentFocus = nil, false
 			}
 			if update.state.Transcript != nil {
 				m.replaceTranscript(update.state.Transcript)

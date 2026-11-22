@@ -27,6 +27,12 @@ const (
 	inputActionQuit      inputAction = "quit"
 	inputActionClose     inputAction = "close"
 	inputActionMode      inputAction = "mode"
+	inputActionAgents    inputAction = "agents"
+
+	inputActionAgentMove inputAction = "agent.move"
+	inputActionAgentOpen inputAction = "agent.open"
+	inputActionAgentStop inputAction = "agent.stop"
+	inputActionAgentBack inputAction = "agent.back"
 
 	inputActionQuestionMove      inputAction = "question.move"
 	inputActionQuestionSwitch    inputAction = "question.switch"

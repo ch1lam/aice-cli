@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"regexp"
 	"slices"
@@ -206,4 +207,41 @@ func TestFollowChildWithoutFrontendIsSilent(t *testing.T) {
 		t.Fatal("a child without a follower got an event sink")
 	}
 	settle(tool.DelegateResult{})
+}
+
+// A person stops background children only; a synchronous child stops with
+// the response that waits for it, and an unknown task is refused.
+func TestStopAgentStopsBackgroundChildren(t *testing.T) {
+	t.Parallel()
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	s := &interactiveSession{tasks: tasks}
+	status, err := tasks.StartRun(tool.TaskAgent, "wait", nil, func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StopAgent(syncAgentID()); !errors.Is(err, errStopSynchronous) {
+		t.Fatalf("synchronous stop err = %v", err)
+	}
+	if err := s.StopAgent("bg-missing"); err == nil {
+		t.Fatal("an unknown task stopped")
+	}
+	done, err := tasks.Done(status.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StopAgent(status.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the background child did not stop")
+	}
 }

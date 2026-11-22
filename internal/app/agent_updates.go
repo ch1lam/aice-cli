@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +38,21 @@ func (s *interactiveSession) AgentUpdates() <-chan interaction.AgentUpdate {
 	return s.agentUpdates
 }
 
+// errStopSynchronous refuses to stop a synchronous child on its own.
+var errStopSynchronous = errors.New("a synchronous subagent stops with the response that waits for it (Esc)")
+
+// StopAgent stops a background child at the person's request; its
+// notification tells the parent agent so.
+func (s *interactiveSession) StopAgent(id string) error {
+	if strings.HasPrefix(id, syncAgentPrefix) {
+		return errStopSynchronous
+	}
+	if s.tasks == nil {
+		return fmt.Errorf("no background subagent %s", id)
+	}
+	return s.tasks.Stop(id, "stopped by the user")
+}
+
 // publishAgent waits for room for one update until ctx ends or the frontend
 // stopped receiving. It never fails the child: a frontend that is gone must
 // not stop it.
@@ -60,12 +78,15 @@ func (s *interactiveSession) toolDescriber() toolDescriber {
 	return toolDescriber{guard: s.guard, workspace: s.workspacePath}
 }
 
+// syncAgentPrefix starts the ID of a synchronous child.
+const syncAgentPrefix = "agent-"
+
 // syncAgentID names a synchronous child to the frontend. Call IDs repeat
 // across turns with some providers, so the child gets its own.
 func syncAgentID() string {
 	var value [3]byte
 	_, _ = rand.Read(value[:]) // crypto/rand.Read never fails since Go 1.24.
-	return "agent-" + hex.EncodeToString(value[:])
+	return syncAgentPrefix + hex.EncodeToString(value[:])
 }
 
 // followChild publishes one child run, if a frontend follows subagents: its

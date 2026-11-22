@@ -568,6 +568,11 @@ The runtime boundary preserves these ownership rules:
   the card's cached view changes with it; the call may be shown after the
   child's first updates, since the two travel apart, and a later update links
   it. The panel above the composer is its own layout row (`chrome.agents`).
+  Focusing it is the `inputAgents` input domain, below every dialog and menu;
+  selection is a child ID, so pruning does not move it. A child's transcript
+  opens in the history reader, which takes a copy of the child's transcript
+  from the live model after each forwarded message. `StopAgent` asks
+  `Tasks.Stop`, which does not wait, and refuses synchronous children.
 - The Guard adapter owns file write claims. A background writer's context
   names it by task ID; any other context is the main agent. Its task registers
   and releases the writer; a permitted write claims its files in

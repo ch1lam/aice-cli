@@ -124,6 +124,40 @@ func TestRunTaskKillAndFailure(t *testing.T) {
 	}
 }
 
+// A stop from a person ends a run task without waiting; its completion is
+// reported to the agent with the reason, and the task may still continue.
+func TestRunTaskStopReportsItsReason(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	block := func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	status, err := tasks.StartRun(tool.TaskAgent, "wait", nil, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := tasks.Changed()
+	if err := tasks.Stop(status.ID, "stopped by the user"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the stopped task did not finish")
+	}
+	notice, _, ok := tasks.TakeNotice()
+	if !ok || !strings.Contains(notice.Content[0].Text, "stopped by the user") {
+		t.Fatalf("notice = %#v", notice)
+	}
+	if _, err := tasks.Continue(status.ID, block); err != nil {
+		t.Fatalf("a stopped task cannot continue: %v", err)
+	}
+	if err := tasks.Stop("bg-missing", "stopped by the user"); err == nil {
+		t.Fatal("an unknown task stopped")
+	}
+}
+
 func TestRunTasksBoundConcurrentSubagents(t *testing.T) {
 	t.Parallel()
 	tasks, _, _ := newRunTasks(t)

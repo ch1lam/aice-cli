@@ -672,8 +672,12 @@ finished, its model and how long it has run. The `agent` call that started a chi
 its heading while the child runs, and then how the run ended: its duration,
 turns and tool calls, the error it failed with, or that it was stopped. A
 continued child updates the same call. The panel gives way to menus, dialogs,
-side threads and the history reader. `--print` and ACP show only the parent's
-`agent` call and its result.
+side threads and the history reader. `Tab` focuses the panel to select any
+recent child, open its transcript as it runs, or stop a background one (see
+[Configuration](configuration.md#subagents)); a stop ends the child like
+`task_kill` but reports its completion to the parent as usual, and the child
+may still be continued. `--print` and ACP show only the parent's `agent` call
+and its result.
 
 A background subagent runs as a
 [background task](#background-tasks): the call returns its task ID and report

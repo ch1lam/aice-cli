@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ch1lam/aice-cli/internal/interaction"
@@ -239,4 +240,133 @@ func TestAgentCallShowsItsChild(t *testing.T) {
 
 func ansiStripped(m model) string {
 	return ansi.Strip(m.View().Content)
+}
+
+func press(t *testing.T, m model, text string) model {
+	t.Helper()
+	switch text {
+	case "tab":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	case "esc":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	case "enter":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	return updateModel(t, m, tea.KeyPressMsg{Code: rune(text[0]), Text: text})
+}
+
+// Tab moves the keyboard to the panel, which then lists finished children
+// too; j/k select by ID, so pruning does not move the selection, and Esc
+// returns the keyboard to the composer.
+func TestAgentPanelFocusSelectsChildren(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30),
+		agentStart("bg-1", "task"), agentEnd("bg-1", nil, 2*time.Second),
+		agentStart("bg-2", "task"),
+		agentStart("bg-3", "task"), agentEnd("bg-3", errors.New("quota exceeded"), time.Second),
+	)
+	m = press(t, m, "tab")
+	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-2" {
+		t.Fatalf("focus = %#v on %q, want the latest running child", c, m.agentSelected)
+	}
+	view := ansiStripped(m)
+	for _, want := range []string{"Subagents 1 running · 3", "✓ find loader · completed in 2s", "› ⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+	m = press(t, m, "j")
+	m = press(t, m, "j")
+	if m.agentSelected != "bg-3" {
+		t.Fatalf("selected %q after moving past the end", m.agentSelected)
+	}
+	m = press(t, m, "k")
+	m = press(t, m, "k")
+	if m.agentSelected != "bg-1" {
+		t.Fatalf("selected %q, want the first child", m.agentSelected)
+	}
+	m = press(t, m, "q")
+	if m.input.Value() != "" {
+		t.Fatalf("a key reached the composer: %q", m.input.Value())
+	}
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
+		t.Fatalf("focus stays on the panel: %#v", m.inputContext())
+	}
+	m = press(t, m, "q")
+	if m.input.Value() != "q" {
+		t.Fatalf("composer = %q after returning", m.input.Value())
+	}
+}
+
+// Without children, Tab is not taken from the composer.
+func TestAgentPanelFocusNeedsChildren(t *testing.T) {
+	t.Parallel()
+	m := press(t, testModel(t, 100, 30), "tab")
+	if m.inputContext().domain != inputMain || m.agentFocus {
+		t.Fatalf("focus = %#v", m.inputContext())
+	}
+}
+
+// x stops a running background child through the frontend; a synchronous one
+// stops with its response, so x does nothing for it. A failed stop is shown.
+func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
+	t.Parallel()
+	background := agentStart("bg-1", "task")
+	background.Start.Background = true
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("agent-abc123", "task"), background)
+	var stopped []string
+	m.stopAgent = func(id string) tea.Cmd {
+		stopped = append(stopped, id)
+		return nil
+	}
+	m = press(t, m, "tab")
+	m = press(t, m, "x")
+	if len(stopped) != 1 || stopped[0] != "bg-1" || m.agentView("bg-1").activity != "Stopping" {
+		t.Fatalf("stopped %v", stopped)
+	}
+	m = updateModel(t, m, agentStopMsg{id: "bg-1", err: errors.New("no such task")})
+	if last := m.entries[len(m.entries)-1]; last.kind != entryError || !strings.Contains(last.text, "no such task") {
+		t.Fatalf("a failed stop is not shown: %#v", last)
+	}
+	m = press(t, m, "k")
+	m = press(t, m, "x")
+	if len(stopped) != 1 {
+		t.Fatalf("a synchronous child was stopped: %v", stopped)
+	}
+}
+
+// Enter opens the selected child's transcript, which follows the child live
+// while the main model keeps its state; Esc returns to the panel.
+func TestAgentReaderFollowsTheChild(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30),
+		agentStart("bg-1", "find the config loader"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "looking around"}}),
+	)
+	m = press(t, m, "tab")
+	m = press(t, m, "enter")
+	if m.reading == nil || m.reading.agent != "bg-1" {
+		t.Fatalf("reading = %#v", m.reading)
+	}
+	view := ansiStripped(m)
+	for _, want := range []string{"SUBAGENT · find loader · child-model", "find the config loader", "looking around", "Enter back to subagents"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("reader lacks %q:\n%s", want, view)
+		}
+	}
+	m = applyAgents(t, m,
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "the loader is config.Load"}}),
+		agentEnd("bg-1", nil, 4*time.Second),
+	)
+	if view := ansiStripped(m); !strings.Contains(view, "the loader is config.Load") || !strings.Contains(view, "completed in 4s") {
+		t.Fatalf("reader did not follow the child:\n%s", view)
+	}
+	if len(m.reading.previous.entries) != 0 {
+		t.Fatalf("the child changed the main transcript: %#v", m.reading.previous.entries)
+	}
+	m = press(t, m, "esc")
+	if m.reading != nil || m.inputContext().domain != inputAgents {
+		t.Fatalf("after closing: reading %v, domain %v", m.reading, m.inputContext().domain)
+	}
 }
