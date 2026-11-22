@@ -137,7 +137,7 @@ func (d *delegation) background(values context.Context, child *subagent, prompt 
 				child.stop()
 			}
 		}()
-		run := childRun{background: true, agent: child, tree: child.tree, label: id + " · " + request.Description, inherited: child.inherited}
+		run := childRun{id: id, background: true, agent: child, tree: child.tree, label: id + " · " + request.Description, inherited: child.inherited}
 		if tree := child.tree; tree != nil {
 			note, err := tree.reopen(ctx)
 			if err != nil {

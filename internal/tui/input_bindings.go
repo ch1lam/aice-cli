@@ -42,6 +42,8 @@ func (m model) inputBindings() []inputBinding {
 		return m.secretInputBindings()
 	case inputCommand:
 		return m.commandInputBindings()
+	case inputAgents:
+		return m.agentInputBindings()
 	default:
 		bindings := m.conversationInputBindings()
 		if m.inputContext().domain == inputMain && !m.deliveryPending {
@@ -234,6 +236,9 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionClose, binding: k.close, short: side},
 		{action: inputActionQuit, binding: k.quit, short: side},
 		{action: inputActionMode, binding: k.mode, short: true},
+	}
+	if !side && len(m.agents) > 0 {
+		bindings = append(bindings, actionBinding(inputActionAgents, "Tab", "subagents", "tab"))
 	}
 	if k.help.Enabled() || m.deliveryPending {
 		help := inputBinding{action: inputActionHelp, binding: k.help, short: true}

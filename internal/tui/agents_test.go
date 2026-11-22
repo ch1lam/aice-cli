@@ -1,0 +1,372 @@
+package tui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ch1lam/aice-cli/internal/interaction"
+)
+
+func agentStart(id, prompt string) interaction.AgentUpdate {
+	return interaction.AgentUpdate{ID: id, Start: &interaction.AgentStart{
+		ToolCallID: "call-" + id, Description: "find loader", Type: "explore",
+		Model: interaction.DisplayModel{ID: "child-model"}, Prompt: prompt,
+	}}
+}
+
+func agentEvent(id string, event interaction.Event) interaction.AgentUpdate {
+	return interaction.AgentUpdate{ID: id, Event: &event}
+}
+
+func agentEnd(id string, err error, duration time.Duration) interaction.AgentUpdate {
+	return interaction.AgentUpdate{ID: id, End: &interaction.AgentEnd{Err: err, Duration: duration, Turns: 1, ToolCalls: 1}}
+}
+
+func applyAgents(t *testing.T, m model, updates ...interaction.AgentUpdate) model {
+	t.Helper()
+	return updateModel(t, m, agentUpdatesMsg{updates: updates})
+}
+
+// A child's events build its own transcript as the main run's build the main
+// one, its status names what it is doing, and its end settles it.
+func TestAgentUpdatesBuildTheChildTranscript(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 80, 24),
+		agentStart("bg-1", "find the config loader"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantStart}),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "looking"}}),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "ls", Detail: "."}}),
+	)
+	if len(m.entries) != 0 {
+		t.Fatalf("a child changed the main transcript: %#v", m.entries)
+	}
+	view := m.agentView("bg-1")
+	if view == nil || !view.running || view.start.Description != "find loader" {
+		t.Fatalf("view = %#v", view)
+	}
+	if got := view.transcript.status; got != "Running ls..." {
+		t.Fatalf("activity = %q, want the running tool", got)
+	}
+	kinds := func() []entryKind {
+		var kinds []entryKind
+		for _, entry := range view.transcript.entries {
+			kinds = append(kinds, entry.kind)
+		}
+		return kinds
+	}
+	if got, want := fmt.Sprint(kinds()), fmt.Sprint([]entryKind{entryUser, entryAssistant, entryTool}); got != want {
+		t.Fatalf("child entries = %v, want %v", got, want)
+	}
+
+	m = applyAgents(t, m, agentEnd("bg-1", errors.New("model unavailable"), 3*time.Second))
+	view = m.agentView("bg-1")
+	if view.running || view.end == nil || view.elapsed != 3*time.Second || view.transcript.status != "" {
+		t.Fatalf("settled view = %#v", view)
+	}
+	entries := view.transcript.entries
+	if tool := entries[2]; tool.toolState != toolFailed {
+		t.Fatalf("a tool without an end is %v, want failed", tool.toolState)
+	}
+	if last := entries[len(entries)-1]; last.kind != entryError || last.text != "model unavailable" {
+		t.Fatalf("last entry = %#v, want the error", last)
+	}
+}
+
+// Only a start creates a view: events and ends of unknown children, and
+// events after a run ended, change nothing. A continued child appends its
+// next run to the same view.
+func TestAgentUpdatesFollowRunBoundaries(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 80, 24),
+		agentEvent("ghost", interaction.Event{Kind: interaction.EventAssistantStart}),
+		agentEnd("ghost", nil, time.Second),
+	)
+	if len(m.agents) != 0 {
+		t.Fatalf("unknown children made views: %#v", m.agents)
+	}
+
+	m = applyAgents(t, m,
+		agentStart("bg-1", "first"),
+		agentEnd("bg-1", nil, time.Second),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantStart}),
+	)
+	view := m.agentView("bg-1")
+	if got := len(view.transcript.entries); got != 1 {
+		t.Fatalf("an event after the end was applied: %d entries", got)
+	}
+
+	m = applyAgents(t, m, agentStart("bg-1", "and the tests?"))
+	view = m.agentView("bg-1")
+	if len(m.agents) != 1 || !view.running || view.end != nil {
+		t.Fatalf("continued child = %#v among %d views", view, len(m.agents))
+	}
+	m = applyAgents(t, m, agentEnd("bg-1", context.Canceled, 2*time.Second))
+	view = m.agentView("bg-1")
+	entries := view.transcript.entries
+	if view.elapsed != 3*time.Second || entries[1].text != "and the tests?" || entries[len(entries)-1].text != "Subagent stopped" {
+		t.Fatalf("after two runs: elapsed %v, entries %#v", view.elapsed, entries)
+	}
+}
+
+// Finished views are bounded; running ones always stay.
+func TestAgentUpdatesKeepRecentFinishedChildren(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 80, 24), agentStart("running", "still going"))
+	for i := range maximumFinishedAgents + 3 {
+		id := fmt.Sprintf("bg-%d", i)
+		m = applyAgents(t, m, agentStart(id, "task"), agentEnd(id, nil, time.Second))
+	}
+	if len(m.agents) != maximumFinishedAgents+1 || m.agentView("running") == nil {
+		t.Fatalf("%d views kept", len(m.agents))
+	}
+	if m.agentView("bg-0") != nil || m.agentView(fmt.Sprintf("bg-%d", maximumFinishedAgents+2)) == nil {
+		t.Fatal("pruning did not drop the oldest finished views")
+	}
+}
+
+// A changed Session drops the previous Session's children.
+func TestSessionChangeDropsAgentViews(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 80, 24), agentStart("bg-1", "task"))
+	state := interaction.RuntimeState{SessionChanged: true}
+	m = updateModel(t, m, runBatchMsg{updates: []runUpdate{{state: &state}}})
+	if len(m.agents) != 0 {
+		t.Fatalf("views after a Session change: %#v", m.agents)
+	}
+}
+
+// Updates arrive in batches; a closed channel ends the wait for more.
+func TestWaitForAgentUpdatesBatches(t *testing.T) {
+	t.Parallel()
+	updates := make(chan interaction.AgentUpdate, 4)
+	updates <- agentStart("bg-1", "task")
+	batch := waitForAgentUpdates(updates)().(agentUpdatesMsg)
+	if len(batch.updates) != 1 || batch.closed {
+		t.Fatalf("lifecycle batch = %#v", batch)
+	}
+
+	delta := interaction.Event{Kind: interaction.EventAssistantDelta}
+	updates <- agentEvent("bg-1", delta)
+	updates <- agentEvent("bg-1", delta)
+	close(updates)
+	batch = waitForAgentUpdates(updates)().(agentUpdatesMsg)
+	if len(batch.updates) != 2 || !batch.closed {
+		t.Fatalf("streamed batch = %#v", batch)
+	}
+
+	m := testModel(t, 80, 24)
+	m.agentUpdates = updates
+	next, command := m.applyAgentUpdates(agentUpdatesMsg{closed: true})
+	if next.(model).agentUpdates != nil || command != nil {
+		t.Fatal("a closed channel is still awaited")
+	}
+}
+
+// Running children show above the composer with what they do, their model
+// and how long they ran; the transcript yields the rows they take.
+func TestAgentPanelShowsRunningChildren(t *testing.T) {
+	t.Parallel()
+	base := testModel(t, 100, 30)
+	m := applyAgents(t, base,
+		agentStart("bg-1", "task"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "read", Detail: "internal/agent/loop.go"}}),
+		agentStart("bg-2", "task"),
+		agentStart("bg-3", "task"),
+		agentEnd("bg-3", nil, time.Second),
+	)
+	m = applyAgents(t, m,
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "read"}}),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t2", Name: "read", Detail: "internal/agent/loop.go"}}),
+	)
+	view := ansiStripped(m)
+	for _, want := range []string{"Subagents 2", "find loader · Running read internal/agent/loop.go · 1 tool", "child-model 0s", "find loader · Starting"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+	if m.chrome.agents != 3 || m.viewport.Height() != base.viewport.Height()-3 {
+		t.Fatalf("panel takes %d rows, viewport %d (was %d)", m.chrome.agents, m.viewport.Height(), base.viewport.Height())
+	}
+
+	m = applyAgents(t, m, agentEnd("bg-1", nil, time.Second), agentEnd("bg-2", nil, time.Second))
+	if view := ansiStripped(m); strings.Contains(view, "Subagents") || m.chrome.agents != 0 || m.viewport.Height() != base.viewport.Height() {
+		t.Fatalf("panel stays without running children (%d rows):\n%s", m.chrome.agents, view)
+	}
+}
+
+// The panel shows at most a few rows and counts the rest.
+func TestAgentPanelCountsChildrenBeyondItsRows(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	for i := range maximumAgentRows + 2 {
+		m = applyAgents(t, m, agentStart(fmt.Sprintf("bg-%d", i), "task"))
+	}
+	view := ansiStripped(m)
+	if !strings.Contains(view, "Subagents 7") || !strings.Contains(view, "+3 more") || m.chrome.agents != maximumAgentRows+1 {
+		t.Fatalf("panel of %d rows:\n%s", m.chrome.agents, view)
+	}
+}
+
+// The agent call that started a child shows what the child does and, once
+// it ended, how it ended.
+func TestAgentCallShowsItsChild(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	m.entries = []transcriptEntry{{kind: entryTool, toolID: "call-bg-1", toolName: "agent", toolDetail: "find loader", toolState: toolSucceeded}}
+	m = applyAgents(t, m,
+		agentStart("bg-1", "task"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "bash", Detail: "go test ./...", Description: "run the tests"}}),
+	)
+	if view := m.transcriptView(); !strings.Contains(view, "↳ running · Running bash run the tests") {
+		t.Fatalf("running call:\n%s", view)
+	}
+	m = applyAgents(t, m, agentEnd("bg-1", nil, 3*time.Second))
+	if view := m.transcriptView(); !strings.Contains(view, "↳ completed in 3s · 1 turn · 1 tool call") {
+		t.Fatalf("finished call:\n%s", view)
+	}
+
+	m = applyAgents(t, m, agentStart("bg-1", "more"), agentEnd("bg-1", errors.New("quota exceeded"), time.Second))
+	if view := m.transcriptView(); !strings.Contains(view, "↳ failed: quota exceeded") {
+		t.Fatalf("failed call:\n%s", view)
+	}
+}
+
+func ansiStripped(m model) string {
+	return ansi.Strip(m.View().Content)
+}
+
+func press(t *testing.T, m model, text string) model {
+	t.Helper()
+	switch text {
+	case "tab":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	case "esc":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	case "enter":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	return updateModel(t, m, tea.KeyPressMsg{Code: rune(text[0]), Text: text})
+}
+
+// Tab moves the keyboard to the panel, which then lists finished children
+// too; j/k select by ID, so pruning does not move the selection, and Esc
+// returns the keyboard to the composer.
+func TestAgentPanelFocusSelectsChildren(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30),
+		agentStart("bg-1", "task"), agentEnd("bg-1", nil, 2*time.Second),
+		agentStart("bg-2", "task"),
+		agentStart("bg-3", "task"), agentEnd("bg-3", errors.New("quota exceeded"), time.Second),
+	)
+	m = press(t, m, "tab")
+	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-2" {
+		t.Fatalf("focus = %#v on %q, want the latest running child", c, m.agentSelected)
+	}
+	view := ansiStripped(m)
+	for _, want := range []string{"Subagents 1 running · 3", "✓ find loader · completed in 2s", "› ⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view lacks %q:\n%s", want, view)
+		}
+	}
+	m = press(t, m, "j")
+	m = press(t, m, "j")
+	if m.agentSelected != "bg-3" {
+		t.Fatalf("selected %q after moving past the end", m.agentSelected)
+	}
+	m = press(t, m, "k")
+	m = press(t, m, "k")
+	if m.agentSelected != "bg-1" {
+		t.Fatalf("selected %q, want the first child", m.agentSelected)
+	}
+	m = press(t, m, "q")
+	if m.input.Value() != "" {
+		t.Fatalf("a key reached the composer: %q", m.input.Value())
+	}
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
+		t.Fatalf("focus stays on the panel: %#v", m.inputContext())
+	}
+	m = press(t, m, "q")
+	if m.input.Value() != "q" {
+		t.Fatalf("composer = %q after returning", m.input.Value())
+	}
+}
+
+// Without children, Tab is not taken from the composer.
+func TestAgentPanelFocusNeedsChildren(t *testing.T) {
+	t.Parallel()
+	m := press(t, testModel(t, 100, 30), "tab")
+	if m.inputContext().domain != inputMain || m.agentFocus {
+		t.Fatalf("focus = %#v", m.inputContext())
+	}
+}
+
+// x stops a running background child through the frontend; a synchronous one
+// stops with its response, so x does nothing for it. A failed stop is shown.
+func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
+	t.Parallel()
+	background := agentStart("bg-1", "task")
+	background.Start.Background = true
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("agent-abc123", "task"), background)
+	var stopped []string
+	m.stopAgent = func(id string) tea.Cmd {
+		stopped = append(stopped, id)
+		return nil
+	}
+	m = press(t, m, "tab")
+	m = press(t, m, "x")
+	if len(stopped) != 1 || stopped[0] != "bg-1" || m.agentView("bg-1").activity != "Stopping" {
+		t.Fatalf("stopped %v", stopped)
+	}
+	m = updateModel(t, m, agentStopMsg{id: "bg-1", err: errors.New("no such task")})
+	if last := m.entries[len(m.entries)-1]; last.kind != entryError || !strings.Contains(last.text, "no such task") {
+		t.Fatalf("a failed stop is not shown: %#v", last)
+	}
+	m = press(t, m, "k")
+	m = press(t, m, "x")
+	if len(stopped) != 1 {
+		t.Fatalf("a synchronous child was stopped: %v", stopped)
+	}
+}
+
+// Enter opens the selected child's transcript, which follows the child live
+// while the main model keeps its state; Esc returns to the panel.
+func TestAgentReaderFollowsTheChild(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30),
+		agentStart("bg-1", "find the config loader"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "looking around"}}),
+	)
+	m = press(t, m, "tab")
+	m = press(t, m, "enter")
+	if m.reading == nil || m.reading.agent != "bg-1" {
+		t.Fatalf("reading = %#v", m.reading)
+	}
+	view := ansiStripped(m)
+	for _, want := range []string{"SUBAGENT · find loader · child-model", "find the config loader", "looking around", "Enter back to subagents"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("reader lacks %q:\n%s", want, view)
+		}
+	}
+	m = applyAgents(t, m,
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "the loader is config.Load"}}),
+		agentEnd("bg-1", nil, 4*time.Second),
+	)
+	if view := ansiStripped(m); !strings.Contains(view, "the loader is config.Load") || !strings.Contains(view, "completed in 4s") {
+		t.Fatalf("reader did not follow the child:\n%s", view)
+	}
+	if len(m.reading.previous.entries) != 0 {
+		t.Fatalf("the child changed the main transcript: %#v", m.reading.previous.entries)
+	}
+	m = press(t, m, "esc")
+	if m.reading != nil || m.inputContext().domain != inputAgents {
+		t.Fatalf("after closing: reading %v, domain %v", m.reading, m.inputContext().domain)
+	}
+}

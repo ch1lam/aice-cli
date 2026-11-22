@@ -509,6 +509,21 @@ func (t *Tasks) Kill(ctx context.Context, id string) (TaskStatus, error) {
 	return current.report(), nil
 }
 
+// Stop asks one task to end for reason, as a person does from a frontend,
+// without waiting for it. Unlike Kill its completion is reported as usual, so
+// the agent learns why it ended, and a run task may still be continued.
+func (t *Tasks) Stop(id, reason string) error {
+	tasks, err := t.lookup([]string{id})
+	if err != nil {
+		return err
+	}
+	select {
+	case tasks[0].stopReq <- reason:
+	default:
+	}
+	return nil
+}
+
 // Running reports how many tasks are still running.
 func (t *Tasks) Running() int {
 	return t.RunningKind("")

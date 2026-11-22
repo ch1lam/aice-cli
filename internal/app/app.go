@@ -488,6 +488,10 @@ func (a *application) Interactive(
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
+	// The TUI receives subagent updates until it returns; children still
+	// running then stop waiting for it.
+	stopAgents := runner.followAgents()
+	defer stopAgents()
 	frontend := runner.frontend()
 	if a.dependencies.checkUpdate != nil {
 		frontend.CheckUpdate = a.checkForUpdate
@@ -535,6 +539,7 @@ func (a *application) Interactive(
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          buildinfo.Version,
 	})
+	stopAgents()
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate. A title
@@ -964,6 +969,12 @@ type interactiveSession struct {
 	titles       sessionTitler
 	titleUpdates chan interaction.SessionTitle
 
+	// agentUpdates carries subagent runs to a frontend that follows them;
+	// nil for one that does not. agentsClosed ends delivery once it stopped
+	// receiving.
+	agentUpdates chan interaction.AgentUpdate
+	agentsClosed chan struct{}
+
 	// sideMu guards the ephemeral /btw thread registry below. sideClock is
 	// the injectable time source used for idle windows and expiry; nil means
 	// wall-clock time.
@@ -1015,6 +1026,9 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 	}
 	if s.tasks != nil {
 		frontend.Tasks = s
+	}
+	if s.agentUpdates != nil {
+		frontend.Agents = s
 	}
 	return frontend
 }

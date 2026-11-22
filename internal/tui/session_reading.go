@@ -25,6 +25,8 @@ type sessionReading struct {
 	turns         []int
 	selected      int
 	savedViewport transcriptViewport
+	// agent names the subagent whose transcript the reader follows live.
+	agent string
 }
 
 // readerMessage reports whether a message belongs to an open reader: terminal

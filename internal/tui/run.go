@@ -148,6 +148,10 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 		// Init starts the first wait; Bubble Tea keeps no state Init sets.
 		initialModel.taskWaitPending = true
 	}
+	if frontend.Agents != nil {
+		initialModel.agentUpdates = frontend.Agents.AgentUpdates()
+		initialModel.stopAgent = agentStopCommand(frontend.Agents)
+	}
 	initialModel.currentModel = options.Model
 	initialModel.thinking = options.Thinking
 	initialModel.apiKeyConfigured = options.APIKeyConfigured

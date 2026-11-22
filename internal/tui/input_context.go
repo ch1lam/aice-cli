@@ -20,6 +20,7 @@ const (
 	inputSide
 	inputSecret
 	inputCommand
+	inputAgents
 )
 
 // inputFocus names the active pane or interaction mode within a domain.
@@ -105,6 +106,8 @@ func (m model) inputContext() inputContext {
 		return inputContext{domain: inputSecret, editor: !m.deliveryPending && !m.run.running()}
 	case m.commandMenuOpen():
 		return inputContext{domain: inputCommand, focus: inputFocusList, editor: !m.deliveryPending && !m.run.running()}
+	case m.agentsFocused():
+		return inputContext{domain: inputAgents, focus: inputFocusList}
 	default:
 		return inputContext{domain: inputMain, editor: !m.deliveryPending && (!m.run.running() || m.run.acceptsDelivery())}
 	}

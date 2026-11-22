@@ -546,6 +546,33 @@ The runtime boundary preserves these ownership rules:
   task checks the branch out again. A process-wide lock
   serializes AICE's worktree and branch changes in a repository. Children
   carry no delegation in their context, so they cannot start subagents.
+- A frontend that follows subagents (`interaction.Agents`, offered to the TUI
+  only) receives every child run of the Session on one ordered channel the
+  interactive Session owns: `AgentUpdate` carries the child's ID (its task
+  ID, or an `agent-` ID of a synchronous child, since call IDs repeat across
+  turns with some providers), then a start naming the call, the child Loop's
+  events translated as the main run's are (`toolDescriber.display`), and an
+  end. A continued child starts another run under its ID. The main run keeps
+  its own request stream: the TUI starts, cancels and settles it, and its
+  completion must follow its last event. Children wait for room on the
+  bounded channel, which the TUI drains continuously, so no update is lost;
+  their event sink never fails, and a send stops waiting when the child's
+  context ends or the frontend stopped receiving (`followAgents`' stop, run
+  when the TUI returns). An end waits past the child's cancellation, so the
+  frontend never keeps a stopped child shown as running. Without the
+  capability (`--print`, ACP) a child Loop runs without a sink. The TUI keeps
+  one presentation-only transcript model per child, built by the same
+  `applyAgentEvent` as the main transcript; only a start creates one, a
+  Session change drops them, and at most 16 finished children stay. A
+  child's state reaches its `agent` call card as a comparable entry field, so
+  the card's cached view changes with it; the call may be shown after the
+  child's first updates, since the two travel apart, and a later update links
+  it. The panel above the composer is its own layout row (`chrome.agents`).
+  Focusing it is the `inputAgents` input domain, below every dialog and menu;
+  selection is a child ID, so pruning does not move it. A child's transcript
+  opens in the history reader, which takes a copy of the child's transcript
+  from the live model after each forwarded message. `StopAgent` asks
+  `Tasks.Stop`, which does not wait, and refuses synchronous children.
 - The Guard adapter owns file write claims. A background writer's context
   names it by task ID; any other context is the main agent. Its task registers
   and releases the writer; a permitted write claims its files in

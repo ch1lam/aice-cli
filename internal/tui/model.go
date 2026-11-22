@@ -94,6 +94,8 @@ type transcriptEntry struct {
 	toolEvidence *interaction.EvidenceDisplay
 	// toolReview is auto mode's decision, when it made one.
 	toolReview *interaction.ReviewDisplay
+	// toolAgent is the state of the subagent an agent call started.
+	toolAgent agentStatus
 }
 
 type processGroup struct {
@@ -169,8 +171,17 @@ type model struct {
 	taskPollPending bool
 	// awaitTasks waits for a finished task to report while the view is idle;
 	// taskWaitPending marks the one wait in flight.
-	awaitTasks            func() tea.Cmd
-	taskWaitPending       bool
+	awaitTasks      func() tea.Cmd
+	taskWaitPending bool
+	// agentUpdates delivers subagent runs, which agents shows in start order.
+	agentUpdates <-chan interaction.AgentUpdate
+	agents       []*agentView
+	// agentFocus moves the keyboard from the composer to the subagent panel,
+	// where agentSelected names the selected child. stopAgent stops a
+	// background child.
+	agentFocus            bool
+	agentSelected         string
+	stopAgent             func(id string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
 	throughput            interaction.DisplayThroughput
@@ -326,6 +337,9 @@ func (m model) Init() tea.Cmd {
 	if m.taskWaitPending {
 		commands = append(commands, m.awaitTasks())
 	}
+	if m.agentUpdates != nil {
+		commands = append(commands, waitForAgentUpdates(m.agentUpdates))
+	}
 	return tea.Batch(commands...)
 }
 
@@ -356,6 +370,9 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		next, command := m.reading.previous.update(message)
 		live := next.(model)
 		m.reading.previous = &live
+		if m.reading.agent != "" {
+			m.followAgent(live)
+		}
 		return m, command
 	}
 	switch message := message.(type) {
@@ -567,6 +584,10 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.followBackgroundTasks(message.running)
 	case taskCompletionMsg:
 		return m.wakeForTasks(message)
+	case agentStopMsg:
+		return m.applyAgentStop(message)
+	case agentUpdatesMsg:
+		return m.applyAgentUpdates(message)
 	case welcomeTickMsg:
 		active := len(m.entries) == 0 && !m.run.running()
 		command := m.welcomeAnimation.Update(message, active)
@@ -584,7 +605,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.run.running() || m.side.anyRunning() {
+		if m.run.running() || m.side.anyRunning() || len(m.runningAgents()) > 0 {
 			m.thinkingShimmer++
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
@@ -630,6 +651,9 @@ func (m model) View() tea.View {
 		m.headerView(width),
 		transcript,
 		m.commandMenuView(width),
+	}
+	if panel := m.agentPanelView(width); panel != "" {
+		frame = append(frame, panel)
 	}
 	// The Q&A dialog and answer input share one frame: the question owns the
 	// top edge, and the composer continues its walls and closes the bottom.
