@@ -232,10 +232,12 @@ type RunInput struct {
 	// steering, and at natural stops before follow-ups. Delegations they
 	// report count toward this run like a subagent tool result's.
 	Notifications InputSource
-	// AwaitNotification is called when the run would otherwise end. It blocks
-	// until the next notification arrives, which continues the run, or returns
-	// false when nothing outstanding can produce one. Nil ends the run at once.
-	AwaitNotification func(context.Context) (InputMessage, bool, error)
+	// AwaitInput is called when the run would otherwise end and FollowUp has
+	// nothing. It blocks until the next follow-up or notification arrives,
+	// which continues the run, or returns false when nothing outstanding can
+	// produce one. A message carrying llm.Notice is a notification, any other
+	// a follow-up. Nil ends the run at once.
+	AwaitInput func(context.Context) (InputMessage, bool, error)
 }
 
 // ModelRound is one inner-loop model round: user input injected immediately

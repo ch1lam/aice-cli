@@ -60,7 +60,8 @@ func (m model) transcriptItems() []transcriptItem {
 			version := struct {
 				Group      processGroup
 				Start, End int
-			}{g, start, end}
+				Counts     processActivity
+			}{g, start, end, m.processCounts(start, end)}
 			add(transcriptItem{key: start*16 + 4, version: version, render: func() string { return m.processHeader(start, end, g.collapsed) }}, 1)
 			items[len(items)-1].fold = foldTarget{kind: foldProcess, id: g.id}
 			if !g.collapsed {

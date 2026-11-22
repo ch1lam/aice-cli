@@ -60,12 +60,16 @@ func usageFields(u interaction.UsageSnapshot) interaction.SettingsSnapshot {
 		speed = fmt.Sprintf("%.1f tok/s · %d output tokens over %s of generation (this process)",
 			rate, u.Throughput.OutputTokens, u.Throughput.Duration.Round(100*time.Millisecond))
 	}
-	add("usage", "Output speed", speed)
+	add("usage", "Output speed (main agent)", speed)
 	cost := u.CostStatus
 	if cost != "Unavailable" {
 		cost = fmt.Sprintf("$%.6f · %s", u.Usage.TotalCost, cost)
 	}
 	add("usage", "Recorded cost", cost)
+	if u.Delegations > 0 {
+		add("usage", "Subagents", fmt.Sprintf("%s · %d input / %d output tokens (included above)",
+			count(u.Delegations, "run"), u.DelegatedUsage.InputTokens, u.DelegatedUsage.OutputTokens))
+	}
 	if u.Reviews > 0 {
 		add("usage", "Auto mode classifier", fmt.Sprintf("%d decisions · %d input / %d output tokens (not included above)", u.Reviews, u.ReviewUsage.InputTokens, u.ReviewUsage.OutputTokens))
 	}

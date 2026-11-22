@@ -8,6 +8,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/deps"
+	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/tool"
 )
 
@@ -72,33 +73,50 @@ func taskNotifications(tasks *tool.Tasks) agent.InputSource {
 	}
 }
 
-// awaitSubagents keeps a run that would end while subagents still run: it
-// waits for the next notification, or reports none once no subagent runs.
-// A frontend that cannot start a run on its own, such as --print or ACP,
-// would otherwise lose their reports. Background commands are not awaited:
-// a server never finishes.
-func awaitSubagents(tasks *tool.Tasks) func(context.Context) (agent.InputMessage, bool, error) {
-	if tasks == nil {
+// awaitSubagents keeps a run that would end while subagents still run, so
+// one prompt's turn lasts until their reports are answered. It returns the
+// person's next queued input (followUp, which must not seal mailbox) or the
+// next notification, or reports none once no subagent runs and mailbox is
+// empty, which it then seals. Without the wait a frontend that cannot start
+// a run on its own, such as --print or ACP, would lose their reports.
+// Background commands are not awaited: a server never finishes. mailbox and
+// followUp are nil where no person can send input during the run.
+func awaitSubagents(tasks *tool.Tasks, mailbox *interaction.Mailbox, followUp agent.InputSource) func(context.Context) (agent.InputMessage, bool, error) {
+	if tasks == nil && mailbox == nil {
 		return nil
 	}
-	take := taskNotifications(tasks)
+	notices := taskNotifications(tasks)
 	return func(ctx context.Context) (agent.InputMessage, bool, error) {
 		for {
-			changed := tasks.Changed()
-			if input, ok, err := take(); ok || err != nil {
-				return input, ok, err
+			var finished <-chan struct{}
+			if tasks != nil {
+				finished = tasks.Changed()
 			}
-			if tasks.RunningKind(tool.TaskAgent) == 0 {
-				// The last subagent may have finished after take looked.
-				select {
-				case <-changed:
+			delivered := mailbox.Changed()
+			for _, source := range []agent.InputSource{followUp, notices} {
+				if source == nil {
 					continue
-				default:
-					return agent.InputMessage{}, false, nil
+				}
+				if input, ok, err := source(); ok || err != nil {
+					return input, ok, err
 				}
 			}
+			if tasks == nil || tasks.RunningKind(tool.TaskAgent) == 0 {
+				// The last subagent may have finished, or the person sent
+				// input, after the sources were checked.
+				select {
+				case <-finished:
+					continue
+				default:
+				}
+				if !mailbox.SealIfEmpty() {
+					continue
+				}
+				return agent.InputMessage{}, false, nil
+			}
 			select {
-			case <-changed:
+			case <-finished:
+			case <-delivered:
 			case <-ctx.Done():
 				return agent.InputMessage{}, false, ctx.Err()
 			}

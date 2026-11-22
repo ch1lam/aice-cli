@@ -153,10 +153,10 @@ func TestLoopCountsNotificationDelegations(t *testing.T) {
 	}
 }
 
-// AwaitNotification keeps a run going at a natural stop: each awaited
-// notification starts another interaction, and the run ends once it reports
-// none.
-func TestLoopAwaitsNotifications(t *testing.T) {
+// AwaitInput keeps a run going at a natural stop: each awaited follow-up or
+// notification starts another interaction, of the kind its message shows,
+// and the run ends once it reports none.
+func TestLoopAwaitsInput(t *testing.T) {
 	t.Parallel()
 	info := testModel()
 	text := assistantMessage(info, llm.StopReasonStop, textPart("done"))
@@ -168,13 +168,13 @@ func TestLoopAwaitsNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := testInput(info, mustPrompt(t, "hello"))
-	await := sourceOf(noticeInput(t, "n1"), noticeInput(t, "n2"))
-	input.AwaitNotification = func(context.Context) (agent.InputMessage, bool, error) { return await() }
+	await := sourceOf(noticeInput(t, "n1"), agent.InputMessage{ID: "f1", Message: mustPrompt(t, "more")})
+	input.AwaitInput = func(context.Context) (agent.InputMessage, bool, error) { return await() }
 	var events []agent.AgentEvent
 	if _, err := loop.Run(t.Context(), input, collectEvents(&events)); err != nil {
 		t.Fatal(err)
 	}
-	if got := requestTexts(model.requests[2]); len(model.requests) != 3 || got != "hello | notice n1 | notice n2" {
+	if got := requestTexts(model.requests[2]); len(model.requests) != 3 || got != "hello | notice n1 | more" {
 		t.Fatalf("requests = %d, last users = %q", len(model.requests), got)
 	}
 	want := "agent_start turn_start#1 message_start#1:user message_end#1:user message_start#1:assistant message_end#1:assistant turn_end#1 interaction_end " +
@@ -182,6 +182,15 @@ func TestLoopAwaitsNotifications(t *testing.T) {
 		"turn_start#3 message_start#3:user message_end#3:user message_start#3:assistant message_end#3:assistant turn_end#3 interaction_end agent_end"
 	if got := lifecycleTrace(events); got != want {
 		t.Errorf("events:\n got %s\nwant %s", got, want)
+	}
+	kinds := map[string]agent.InputKind{}
+	for _, event := range events {
+		if event.Type == agent.EventTypeMessageStart && event.InputID != "" {
+			kinds[event.InputID] = event.InputKind
+		}
+	}
+	if kinds["n1"] != agent.InputKindNotification || kinds["f1"] != agent.InputKindFollowUp {
+		t.Errorf("input kinds = %v, want n1 a notification and f1 a follow-up", kinds)
 	}
 }
 
@@ -199,7 +208,7 @@ func TestLoopAwaitStopsOnCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	input := testInput(info, mustPrompt(t, "hello"))
-	input.AwaitNotification = func(ctx context.Context) (agent.InputMessage, bool, error) {
+	input.AwaitInput = func(ctx context.Context) (agent.InputMessage, bool, error) {
 		cancel()
 		<-ctx.Done()
 		return agent.InputMessage{}, false, ctx.Err()

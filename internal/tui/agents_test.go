@@ -370,3 +370,59 @@ func TestAgentReaderFollowsTheChild(t *testing.T) {
 		t.Fatalf("after closing: reading %v, domain %v", m.reading, m.inputContext().domain)
 	}
 }
+
+// A run that waits for its background subagent says so, counts the child's
+// tool calls in the process header, and times the response to the child's
+// report from the person's prompt, wait included.
+func TestRunWaitingForSubagentsKeepsOneTurn(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 24)
+	m.run.kind = runPrompt
+	turnStart := time.Now().Add(-20 * time.Second)
+	m.entries = []transcriptEntry{{kind: entryUser, text: "survey the repo"}}
+	m.beginProcess()
+	m.processGroup(m.activeProcessID).startedAt = turnStart
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "call-bg-1", Name: "agent"}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "call-bg-1", Name: "agent"}})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantStart})
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "waiting for the survey", Concludes: true}})
+	first := m.activeProcessID
+	m = applyAgents(t, m,
+		agentStart("bg-1", "survey"),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "ls"}}),
+		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t2", Name: "grep"}}),
+	)
+
+	if got := ansi.Strip(m.activityIndicator()); !strings.Contains(got, "Waiting for 1 subagent...") {
+		t.Fatalf("activity = %q, want the wait for the subagent", got)
+	}
+	if got := ansi.Strip(m.processHeader(1, len(m.entries), true)); !strings.Contains(got, "1 tool call · 1 subagent (2 tool calls)") {
+		t.Fatalf("process header = %q, want the subagent's tool calls", got)
+	}
+
+	m = applyAgents(t, m, agentEnd("bg-1", nil, 15*time.Second))
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventNotification, Input: interaction.InputDisplay{ID: "notice-bg-1", Text: "bg-1 completed"}})
+	if m.activeProcessID == first {
+		t.Fatal("the response to the report did not start a new process")
+	}
+	if got := m.processGroup(m.activeProcessID).startedAt; !got.Equal(turnStart) {
+		t.Fatalf("response process started at %v, want the turn's start %v", got, turnStart)
+	}
+	if elapsed, _ := m.processDuration(m.activeProcessID); elapsed < 20*time.Second {
+		t.Fatalf("response process elapsed = %s, want the whole turn", elapsed)
+	}
+}
+
+// Session totals an event carries update the status line during the run.
+func TestRunEventsUpdateSessionTotals(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 24)
+	m.run.kind = runPrompt
+	usage := interaction.DisplayUsage{InputTokens: 1200, OutputTokens: 80}
+	throughput := interaction.DisplayThroughput{OutputTokens: 80, Duration: time.Second}
+	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "agent"}, Usage: &usage, Throughput: &throughput})
+	if m.sessionUsage != usage || m.throughput != throughput {
+		t.Fatalf("totals = %+v / %+v, want the event's", m.sessionUsage, m.throughput)
+	}
+}

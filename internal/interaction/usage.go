@@ -25,6 +25,10 @@ type UsageSnapshot struct {
 	// on tool results; they are not part of Usage.
 	Reviews     int
 	ReviewUsage DisplayUsage
+	// Delegations counts the subagent runs this Session's messages report;
+	// DelegatedUsage is what they cost and is part of Usage.
+	Delegations    int
+	DelegatedUsage DisplayUsage
 }
 
 type UsageReader interface {

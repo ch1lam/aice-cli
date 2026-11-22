@@ -47,13 +47,27 @@ type Mailbox struct {
 	mu       sync.Mutex
 	entries  []Delivery
 	isSealed bool
+	// changed closes when a delivery arrives, for a run awaiting input.
+	changed chan struct{}
 }
 
 // NewMailbox constructs an empty input mailbox for one Agent run.
 func NewMailbox() *Mailbox {
 	return &Mailbox{
 		entries: make([]Delivery, 0, maximumPendingDeliveries),
+		changed: make(chan struct{}),
 	}
+}
+
+// Changed returns a channel that closes when the next delivery arrives. A
+// waiter takes it before checking the mailbox, so no delivery slips between.
+func (m *Mailbox) Changed() <-chan struct{} {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.changed
 }
 
 // Deliver appends one input without blocking the active Agent run.
@@ -89,6 +103,8 @@ func (m *Mailbox) Deliver(delivery Delivery) error {
 	}
 	delivery.Images = CloneImages(delivery.Images)
 	m.entries = append(m.entries, delivery)
+	close(m.changed)
+	m.changed = make(chan struct{})
 	return nil
 }
 
@@ -119,17 +135,49 @@ func (m *Mailbox) TakeFollowUp() (Delivery, bool) {
 	if m == nil {
 		return Delivery{}, false
 	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	next, ok := m.takeQueued()
+	if !ok {
+		m.isSealed = true
+	}
+	return next, ok
+}
+
+// TakeQueued is TakeFollowUp for a run that may still wait for other work:
+// it never seals, so the person can keep sending while the run waits.
+// SealIfEmpty then closes the boundary once the run decides to end.
+func (m *Mailbox) TakeQueued() (Delivery, bool) {
+	if m == nil {
+		return Delivery{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.takeQueued()
+}
+
+// SealIfEmpty seals the mailbox unless a delivery waits, which the caller
+// must take instead of ending.
+func (m *Mailbox) SealIfEmpty() bool {
+	if m == nil {
+		return true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.entries) > 0 {
+		return false
+	}
+	m.isSealed = true
+	return true
+}
+
+func (m *Mailbox) takeQueued() (Delivery, bool) {
 	for index := range m.entries {
 		m.entries[index].Kind = DeliveryKindFollowUp
 	}
 	if len(m.entries) == 0 {
-		m.isSealed = true
 		return Delivery{}, false
 	}
-
 	next := m.entries[0]
 	m.entries = m.entries[1:]
 	return next, true

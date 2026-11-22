@@ -120,12 +120,14 @@ func (m *model) applyAgentUpdate(update interaction.AgentUpdate, now time.Time) 
 		return
 	case update.Event != nil:
 		view.transcript.applyAgentEvent(*update.Event)
-		if update.Event.Kind == interaction.EventToolEnd {
+		finished := update.Event.Kind == interaction.EventToolEnd
+		if finished {
 			view.tools++
 		}
 		previous := view.activity
 		view.activity = agentActivity(*update.Event, view.activity)
-		if view.activity == previous {
+		// The call shows the activity, and its process header the count.
+		if view.activity == previous && !finished {
 			return
 		}
 	case update.End != nil:
@@ -201,9 +203,18 @@ func (m *model) showAgentOnCall(view *agentView) {
 type agentStatus struct {
 	running, failed, stopped bool
 	text                     string
+	// tools counts the tool calls the child's runs finished, for the
+	// process header's totals.
+	tools int
 }
 
 func (v *agentView) status() agentStatus {
+	status := v.settledStatus()
+	status.tools = v.tools
+	return status
+}
+
+func (v *agentView) settledStatus() agentStatus {
 	if v.running {
 		return agentStatus{running: true, text: v.activity}
 	}

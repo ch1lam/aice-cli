@@ -233,20 +233,25 @@ and Enter for scrollable text.
 
 Context shows occupancy, capacity, estimate status, window source and model.
 Session usage counts recorded input/output/cache tokens across every branch and
-compaction, excluding temporary BTW answers. Reasoning tokens are an output
-subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
+compaction, excluding temporary BTW answers. It includes subagent runs once
+their result or report is recorded, listed apart as **Subagents**; a subagent
+stopped by `/new`, resuming or exit is reported to its Session as it stops.
+Auto mode decisions inside a subagent stay in its own Session. The status
+bar's totals update during a run, after each response, tool result and
+notification. Reasoning tokens are an output subset. Cost is **Unavailable**, **Partial estimate**, or **Estimate** according
 to the original records' price coverage; current prices are never applied
 retroactively. Missing reports from interrupted requests remain unreported.
 This is not an account balance or subscription quota display.
 
 Cache hit rate is cache reads over all prompt tokens (input, cache reads and
-cache writes), shown for the Session and for the last recorded call; a falling
+cache writes), shown for the Session (subagent calls included, whatever their
+model) and for the main agent's last recorded call; a falling
 last-call rate reveals a changed prompt prefix before the Session rate moves.
 It stays “No cache tokens reported” until a provider reports a cache read or
 write, because zero cannot distinguish a miss from absent telemetry.
 
-Output speed is output tokens over generation time, measured in this process
-only: each main-run call counts from its first streamed content to its last
+Output speed (main agent) is output tokens over generation time, measured in
+this process only: each main-run call, not a subagent's, counts from its first streamed content to its last
 stream event, excluding request latency, tool execution and Session writes.
 Calls without reported output or that arrived in under 100 ms are excluded.
 Timing is not recorded, so `/new` and resuming start the measurement empty.

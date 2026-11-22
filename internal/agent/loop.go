@@ -440,7 +440,7 @@ func (e *runExecution) takeSteeringAndNotification(ctx context.Context) (step, e
 }
 
 // pollFollowUp starts the next interaction at a natural stop: with a
-// follow-up, or else with the next awaited notification.
+// follow-up, or else with the next awaited follow-up or notification.
 func (e *runExecution) pollFollowUp(ctx context.Context) (step, error) {
 	followUp, followsUp, followUpErr := e.nextInput(e.input.FollowUp, InputKindFollowUp)
 	if followUpErr != nil {
@@ -448,11 +448,13 @@ func (e *runExecution) pollFollowUp(ctx context.Context) (step, error) {
 	}
 	kind := InputKindFollowUp
 	if !followsUp {
-		if e.input.AwaitNotification == nil {
+		if e.input.AwaitInput == nil {
 			return stepEnd, nil
 		}
-		kind = InputKindNotification
-		input, ok, err := e.input.AwaitNotification(ctx)
+		input, ok, err := e.input.AwaitInput(ctx)
+		if input.Message.IsNotice() {
+			kind = InputKindNotification
+		}
 		followUp, followsUp, followUpErr = checkInput(kind, input, ok, err)
 		if followUpErr != nil || !followsUp {
 			return stepEnd, followUpErr

@@ -366,14 +366,18 @@ type InputDisplay struct {
 // Event is one Agent lifecycle event translated for interactive frontends.
 // Fields are populated according to Kind.
 type Event struct {
-	Kind      EventKind
-	Context   *DisplayContext
-	Delta     Delta
-	Assistant AssistantDisplay
-	Tool      ToolDisplay
-	Input     InputDisplay
-	Retry     RetryDisplay
-	Err       error
+	Kind    EventKind
+	Context *DisplayContext
+	// Usage and Throughput, when set, are the Session's totals after an
+	// event that may change them, so a long run shows them as they grow.
+	Usage      *DisplayUsage
+	Throughput *DisplayThroughput
+	Delta      Delta
+	Assistant  AssistantDisplay
+	Tool       ToolDisplay
+	Input      InputDisplay
+	Retry      RetryDisplay
+	Err        error
 	// LimitReached is set on EventAgentEnd when the run stopped at a run
 	// limit (turns, token or time budget, no progress, Guard denials).
 	LimitReached bool

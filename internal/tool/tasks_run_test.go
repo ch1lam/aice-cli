@@ -360,3 +360,63 @@ func TestPeekNoticeReportsOnDelivery(t *testing.T) {
 		t.Fatalf("after delivery: %q, %q", id, notice.Content[0].Text)
 	}
 }
+
+// Leaving a Session stops its tasks and returns the notification of the
+// subagents nothing reported, stopped or finished, with their usage; a
+// reported subagent and a command are left out, and nothing reaches the next
+// Session.
+func TestKillAllReportsUnreportedSubagents(t *testing.T) {
+	t.Parallel()
+	tasks, output, _ := newRunTasks(t)
+	start := func(description string, block bool) tool.TaskStatus {
+		t.Helper()
+		status, err := tasks.StartRun(tool.TaskAgent, description, nil, func(ctx context.Context, _ string, out io.Writer) (*llm.ToolDelegation, error) {
+			fmt.Fprintln(out, description+" report")
+			if block {
+				<-ctx.Done()
+			}
+			return &llm.ToolDelegation{SessionID: description, Usage: llm.Usage{TotalTokens: 5}}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return status
+	}
+	seen := start("seen", false)
+	if _, err := output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{seen.ID}, "wait": 10})); err != nil {
+		t.Fatal(err)
+	}
+	finished := start("finished", false)
+	done, err := tasks.Done(finished.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	start("running", true)
+	if _, err := tasks.StartRun(tool.TaskBash, "server", nil, func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	notice, ok := tasks.KillAll()
+	if !ok || notice.Notice == nil {
+		t.Fatalf("KillAll() = %#v, %v; want a notification", notice, ok)
+	}
+	var sessions []string
+	for _, delegation := range notice.Notice.Delegations {
+		sessions = append(sessions, delegation.SessionID)
+	}
+	text := notice.Content[0].Text
+	if fmt.Sprint(sessions) != "[finished running]" || !strings.Contains(text, "running report") ||
+		!strings.Contains(text, "Session changed") || strings.Contains(text, "server") {
+		t.Fatalf("notice delegations = %v, text = %q", sessions, text)
+	}
+	if _, ok := tasks.KillAll(); ok {
+		t.Fatal("a second KillAll reported again")
+	}
+	if _, _, ok := tasks.TakeNotice(); ok {
+		t.Fatal("the next Session got the previous Session's tasks")
+	}
+}

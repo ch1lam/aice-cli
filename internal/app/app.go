@@ -298,6 +298,11 @@ func (a *application) Print(
 		defer func() {
 			returnErr = errors.Join(returnErr, store.Close())
 		}()
+		// A cancelled or limited run can leave subagents running; their
+		// reports and usage still belong to the Session.
+		defer func() {
+			returnErr = errors.Join(returnErr, reportStoppedSubagents(ctx, environment.tasks, store))
+		}()
 	}
 	input, err := prepareFileInput(ctx, interaction.RunInput{Prompt: request.Prompt, Files: interaction.FileReferences(request.Prompt)}, environment.workspace, environment.guardAdapter, nil)
 	if err != nil {
@@ -384,7 +389,7 @@ func (a *application) Print(
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
 	runInput.Notifications = taskNotifications(environment.tasks)
-	runInput.AwaitNotification = awaitSubagents(environment.tasks)
+	runInput.AwaitInput = awaitSubagents(environment.tasks, nil, nil)
 	_, loopErr := loop.Run(ctx, runInput, func(eventCtx context.Context, event agent.AgentEvent) error {
 		// Subagent usage reaches the totals through the messages that record it.
 		for _, delegation := range eventDelegations(event) {
@@ -539,13 +544,15 @@ func (a *application) Interactive(
 		WorkingDirectory: environment.workspace.Path(),
 		Version:          buildinfo.Version,
 	})
+	// Subagents still running are stopped and reported to the Session first.
+	reportErr := reportStoppedSubagents(ctx, environment.tasks, runner.conversation.store)
 	stopAgents()
 	// Close the runner's current store: /new may have detached the startup
 	// store, and a later prompt may have created another. Remove empty
 	// interactive files so unused explicit paths do not accumulate. A title
 	// still being generated is abandoned first.
 	runner.titles.close()
-	closeErr := closeInteractiveStore(runner.conversation.store)
+	closeErr := errors.Join(reportErr, closeInteractiveStore(runner.conversation.store))
 	if runErr != nil {
 		return errors.Join(fmt.Errorf("app: run TUI: %w", runErr), closeErr)
 	}
@@ -922,25 +929,22 @@ func (a *application) newAgentLoopWithOptions(
 }
 
 type interactiveSession struct {
-	mcp           *mcpOwner
-	mcpLoaded     *mcpLoadedTools // protected by stateMu; current main Run only
-	lifecycle     settingsLifecycle
-	catalog       sessionCatalog
-	browserBin    string
-	modelErr      error
-	application   *application
-	stateMu       sync.RWMutex
-	loop          *agent.Loop
-	conversation  conversationState
-	model         llm.Model
-	options       llm.StreamOptions
-	configuration config.Config
-	tools         []agent.Tool
-	baseTools     []agent.Tool
-	tasks         *tool.Tasks
-	// awaitSubagents keeps a main run going until its running subagents
-	// report, for a frontend that cannot start a run on its own.
-	awaitSubagents bool
+	mcp            *mcpOwner
+	mcpLoaded      *mcpLoadedTools // protected by stateMu; current main Run only
+	lifecycle      settingsLifecycle
+	catalog        sessionCatalog
+	browserBin     string
+	modelErr       error
+	application    *application
+	stateMu        sync.RWMutex
+	loop           *agent.Loop
+	conversation   conversationState
+	model          llm.Model
+	options        llm.StreamOptions
+	configuration  config.Config
+	tools          []agent.Tool
+	baseTools      []agent.Tool
+	tasks          *tool.Tasks
 	web            webState
 	desktop        *desktopPreset
 	systemPrompt   string

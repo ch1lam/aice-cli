@@ -549,12 +549,13 @@ func (s *interactiveSession) slashNew(
 	s.conversation.historySyncMu.Lock()
 	defer s.conversation.historySyncMu.Unlock()
 	previous := s.conversation.installStore(nil, nil, "", false)
-	s.resetSessionScope(llm.Usage{}, &interaction.Transcript{})
+	reportErr := s.resetSessionScope(ctx, previous, llm.Usage{}, &interaction.Transcript{})
 	if previous == nil {
 		return "Started new session", nil
 	}
 	// Once detached, cleanup failures are warnings, not a failed switch.
 	output, err := releasePreviousSession(previous)
+	err = errors.Join(reportErr, err)
 	if err != nil {
 		output += "\nCleanup warning: " + err.Error()
 	}
@@ -708,6 +709,13 @@ func (s *interactiveSession) usageSnapshot() interaction.DisplayUsage {
 		s.totalUsage = *total
 	}
 	return newDisplayUsage(s.totalUsage)
+}
+
+// currentThroughput is the measured main-run generation so far.
+func (s *interactiveSession) currentThroughput() interaction.DisplayThroughput {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.throughput
 }
 
 // addThroughput accumulates one measured main-run model call.

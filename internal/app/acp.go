@@ -46,16 +46,14 @@ func (a *application) ServeACP(ctx context.Context, request cli.ACPRequest) (ret
 	}
 	// The client is told about generated titles as session_info_update.
 	runner.titleUpdates = make(chan interaction.SessionTitle, 4)
-	// A prompt turn ends only when its subagents have reported: ACP has no
-	// way for the agent to start a turn.
-	runner.awaitSubagents = true
 	serveErr := acp.Serve(ctx, runner.frontend(), acp.Options{
 		Workspace: environment.workspace.PhysicalPath(),
 		Version:   buildinfo.Build(),
 		Host:      runner,
 	}, request.Input, request.Output)
 	runner.titles.close()
-	return errors.Join(serveErr, closeInteractiveStore(runner.conversation.store))
+	reportErr := reportStoppedSubagents(ctx, environment.tasks, runner.conversation.store)
+	return errors.Join(serveErr, reportErr, closeInteractiveStore(runner.conversation.store))
 }
 
 // StartSession makes a fresh durable Session current for a protocol client
