@@ -158,6 +158,41 @@ func TestRunTaskStopReportsItsReason(t *testing.T) {
 	}
 }
 
+// A notification counts the tasks it reports and those still running, so an
+// ended task is not read as all of them.
+func TestTaskNoticeCountsRunningTasks(t *testing.T) {
+	t.Parallel()
+	tasks, _, _ := newRunTasks(t)
+	block := func(ctx context.Context, _ string, _ io.Writer) (*llm.ToolDelegation, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	waiting, err := tasks.StartRun(tool.TaskAgent, "wait", nil, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := tasks.Changed()
+	if _, err := tasks.StartRun(tool.TaskAgent, "quick", nil, func(context.Context, string, io.Writer) (*llm.ToolDelegation, error) {
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	<-changed
+	notice, _, ok := tasks.TakeNotice()
+	if want := "1 background task ended; 1 background task still running. No need to poll."; !ok || !strings.Contains(notice.Content[0].Text, want) {
+		t.Fatalf("notice = %q, want %q", notice.Content[0].Text, want)
+	}
+	changed = tasks.Changed()
+	if err := tasks.Stop(waiting.ID, "stopped by the user"); err != nil {
+		t.Fatal(err)
+	}
+	<-changed
+	notice, _, _ = tasks.TakeNotice()
+	if want := "1 background task ended. No need to poll."; !strings.Contains(notice.Content[0].Text, want) {
+		t.Fatalf("notice = %q, want %q", notice.Content[0].Text, want)
+	}
+}
+
 func TestRunTasksBoundConcurrentSubagents(t *testing.T) {
 	t.Parallel()
 	tasks, _, _ := newRunTasks(t)

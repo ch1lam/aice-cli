@@ -584,8 +584,9 @@ how the task ended; stopping a finished task is not an error.
 A finished task is reported once. Unless `task_output` or `task_kill` already
 reported it, it arrives as a notification: a user-role message AICE writes
 (Session `notice` field), opening with `[AICE notification, not from the
-user]`, carrying each finished task's status with a command's last 2 KiB of
-output or a subagent's whole report. Through
+user]` and the number of tasks it reports and of those still running, then
+carrying each finished task's status with a command's last 2 KiB of output or
+a subagent's whole report. Through
 [Loop notifications](contracts.md#agent-loop) the run takes it after the
 current tool round, or when the model would otherwise stop, and continues with
 it. A task that finishes while no run is active wakes the interactive TUI:

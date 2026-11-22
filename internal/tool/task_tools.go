@@ -150,8 +150,22 @@ func (k *TaskKill) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResu
 }
 
 // noticeHeader opens a task notification so the model never takes it for
-// the user's words.
-const noticeHeader = "[AICE notification, not from the user] Background tasks finished; no need to poll them."
+// the user's words. It counts the tasks it reports and those still running,
+// so one ended task is never read as all of them.
+func noticeHeader(ended, running int) string {
+	header := "[AICE notification, not from the user] " + countTasks(ended) + " ended"
+	if running > 0 {
+		header += "; " + countTasks(running) + " still running"
+	}
+	return header + ". No need to poll."
+}
+
+func countTasks(n int) string {
+	if n == 1 {
+		return "1 background task"
+	}
+	return fmt.Sprintf("%d background tasks", n)
+}
 
 // agentNoticeBytes shows a subagent's whole report, already bounded by
 // MaxAgentReportBytes, with the lines that follow it.
@@ -166,7 +180,7 @@ func (t *Tasks) TakeNotice() (message llm.UserMessage, id string, ok bool) {
 	if len(completions) == 0 {
 		return llm.UserMessage{}, "", false
 	}
-	message, id = renderNotice(completions)
+	message, id = renderNotice(completions, t.Running())
 	return message, id, true
 }
 
@@ -183,11 +197,12 @@ func (t *Tasks) PeekNotice() (message llm.UserMessage, id string, tasks []string
 			tasks = append(tasks, current.id)
 		}
 	}
+	running := t.runningKindLocked("")
 	t.mu.Unlock()
 	if len(completions) == 0 {
 		return llm.UserMessage{}, "", nil, false
 	}
-	message, id = renderNotice(completions)
+	message, id = renderNotice(completions, running)
 	return message, id, tasks, true
 }
 
@@ -203,9 +218,10 @@ func (t *Tasks) DeliverNotice(tasks []string) {
 	})
 }
 
-// renderNotice is the notification of finished tasks and its input ID.
-func renderNotice(completions []TaskStatus) (llm.UserMessage, string) {
-	reports := []string{noticeHeader}
+// renderNotice is the notification of finished tasks and its input ID;
+// running counts the tasks still running.
+func renderNotice(completions []TaskStatus, running int) (llm.UserMessage, string) {
+	reports := []string{noticeHeader(len(completions), running)}
 	summaries := make([]string, 0, len(completions))
 	notice := &llm.Notice{}
 	for _, status := range completions {
