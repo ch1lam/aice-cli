@@ -634,14 +634,24 @@ for the child, and cancelling the parent (Esc, or the run ending) cancels it.
 A call that did not ask for the background runs synchronously where background
 tasks are unavailable.
 
-The tool's guidelines tell the model when to delegate (independent parts,
-reading across many files or searching blind, long command output, an
-unanchored review) and when not to (a few tool calls, a result its next step
-needs, tightly coupled parts); to plan first and start independent children
-together; to write prompts that stand alone and ask for checkable evidence; to
-end its turn when only waiting remains; and to verify reports before relying
-on them. The child's prompt section asks for the outcome first, then the
-evidence, then what it could not verify, without narrating its steps.
+The tool description opens with what to delegate and why (the work does not
+consume the parent's context), and a background start's result tells the
+parent not to read the files or rerun the searches it gave the child. The
+built-in system prompt gives the `agent` and `send_message` guidelines a
+`Delegating to subagents` section of their own. They open with why to
+delegate: the parent's context is the run's scarcest resource, and a child
+returns only its conclusion. They then tell the model to delegate by default
+for independent parts, reading across many files or searching blind, long
+command output and an unanchored review (given the code, not the parent's
+verdict), and to do it itself for a few tool calls, a result its next step
+needs or tightly coupled parts. The model plans first and starts independent
+children together, and leaves a delegated part to its child instead of reading
+the same files. It writes prompts that stand alone and ask for checkable
+evidence, ends its turn instead of waiting with `task_output` when only waiting
+remains, and verifies reports before relying on them. The child's prompt section
+says the delegation guidance is the parent's, asks it to stop once it can
+answer, and asks for the outcome first, then the evidence, then what it could
+not verify, as short as the evidence allows and without narrating its steps.
 
 - The child runs on the [subagent model and thinking](configuration.md#settings-and-precedence)
   settings, by default the parent run's own (a fork always on the parent's), and shares the parent's system

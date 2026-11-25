@@ -96,8 +96,8 @@ func NewAgent(delegator Delegator) (*Agent, error) {
 func (a *Agent) Definition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name: "agent",
-		Description: "Delegate a task to a subagent that starts with a fresh context, works with your tools " +
-			"until done, and returns only its final report. Its intermediate steps never enter your context. " +
+		Description: "Delegate a self-contained task (research across many files, a scoped implementation, a review) to a subagent " +
+			"that works with your tools in its own fresh context, so the work does not consume yours: it returns only its final report, never its intermediate steps. " +
 			"fork starts it instead with a copy of this conversation up to this call, on your model, sharing your prompt cache. " +
 			"By default it runs in the background: the call returns a task id at once, and the report arrives later as a notification, also after you end your turn. " +
 			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
@@ -119,10 +119,12 @@ func (a *Agent) Definition() llm.ToolDefinition {
 		}`),
 		PromptSnippet: "Delegate a self-contained task to a subagent that works beside you and returns only its report",
 		PromptGuidelines: []string{
-			"Delegate when the work splits into independent parts, when answering means reading across many files or searching without knowing where to look (type explore), when a command's output is long and you need only the failures, or when you want a review not anchored on your own conclusion. Do it yourself when it takes a few tool calls, when your very next step depends on it, or when the parts are tightly coupled",
-			"Plan first: decide what you do yourself now and which independent parts can run beside you. Start independent subagents together in one response, then continue with work they do not cover. Never start the same task twice or redo a delegated part yourself",
-			"Write each prompt so it stands alone: the goal and why it matters, what you already know or ruled out, the files or commands to start from, what is in and out of scope, whether to change files, and the report you need. Ask for evidence you can check (names, paths with lines, commands and their results) and for what it could not verify",
-			"When only waiting remains, say what is still running and end your turn; each report arrives as a notification that resumes you. Never poll, sleep or guess a pending result, and collect the reports you need before your final answer",
+			"Your context is the run's scarcest resource: every file you read and every long output stays in it for the rest of the task and crowds out what matters. A subagent spends its own context and returns only its conclusion. So delegate by default when the work splits into independent parts, when answering means reading across many files or searching without knowing where to look (type explore), when a command's output is long and you need only the failures, or when you want a review not anchored on your own conclusion: give the reviewer the code or diff and the question, not your verdict",
+			"Do it yourself when it takes a few tool calls, when your very next step depends on it, or when the parts are tightly coupled",
+			"Plan first: decide what you do yourself now and which independent parts can run beside you. Start independent subagents together in one response, then continue with work they do not cover",
+			"A delegated part belongs to its subagent: do not read its files, rerun its searches or start it twice while it works. If its report falls short, send_message to it rather than redoing the work",
+			"Write each prompt so it stands alone; brevity does not apply here, since the subagent knows only what you write. Give the goal and why it matters, what you already know or ruled out, the files or commands to start from, what is in and out of scope, whether to change files, and the report you need. Ask for evidence you can check (names, paths with lines, commands and their results) and for what it could not verify",
+			"When only waiting remains, say what is still running and end your turn; each report arrives in full as a notification that resumes you. Do not wait for subagents with task_output, poll, sleep or guess a pending result, and collect the reports you need before your final answer",
 			"A report can be confidently wrong. Check the claims your answer depends on; review a writer's changes or branch and run the relevant tests yourself before calling the work done. The user does not see reports: relay what matters",
 			"Set run_in_background to false only when the subagent needs MCP tools or you have nothing else to do until it answers. Writers that share your workspace need disjoint files",
 			"Fork when the task depends on what this conversation has established and restating it would be long or lossy, such as applying a plan you worked out to one part of the code. A fork carries your whole context into every step it takes, so start a fresh subagent when a short prompt can say what it needs, as for independent research",
@@ -185,7 +187,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 			return llm.ToolResult{}, fmt.Errorf("tool %q: %w", "agent", err)
 		}
 		text := fmt.Sprintf("Subagent started in background as task %s; its report will be written to %s.\n"+
-			"Its report arrives as a notification, even after you end your turn. Continue with work it does not cover, or end your turn if only waiting remains; do not poll it or start it again.",
+			"Its report arrives as a notification, even after you end your turn. Its task is now its own: do not read the files or run the searches you gave it. Continue only with work it does not cover, and end your turn if only waiting remains; do not poll it or start it again.",
 			started.Task.ID, started.Task.OutputPath)
 		for _, note := range started.Notes {
 			text += "\n" + note

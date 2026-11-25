@@ -168,16 +168,21 @@ intent, combine it when it adds scope, and do not repeat completed work.
   Avoid filler openings and unnecessary narration.
 - For completed changes, summarize what changed and how it was verified.`
 
+// delegationTools carry their guidelines in a section of their own, so the
+// model weighs delegation as a way of working rather than one more tool rule.
+var delegationTools = map[string]bool{"agent": true, "send_message": true}
+
 // buildDefaultSystemPrompt assembles the built-in system prompt following Pi's
 // layout: an intro, the available tools with one-line snippets, usage
-// guidelines collected from the tools, and the working directory. A custom
-// SYSTEM.md replaces this whole prompt, so only the built-in default carries
-// the tool list.
+// guidelines collected from the tools, the delegation guidelines when the run
+// can delegate, and the working directory. A custom SYSTEM.md replaces this
+// whole prompt, so only the built-in default carries the tool list.
 func buildDefaultSystemPrompt(tools []agent.Tool, cwd string) string {
 	snippets := make([]string, 0, len(tools))
 	guidelines := make([]string, 0, len(tools)+3)
+	var delegation []string
 	guidelineSet := make(map[string]struct{})
-	addGuideline := func(guideline string) {
+	add := func(list *[]string, guideline string) {
 		guideline = strings.TrimSpace(guideline)
 		if guideline == "" {
 			return
@@ -186,8 +191,9 @@ func buildDefaultSystemPrompt(tools []agent.Tool, cwd string) string {
 			return
 		}
 		guidelineSet[guideline] = struct{}{}
-		guidelines = append(guidelines, guideline)
+		*list = append(*list, guideline)
 	}
+	addGuideline := func(guideline string) { add(&guidelines, guideline) }
 
 	hasBash := false
 	hasGrep := false
@@ -208,8 +214,12 @@ func buildDefaultSystemPrompt(tools []agent.Tool, cwd string) string {
 		if definition.PromptSnippet != "" {
 			snippets = append(snippets, "- "+definition.Name+": "+definition.PromptSnippet)
 		}
+		target := &guidelines
+		if delegationTools[definition.Name] {
+			target = &delegation
+		}
 		for _, guideline := range definition.PromptGuidelines {
-			addGuideline(guideline)
+			add(target, guideline)
 		}
 	}
 	if hasBash && !hasGrep && !hasFind && !hasLS {
@@ -222,6 +232,10 @@ func buildDefaultSystemPrompt(tools []agent.Tool, cwd string) string {
 	if len(snippets) > 0 {
 		toolsList = strings.Join(snippets, "\n")
 	}
+	delegationSection := ""
+	if len(delegation) > 0 {
+		delegationSection = "\n\nDelegating to subagents:\n- " + strings.Join(delegation, "\n- ")
+	}
 	promptCWD := strings.ReplaceAll(cwd, "\\", "/")
 
 	return fmt.Sprintf(`%s
@@ -230,12 +244,13 @@ Available tools:
 %s
 
 Guidelines:
-%s
+%s%s
 
 Current working directory: %s`,
 		defaultSystemPrompt,
 		toolsList,
 		strings.Join(guidelines, "\n"),
+		delegationSection,
 		promptCWD,
 	)
 }
