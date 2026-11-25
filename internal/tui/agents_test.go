@@ -169,7 +169,7 @@ func TestWaitForAgentUpdatesBatches(t *testing.T) {
 	}
 }
 
-// Running children show above the composer with what they do, their model
+// Running children show below the composer with what they do, their model
 // and how long they ran; the transcript yields the rows they take.
 func TestAgentPanelShowsRunningChildren(t *testing.T) {
 	t.Parallel()
@@ -245,8 +245,10 @@ func ansiStripped(m model) string {
 func press(t *testing.T, m model, text string) model {
 	t.Helper()
 	switch text {
-	case "tab":
-		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	case "up":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
+	case "down":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	case "esc":
 		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	case "enter":
@@ -255,9 +257,10 @@ func press(t *testing.T, m model, text string) model {
 	return updateModel(t, m, tea.KeyPressMsg{Code: rune(text[0]), Text: text})
 }
 
-// Tab moves the keyboard to the panel, which then lists finished children
-// too; j/k select by ID, so pruning does not move the selection, and Esc
-// returns the keyboard to the composer.
+// Down past the newest prompt moves the keyboard to the panel below the
+// composer, on its top row; the panel then lists finished children too.
+// Arrows select by ID, so pruning does not move the selection, and Up from
+// the top row returns the keyboard to the composer.
 func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 	t.Parallel()
 	m := applyAgents(t, testModel(t, 100, 30),
@@ -265,44 +268,80 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 		agentStart("bg-2", "task"),
 		agentStart("bg-3", "task"), agentEnd("bg-3", errors.New("quota exceeded"), time.Second),
 	)
-	m = press(t, m, "tab")
-	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-2" {
-		t.Fatalf("focus = %#v on %q, want the latest running child", c, m.agentSelected)
+	m = press(t, m, "down")
+	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-1" {
+		t.Fatalf("focus = %#v on %q, want the top row", c, m.agentSelected)
 	}
 	view := ansiStripped(m)
-	for _, want := range []string{"Subagents 1 running · 3", "✓ find loader · completed in 2s", "› ⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
+	for _, want := range []string{"Subagents 1 running · 3", "› ✓ find loader · completed in 2s", "⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view lacks %q:\n%s", want, view)
 		}
 	}
-	m = press(t, m, "j")
-	m = press(t, m, "j")
+	if composer, panel := strings.Index(view, "╰"), strings.Index(view, "Subagents"); composer < 0 || panel < composer {
+		t.Fatalf("panel is not below the composer:\n%s", view)
+	}
+	m = press(t, m, "down")
+	m = press(t, m, "down")
+	m = press(t, m, "down")
 	if m.agentSelected != "bg-3" {
 		t.Fatalf("selected %q after moving past the end", m.agentSelected)
 	}
-	m = press(t, m, "k")
-	m = press(t, m, "k")
-	if m.agentSelected != "bg-1" {
+	m = press(t, m, "up")
+	m = press(t, m, "up")
+	if m.agentSelected != "bg-1" || m.inputContext().domain != inputAgents {
 		t.Fatalf("selected %q, want the first child", m.agentSelected)
 	}
-	m = press(t, m, "q")
-	if m.input.Value() != "" {
-		t.Fatalf("a key reached the composer: %q", m.input.Value())
-	}
-	m = press(t, m, "esc")
+	m = press(t, m, "up")
 	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
 		t.Fatalf("focus stays on the panel: %#v", m.inputContext())
 	}
-	m = press(t, m, "q")
-	if m.input.Value() != "q" {
-		t.Fatalf("composer = %q after returning", m.input.Value())
+
+	m = press(t, m, "down")
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputMain {
+		t.Fatalf("Esc kept the panel: %#v", m.inputContext())
 	}
 }
 
-// Without children, Tab is not taken from the composer.
+// Typing in the panel returns to the composer, which receives the text.
+func TestAgentPanelTypingReturnsToTheComposer(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	m = press(t, m, "down")
+	m = press(t, m, "q")
+	if m.inputContext().domain != inputMain || m.input.Value() != "q" {
+		t.Fatalf("domain %v, composer %q", m.inputContext().domain, m.input.Value())
+	}
+}
+
+// Down walks recalled prompts back to the draft first, and leaves a
+// multi-line draft row by row, before it reaches the panel.
+func TestAgentPanelFollowsHistoryAndDraft(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	m.promptHistory = []string{"older"}
+	m = press(t, m, "up")
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputMain || m.historyIndex != -1 {
+		t.Fatalf("Down left history for the panel: domain %v, index %d", m.inputContext().domain, m.historyIndex)
+	}
+	m.input.SetValue("one\ntwo")
+	m.input.MoveToBegin()
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputMain || m.input.Line() != 1 {
+		t.Fatalf("Down left a draft row for the panel: domain %v, line %d", m.inputContext().domain, m.input.Line())
+	}
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputAgents {
+		t.Fatalf("Down on the last row kept the composer: %v", m.inputContext().domain)
+	}
+}
+
+// Without children, Down is not taken from the composer.
 func TestAgentPanelFocusNeedsChildren(t *testing.T) {
 	t.Parallel()
-	m := press(t, testModel(t, 100, 30), "tab")
+	m := press(t, testModel(t, 100, 30), "down")
 	if m.inputContext().domain != inputMain || m.agentFocus {
 		t.Fatalf("focus = %#v", m.inputContext())
 	}
@@ -320,7 +359,8 @@ func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 		stopped = append(stopped, id)
 		return nil
 	}
-	m = press(t, m, "tab")
+	m = press(t, m, "down")
+	m = press(t, m, "down")
 	m = press(t, m, "x")
 	if len(stopped) != 1 || stopped[0] != "bg-1" || m.agentView("bg-1").activity != "Stopping" {
 		t.Fatalf("stopped %v", stopped)
@@ -329,7 +369,7 @@ func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 	if last := m.entries[len(m.entries)-1]; last.kind != entryError || !strings.Contains(last.text, "no such task") {
 		t.Fatalf("a failed stop is not shown: %#v", last)
 	}
-	m = press(t, m, "k")
+	m = press(t, m, "up")
 	m = press(t, m, "x")
 	if len(stopped) != 1 {
 		t.Fatalf("a synchronous child was stopped: %v", stopped)
@@ -344,7 +384,7 @@ func TestAgentReaderFollowsTheChild(t *testing.T) {
 		agentStart("bg-1", "find the config loader"),
 		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "looking around"}}),
 	)
-	m = press(t, m, "tab")
+	m = press(t, m, "down")
 	m = press(t, m, "enter")
 	if m.reading == nil || m.reading.agent != "bg-1" {
 		t.Fatalf("reading = %#v", m.reading)

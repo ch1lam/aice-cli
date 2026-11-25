@@ -237,9 +237,6 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionQuit, binding: k.quit, short: side},
 		{action: inputActionMode, binding: k.mode, short: true},
 	}
-	if !side && len(m.agents) > 0 {
-		bindings = append(bindings, actionBinding(inputActionAgents, "Tab", "subagents", "tab"))
-	}
 	if k.help.Enabled() || m.deliveryPending {
 		help := inputBinding{action: inputActionHelp, binding: k.help, short: true}
 		if side || m.run.running() {
@@ -252,6 +249,11 @@ func (m model) conversationInputBindings() []inputBinding {
 		inputBinding{action: inputActionScroll, binding: k.scrollUp, argument: -1},
 		inputBinding{action: inputActionScroll, binding: k.scrollDown, argument: 1},
 	)
+	// Down past the newest prompt continues into the subagent panel below
+	// the composer; it is absent otherwise, so history and the editor keep Down.
+	if !side && m.agentPanelReachable() {
+		bindings = append(bindings, actionBinding(inputActionAgents, "↓", "subagents", "down"))
+	}
 	if k.historyUp.Enabled() {
 		bindings = append(bindings, inputBinding{action: inputActionHistory, binding: k.historyUp, argument: -1})
 	}

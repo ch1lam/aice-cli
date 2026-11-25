@@ -58,6 +58,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m.handleQuestionText(message)
 	case m.deliveryPending:
 		return m, nil, true
+	case c.domain == inputAgents && message.Text != "":
+		// Typing returns to the composer, which receives the text.
+		return m, m.blurAgents(), false
 	}
 	conversation := c.domain == inputMain || c.domain == inputSide
 	if c.editor {

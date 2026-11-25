@@ -28,9 +28,14 @@ func (m model) historyForwardAllowed() bool {
 	if m.historyIndex >= 0 {
 		return true
 	}
-	return m.input.LineCount() <= 1 &&
-		m.input.Line() == m.input.LineCount()-1 &&
-		m.input.LineInfo().RowOffset+1 == m.input.LineInfo().Height
+	return m.input.LineCount() <= 1 && m.composerCaretOnLastRow()
+}
+
+// composerCaretOnLastRow reports whether Down would leave the draft: the
+// caret is on the last visual row of its last line.
+func (m model) composerCaretOnLastRow() bool {
+	info := m.input.LineInfo()
+	return m.input.Line() == m.input.LineCount()-1 && info.RowOffset+1 == info.Height
 }
 
 // recallHistory walks promptHistory by delta. Up (-1) moves toward older

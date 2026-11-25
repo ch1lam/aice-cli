@@ -932,16 +932,19 @@ limit file mutations or rewrite Session content.
 
 ### Subagents
 
-While subagents exist in the Session, `Tab` in the main composer moves the
-keyboard to the [subagent panel](execution-sessions.md#subagents) above it,
-which then lists the recent finished children too:
+The [subagent panel](execution-sessions.md#subagents) sits below the main
+composer, and the arrow keys move between them. While subagents exist in the
+Session, `↓` on the composer's last row moves the keyboard to the panel once
+history recall is back at the draft; the panel then lists the recent finished
+children too, and the footer shows the panel's keys:
 
 | Key | Effect in the subagent panel |
 | --- | --- |
-| `↑`/`↓` or `k`/`j` | Select a child |
+| `↑`/`↓` | Select a child; `↑` on the top row returns to the composer |
 | `Enter` | Open the child's transcript; it follows the child live |
 | `x` | Stop a running background child; the parent agent is told |
-| `Esc`, `Tab`, or `Ctrl+C` | Return to the composer |
+| `Esc` or `Ctrl+C` | Return to the composer |
+| Other text | Return to the composer, which receives it |
 
 In a child's transcript, `Esc` or `Enter` returns to the panel, and the
 history reader's scrolling, folding and `T` question keys apply. A

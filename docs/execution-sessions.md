@@ -684,14 +684,14 @@ While a synchronous child runs, steering messages wait in the parent's mailbox
 until the `agent` call returns.
 
 The TUI shows every subagent as it runs, synchronous or in the background.
-A panel above the composer lists the running ones (at most five rows, the
+A panel below the composer lists the running ones (at most five rows, the
 rest counted): each row names the task, what the child does now (thinking,
 responding, or the tool it runs with its target), how many tool calls it
 finished, its model and how long it has run. The `agent` call that started a child shows the same activity under
 its heading while the child runs, and then how the run ended: its duration,
 turns and tool calls, the error it failed with, or that it was stopped. A
 continued child updates the same call. The panel gives way to menus, dialogs,
-side threads and the history reader. `Tab` focuses the panel to select any
+side threads and the history reader. `↓` from the composer focuses the panel to select any
 recent child, open its transcript as it runs, or stop a background one (see
 [Configuration](configuration.md#subagents)); a stop ends the child like
 `task_kill` but reports its completion to the parent as usual, and the child
