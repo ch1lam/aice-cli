@@ -44,9 +44,10 @@ func TestHistoryCodePreviewExpansionAndFullCopy(t *testing.T) {
 	if strings.Contains(ansi.Strip(m.viewport.View()), "preview") || !strings.Contains(ansi.Strip(m.viewport.View()), "▾") {
 		t.Fatal("click did not expand code")
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: 'o', Mod: tea.ModAlt})
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
 	if !strings.Contains(ansi.Strip(m.viewport.View()), "preview") {
-		t.Fatal("Alt+O did not collapse code")
+		t.Fatal("a second click did not collapse code")
 	}
 }
 

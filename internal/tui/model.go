@@ -176,11 +176,12 @@ type model struct {
 	// agentUpdates delivers subagent runs, which agents shows in start order.
 	agentUpdates <-chan interaction.AgentUpdate
 	agents       []*agentView
-	// agentFocus moves the keyboard from the composer to the subagent panel,
-	// where agentSelected names the selected child. stopAgent stops a
-	// background child.
+	// agentFocus moves the keyboard from the composer to the subagent panel
+	// below it, where agentSelected names the selected child. stopAgent stops
+	// a background child; the first x only arms stopArmed with its ID.
 	agentFocus            bool
 	agentSelected         string
+	agentStopArmed        string
 	stopAgent             func(id string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
@@ -652,15 +653,16 @@ func (m model) View() tea.View {
 		transcript,
 		m.commandMenuView(width),
 	}
-	if panel := m.agentPanelView(width); panel != "" {
-		frame = append(frame, panel)
-	}
 	// The Q&A dialog and answer input share one frame: the question owns the
 	// top edge, and the composer continues its walls and closes the bottom.
 	if dialog := m.questionDialogView(width); dialog != "" {
 		frame = append(frame, dialog)
 	}
-	frame = append(frame, m.composerView(width), m.footerView(width))
+	frame = append(frame, m.composerView(width))
+	if panel := m.agentPanelView(width); panel != "" {
+		frame = append(frame, panel)
+	}
+	frame = append(frame, m.footerView(width))
 	content := lipgloss.JoinVertical(lipgloss.Left, frame...)
 
 	return m.terminalView(content)
@@ -725,7 +727,7 @@ func restoreCanvasColors(content string) string {
 
 // positionComposerCursor translates the input field's internal cursor
 // position into screen coordinates. The composer frame is bottom-aligned
-// (header, transcript, command menu, composer, footer) and may carry a
+// (header, transcript, command menu, composer, subagent panel, footer) and may carry a
 // pending-queue notice above the input field, both of which offset the caret.
 func (m model) positionComposerCursor(position *tea.Position, width int) {
 	style := composerFocusedStyle

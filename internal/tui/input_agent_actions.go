@@ -29,45 +29,82 @@ func (m model) selectedAgent() *agentView {
 	return m.agents[m.selectedAgentIndex()]
 }
 
-// focusAgents moves the keyboard to the panel, on the latest running child
-// or else the latest one.
+// agentPanelReachable reports whether Down in the main composer moves to
+// the panel: children exist, the composer is not recalling history, and the
+// caret is on the draft's last row. Runs do not block it; the panel matters
+// most while children run.
+func (m model) agentPanelReachable() bool {
+	return len(m.agents) > 0 && m.historyIndex < 0 && m.composerCaretOnLastRow() &&
+		!m.slashCommandMenuVisible() && !m.fileCompletionVisible()
+}
+
+// focusAgents moves the keyboard to the panel below the composer, on its
+// top row, the one Down reached.
 func (m *model) focusAgents() {
 	m.agentFocus = true
-	m.agentSelected = m.agents[len(m.agents)-1].id
-	if running := m.runningAgents(); len(running) > 0 {
-		m.agentSelected = running[len(running)-1].id
-	}
+	m.agentSelected = m.agents[0].id
 	m.resizeLayout()
 	m.refreshViewport(false)
+}
+
+// clickAgent is Enter on a clicked row: the panel takes the keyboard on that
+// child, whose transcript opens; closing it returns to the panel.
+func (m model) clickAgent(view *agentView) model {
+	m.agentFocus, m.agentSelected, m.agentStopArmed = true, view.id, ""
+	m.input.Blur()
+	m.resizeLayout()
+	return m.openAgent(view)
+}
+
+// blurAgents returns the keyboard to the composer.
+func (m *model) blurAgents() tea.Cmd {
+	m.agentFocus, m.agentStopArmed = false, ""
+	m.resizeLayout()
+	m.refreshViewport(false)
+	return m.input.Focus()
 }
 
 func (m model) agentInputBindings() []inputBinding {
 	view := m.selectedAgent()
 	stop := actionBinding(inputActionAgentStop, "x", "stop", "x")
 	stop.binding.SetEnabled(m.stopAgent != nil && view != nil && view.running && view.start.Background)
+	if view != nil && m.agentStopArmed == view.id {
+		stop.binding.SetHelp("x", "again to stop")
+	}
 	return []inputBinding{
 		actionBinding(inputActionAgentOpen, "Enter", "open", "enter"),
-		actionBinding(inputActionAgentBack, "Esc/Tab", "back", "esc", "tab", "ctrl+c"),
-		{action: inputActionAgentMove, binding: key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/↓", "select")), argument: -1, short: true},
-		{action: inputActionAgentMove, binding: key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↑/↓", "select")), argument: 1, short: true},
+		actionBinding(inputActionAgentBack, "Esc", "back", "esc", "ctrl+c"),
+		{action: inputActionAgentMove, binding: key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "select")), argument: -1, short: true},
+		{action: inputActionAgentMove, binding: key.NewBinding(key.WithKeys("down"), key.WithHelp("↑/↓", "select")), argument: 1, short: true},
 		stop,
 	}
 }
 
+// handleAgentAction applies a panel action. Stopping takes x twice on the
+// same child; any other action disarms the first press.
 func (m model) handleAgentAction(match inputActionMatch) (model, tea.Cmd, bool) {
+	armed := m.agentStopArmed
+	m.agentStopArmed = ""
 	switch match.action {
 	case inputActionAgentMove:
-		m.agentSelected = m.agents[clampIndex(m.selectedAgentIndex()+match.argument, len(m.agents))].id
+		next := m.selectedAgentIndex() + match.argument
+		if next < 0 {
+			// Up from the top row returns to the composer above.
+			return m, m.blurAgents(), true
+		}
+		m.agentSelected = m.agents[clampIndex(next, len(m.agents))].id
 	case inputActionAgentOpen:
 		return m.openAgent(m.selectedAgent()), nil, true
 	case inputActionAgentStop:
 		view := m.selectedAgent()
+		if armed != view.id {
+			m.agentStopArmed = view.id
+			return m, nil, true
+		}
 		view.activity = "Stopping"
 		return m, m.stopAgent(view.id), true
 	case inputActionAgentBack:
-		m.agentFocus = false
-		m.resizeLayout()
-		m.refreshViewport(false)
+		return m, m.blurAgents(), true
 	}
 	return m, nil, true
 }

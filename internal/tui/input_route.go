@@ -22,34 +22,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		m.syncCommandCompletion()
 		c = m.inputContext()
 	}
-	match := m.matchInputAction(message)
-	if match.matched {
-		if !match.enabled {
-			return m.blockedInputAction(match)
-		}
-		switch c.domain {
-		case inputReading:
-			next, cmd := m.handleReadingAction(match)
-			return next.(model), cmd, true
-		case inputGuard:
-			return m.handleGuardAction(match)
-		case inputQuestion:
-			return m.handleQuestionAction(match)
-		case inputAuth:
-			return m.handleAuthAction(match)
-		case inputSideMenu:
-			return m.handleSideMenuAction(match)
-		case inputSideConfirm:
-			return m.handleSideConfirmAction(match)
-		case inputCommand:
-			return m.handleCommandAction(match)
-		case inputSecret:
-			return m.handleSecretAction(match)
-		case inputAgents:
-			return m.handleAgentAction(match)
-		default:
-			return m.handleComposerAction(match)
-		}
+	if match := m.matchInputAction(message); match.matched {
+		return m.runInputAction(c.domain, match)
 	}
 	switch {
 	case c.domain == inputGuard:
@@ -58,6 +32,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m.handleQuestionText(message)
 	case m.deliveryPending:
 		return m, nil, true
+	case c.domain == inputAgents && message.Text != "":
+		// Typing returns to the composer, which receives the text.
+		return m, m.blurAgents(), false
 	}
 	conversation := c.domain == inputMain || c.domain == inputSide
 	if c.editor {
@@ -70,6 +47,37 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	return m, nil, !conversation
+}
+
+// runInputAction applies a resolved action in its domain, whether a key or
+// a click on its hint chose it.
+func (m model) runInputAction(domain inputDomain, match inputActionMatch) (model, tea.Cmd, bool) {
+	if !match.enabled {
+		return m.blockedInputAction(match)
+	}
+	switch domain {
+	case inputReading:
+		next, cmd := m.handleReadingAction(match)
+		return next.(model), cmd, true
+	case inputGuard:
+		return m.handleGuardAction(match)
+	case inputQuestion:
+		return m.handleQuestionAction(match)
+	case inputAuth:
+		return m.handleAuthAction(match)
+	case inputSideMenu:
+		return m.handleSideMenuAction(match)
+	case inputSideConfirm:
+		return m.handleSideConfirmAction(match)
+	case inputCommand:
+		return m.handleCommandAction(match)
+	case inputSecret:
+		return m.handleSecretAction(match)
+	case inputAgents:
+		return m.handleAgentAction(match)
+	default:
+		return m.handleComposerAction(match)
+	}
 }
 
 func (m model) routeKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -184,8 +192,6 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m, nil, true
 	case inputActionQuit:
 		return m, tea.Quit, true
-	case inputActionCode:
-		m.toggleVisibleCode()
 	case inputActionProcess:
 		follow := m.viewport.AtBottom()
 		m.toggleProcessGroups()

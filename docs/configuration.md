@@ -902,6 +902,8 @@ Drag transcript text to copy on release. Click the header directory to copy its
 absolute path; Command-click (macOS) or Ctrl-click (Windows/Linux) opens it in
 the system file manager if the terminal forwards that gesture. Composer clicks
 highlight the frame but do not position the caret; use keyboard editing.
+The key hints in the footer are clickable: the hint under the pointer is
+underlined, and a click runs it as its key would.
 See the [known textarea limitation](maintenance.md#composer-click-positioning-and-textarea-capabilities).
 
 Shortcut help follows the focused window. Dialog keys cannot trigger background
@@ -917,7 +919,7 @@ output remain distinct. Code panels highlight by language/path, escape terminal
 controls, number original lines and preserve source independently of wrapping.
 
 Completed main-answer code over 80 lines or at least 8 KiB starts with a 12-line
-preview. Click its status row or use `Alt+O` (history also accepts `C`) to toggle
+preview. Click its status row to toggle it; in the history reader `C` toggles
 the first visible expandable block. Search reveals hidden matching code.
 `[Copy]` copies the entire supplied source even while folded; a source-line click
 copies that original line without its final newline. Limited tool previews can
@@ -932,16 +934,23 @@ limit file mutations or rewrite Session content.
 
 ### Subagents
 
-While subagents exist in the Session, `Tab` in the main composer moves the
-keyboard to the [subagent panel](execution-sessions.md#subagents) above it,
-which then lists the recent finished children too:
+The [subagent panel](execution-sessions.md#subagents) sits below the main
+composer, and the arrow keys move between them. While subagents exist in the
+Session, `↓` on the composer's last row moves the keyboard to the panel once
+history recall is back at the draft; the panel then lists the recent finished
+children too, and the footer shows the panel's keys:
 
 | Key | Effect in the subagent panel |
 | --- | --- |
-| `↑`/`↓` or `k`/`j` | Select a child |
+| `↑`/`↓` | Select a child; `↑` on the top row returns to the composer |
 | `Enter` | Open the child's transcript; it follows the child live |
-| `x` | Stop a running background child; the parent agent is told |
-| `Esc`, `Tab`, or `Ctrl+C` | Return to the composer |
+| `x` twice | Stop a running background child; the parent agent is told |
+| `Esc` or `Ctrl+C` | Return to the composer |
+| Other text | Return to the composer, which receives it |
+
+The mouse works without the keyboard: hovering marks a row without moving
+the keyboard, and clicking a row opens that child's transcript as `Enter`
+does, with the panel focused on it when the transcript closes.
 
 In a child's transcript, `Esc` or `Enter` returns to the panel, and the
 history reader's scrolling, folding and `T` question keys apply. A
@@ -955,7 +964,7 @@ The composer remains active while an Agent run is working:
 | Input | Effect while an Agent run is active |
 | --- | --- |
 | `Enter` | Send a steer into the active run at its next safe boundary |
-| `Ctrl+Enter` | Queue a follow-up interaction after the current one completes |
+| `Tab` | Queue a follow-up interaction after the current one completes |
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
 | `Esc` | Cancel the active response, preserving the draft |
 | `Ctrl+C` | Clear the editor; press again consecutively to exit AICE |
@@ -1022,7 +1031,7 @@ continues to handle text; it does not transport clipboard image bytes.
 
 Images appear at the cursor as inline `[Image 1]`, `[Image 2]` placeholders.
 Like long text placeholders, arrow keys cross the whole token and
-Backspace/Delete removes the token and its image together. Send images with a caption or alone. `Enter` and `Ctrl+Enter` also carry
+Backspace/Delete removes the token and its image together. Send images with a caption or alone. `Enter` and `Tab` also carry
 images in steering and follow-up inputs. Rejected submissions preserve the
 text and images and display the reason. Choose a model with image input;
 text-only models do not silently discard attachments.

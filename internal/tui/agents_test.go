@@ -169,7 +169,7 @@ func TestWaitForAgentUpdatesBatches(t *testing.T) {
 	}
 }
 
-// Running children show above the composer with what they do, their model
+// Running children show below the composer with what they do, their model
 // and how long they ran; the transcript yields the rows they take.
 func TestAgentPanelShowsRunningChildren(t *testing.T) {
 	t.Parallel()
@@ -245,8 +245,10 @@ func ansiStripped(m model) string {
 func press(t *testing.T, m model, text string) model {
 	t.Helper()
 	switch text {
-	case "tab":
-		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyTab})
+	case "up":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
+	case "down":
+		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	case "esc":
 		return updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	case "enter":
@@ -255,9 +257,10 @@ func press(t *testing.T, m model, text string) model {
 	return updateModel(t, m, tea.KeyPressMsg{Code: rune(text[0]), Text: text})
 }
 
-// Tab moves the keyboard to the panel, which then lists finished children
-// too; j/k select by ID, so pruning does not move the selection, and Esc
-// returns the keyboard to the composer.
+// Down past the newest prompt moves the keyboard to the panel below the
+// composer, on its top row; the panel then lists finished children too.
+// Arrows select by ID, so pruning does not move the selection, and Up from
+// the top row returns the keyboard to the composer.
 func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 	t.Parallel()
 	m := applyAgents(t, testModel(t, 100, 30),
@@ -265,51 +268,88 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 		agentStart("bg-2", "task"),
 		agentStart("bg-3", "task"), agentEnd("bg-3", errors.New("quota exceeded"), time.Second),
 	)
-	m = press(t, m, "tab")
-	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-2" {
-		t.Fatalf("focus = %#v on %q, want the latest running child", c, m.agentSelected)
+	m = press(t, m, "down")
+	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-1" {
+		t.Fatalf("focus = %#v on %q, want the top row", c, m.agentSelected)
 	}
 	view := ansiStripped(m)
-	for _, want := range []string{"Subagents 1 running · 3", "✓ find loader · completed in 2s", "› ⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
+	for _, want := range []string{"Subagents 1 running · 3", "› ✓ find loader · completed in 2s", "⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view lacks %q:\n%s", want, view)
 		}
 	}
-	m = press(t, m, "j")
-	m = press(t, m, "j")
+	if composer, panel := strings.Index(view, "╰"), strings.Index(view, "Subagents"); composer < 0 || panel < composer {
+		t.Fatalf("panel is not below the composer:\n%s", view)
+	}
+	m = press(t, m, "down")
+	m = press(t, m, "down")
+	m = press(t, m, "down")
 	if m.agentSelected != "bg-3" {
 		t.Fatalf("selected %q after moving past the end", m.agentSelected)
 	}
-	m = press(t, m, "k")
-	m = press(t, m, "k")
-	if m.agentSelected != "bg-1" {
+	m = press(t, m, "up")
+	m = press(t, m, "up")
+	if m.agentSelected != "bg-1" || m.inputContext().domain != inputAgents {
 		t.Fatalf("selected %q, want the first child", m.agentSelected)
 	}
-	m = press(t, m, "q")
-	if m.input.Value() != "" {
-		t.Fatalf("a key reached the composer: %q", m.input.Value())
-	}
-	m = press(t, m, "esc")
+	m = press(t, m, "up")
 	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
 		t.Fatalf("focus stays on the panel: %#v", m.inputContext())
 	}
-	m = press(t, m, "q")
-	if m.input.Value() != "q" {
-		t.Fatalf("composer = %q after returning", m.input.Value())
+
+	m = press(t, m, "down")
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputMain {
+		t.Fatalf("Esc kept the panel: %#v", m.inputContext())
 	}
 }
 
-// Without children, Tab is not taken from the composer.
+// Typing in the panel returns to the composer, which receives the text.
+func TestAgentPanelTypingReturnsToTheComposer(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	m = press(t, m, "down")
+	m = press(t, m, "q")
+	if m.inputContext().domain != inputMain || m.input.Value() != "q" {
+		t.Fatalf("domain %v, composer %q", m.inputContext().domain, m.input.Value())
+	}
+}
+
+// Down walks recalled prompts back to the draft first, and leaves a
+// multi-line draft row by row, before it reaches the panel.
+func TestAgentPanelFollowsHistoryAndDraft(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	m.promptHistory = []string{"older"}
+	m = press(t, m, "up")
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputMain || m.historyIndex != -1 {
+		t.Fatalf("Down left history for the panel: domain %v, index %d", m.inputContext().domain, m.historyIndex)
+	}
+	m.input.SetValue("one\ntwo")
+	m.input.MoveToBegin()
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputMain || m.input.Line() != 1 {
+		t.Fatalf("Down left a draft row for the panel: domain %v, line %d", m.inputContext().domain, m.input.Line())
+	}
+	m = press(t, m, "down")
+	if m.inputContext().domain != inputAgents {
+		t.Fatalf("Down on the last row kept the composer: %v", m.inputContext().domain)
+	}
+}
+
+// Without children, Down is not taken from the composer.
 func TestAgentPanelFocusNeedsChildren(t *testing.T) {
 	t.Parallel()
-	m := press(t, testModel(t, 100, 30), "tab")
+	m := press(t, testModel(t, 100, 30), "down")
 	if m.inputContext().domain != inputMain || m.agentFocus {
 		t.Fatalf("focus = %#v", m.inputContext())
 	}
 }
 
-// x stops a running background child through the frontend; a synchronous one
-// stops with its response, so x does nothing for it. A failed stop is shown.
+// x pressed twice stops a running background child through the frontend; a
+// synchronous one stops with its response, so x does nothing for it. A
+// failed stop is shown.
 func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 	t.Parallel()
 	background := agentStart("bg-1", "task")
@@ -320,7 +360,18 @@ func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 		stopped = append(stopped, id)
 		return nil
 	}
-	m = press(t, m, "tab")
+	m = press(t, m, "down")
+	m = press(t, m, "down")
+	m = press(t, m, "x")
+	if len(stopped) != 0 || !strings.Contains(ansiStripped(m), "x again to stop") {
+		t.Fatalf("one x stopped %v", stopped)
+	}
+	m = press(t, m, "up")
+	m = press(t, m, "down")
+	m = press(t, m, "x")
+	if len(stopped) != 0 {
+		t.Fatalf("moving did not disarm the stop: %v", stopped)
+	}
 	m = press(t, m, "x")
 	if len(stopped) != 1 || stopped[0] != "bg-1" || m.agentView("bg-1").activity != "Stopping" {
 		t.Fatalf("stopped %v", stopped)
@@ -329,7 +380,7 @@ func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 	if last := m.entries[len(m.entries)-1]; last.kind != entryError || !strings.Contains(last.text, "no such task") {
 		t.Fatalf("a failed stop is not shown: %#v", last)
 	}
-	m = press(t, m, "k")
+	m = press(t, m, "up")
 	m = press(t, m, "x")
 	if len(stopped) != 1 {
 		t.Fatalf("a synchronous child was stopped: %v", stopped)
@@ -344,7 +395,7 @@ func TestAgentReaderFollowsTheChild(t *testing.T) {
 		agentStart("bg-1", "find the config loader"),
 		agentEvent("bg-1", interaction.Event{Kind: interaction.EventAssistantEnd, Assistant: interaction.AssistantDisplay{Text: "looking around"}}),
 	)
-	m = press(t, m, "tab")
+	m = press(t, m, "down")
 	m = press(t, m, "enter")
 	if m.reading == nil || m.reading.agent != "bg-1" {
 		t.Fatalf("reading = %#v", m.reading)
@@ -424,5 +475,81 @@ func TestRunEventsUpdateSessionTotals(t *testing.T) {
 	m.applyAgentEvent(interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "agent"}, Usage: &usage, Throughput: &throughput})
 	if m.sessionUsage != usage || m.throughput != throughput {
 		t.Fatalf("totals = %+v / %+v, want the event's", m.sessionUsage, m.throughput)
+	}
+}
+
+// Hovering a row marks it without taking the keyboard; a click opens that
+// child's transcript as Enter does, and closing it returns to the panel.
+func TestAgentPanelPointer(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"), agentStart("bg-2", "second task"))
+	area := m.screenLayout().agents
+	row := tea.Mouse{X: area.x + 4, Y: area.y + 2, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseMotionMsg(row))
+	lines := strings.Split(ansiStripped(m), "\n")
+	if line := lines[row.Y]; !strings.Contains(line, "› ⠋ find loader") || m.inputContext().domain != inputMain {
+		t.Fatalf("hover row %q, domain %v", line, m.inputContext().domain)
+	}
+
+	m = updateModel(t, m, tea.MouseClickMsg(row))
+	m = updateModel(t, m, tea.MouseReleaseMsg(row))
+	if m.reading == nil || m.reading.agent != "bg-2" {
+		t.Fatalf("click opened %#v", m.reading)
+	}
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputAgents || m.agentSelected != "bg-2" {
+		t.Fatalf("after closing: domain %v on %q", m.inputContext().domain, m.agentSelected)
+	}
+
+	// A press that leaves its row opens nothing.
+	m = press(t, m, "esc")
+	area = m.screenLayout().agents
+	first := tea.Mouse{X: area.x + 4, Y: area.y + 1, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseClickMsg(first))
+	moved := first
+	moved.Y++
+	m = updateModel(t, m, tea.MouseMotionMsg(moved))
+	m = updateModel(t, m, tea.MouseReleaseMsg(moved))
+	if m.reading != nil {
+		t.Fatal("a dragged press opened a child")
+	}
+}
+
+// footerHint is the screen cell of a footer hint's first character.
+func footerHint(t *testing.T, m model, hint string) tea.Mouse {
+	t.Helper()
+	y := m.screenLayout().footer.y
+	line := strings.Split(ansiStripped(m), "\n")[y]
+	i := strings.Index(line, hint)
+	if i < 0 {
+		t.Fatalf("footer lacks %q: %q", hint, line)
+	}
+	return tea.Mouse{X: ansi.StringWidth(line[:i]), Y: y, Button: tea.MouseLeft}
+}
+
+func clickAt(t *testing.T, m model, mouse tea.Mouse) model {
+	t.Helper()
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	return updateModel(t, m, tea.MouseReleaseMsg(mouse))
+}
+
+// A footer hint underlines under the pointer and runs its action when
+// clicked, as its key does, in whichever domain shows it.
+func TestFooterHintsAreClickable(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	hint := footerHint(t, m, "↓ subagents")
+	plain := m.View().Content
+	hovered := updateModel(t, m, tea.MouseMotionMsg(hint))
+	if hovered.View().Content == plain || ansiStripped(hovered) != ansi.Strip(plain) {
+		t.Fatal("hovering a hint changed nothing but its style")
+	}
+	m = clickAt(t, hovered, hint)
+	if m.inputContext().domain != inputAgents {
+		t.Fatalf("clicking the hint left domain %v", m.inputContext().domain)
+	}
+	m = clickAt(t, m, footerHint(t, m, "Esc back"))
+	if m.inputContext().domain != inputMain {
+		t.Fatalf("clicking Esc back left domain %v", m.inputContext().domain)
 	}
 }

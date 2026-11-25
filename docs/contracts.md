@@ -608,6 +608,9 @@ The runtime boundary preserves these ownership rules:
   running response. Settings and the session picker render only while they own
   the domain; under a permission prompt only its scrolling applies. [input_bindings.go](../internal/tui/input_bindings.go)
   gives dispatch and help the same actions, modifiers, availability and aliases.
+  A click on a footer hint runs its action through the same domain handler as
+  its key (`runInputAction`); the hint layout that renders the row also
+  reports each hint's cells, so paint, hover and hit testing cannot disagree.
   Dialog input is exclusive; disabled reserved keys cannot fall through. Async
   editor replies carry input identity/generation and are rejected after domain,
   focus or draft changes. Pending completion keys cannot accidentally submit.

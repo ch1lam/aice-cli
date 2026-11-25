@@ -57,9 +57,9 @@ func (m model) screenLayout() screenLayout {
 	header := screenRect{x, y, width, c.header}
 	transcript := screenRect{x, y + c.header, m.viewport.Width(), m.viewport.Height()}
 	menu := screenRect{x, transcript.y + transcript.height, width, c.menu}
-	agents := screenRect{x, menu.y + menu.height, width, c.agents}
-	question := screenRect{x, agents.y + agents.height, width, c.question}
+	question := screenRect{x, menu.y + menu.height, width, c.question}
 	composer := screenRect{x, question.y + question.height, width, c.composer}
-	footer := screenRect{x, composer.y + composer.height, width, c.footer}
+	agents := screenRect{x, composer.y + composer.height, width, c.agents}
+	footer := screenRect{x, agents.y + agents.height, width, c.footer}
 	return screenLayout{header, transcript, menu, agents, question, composer, footer}
 }

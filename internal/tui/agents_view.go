@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -19,41 +20,80 @@ func (m model) agentPanelVisible() bool {
 		m.commandMenuView(m.layoutWidth()) == "" && (m.agentsFocused() || len(m.runningAgents()) > 0)
 }
 
+// agentPanelRows is the panel's list: the running children, or with the
+// keyboard every retained child and the selected one, and the window
+// [start, end) of it that shows. Rendering and pointer hits share it.
+type agentPanelRows struct {
+	views                []*agentView
+	selected, start, end int
+}
+
+func (m model) agentPanelRows() agentPanelRows {
+	rows := agentPanelRows{views: m.runningAgents(), selected: -1}
+	if m.agentsFocused() {
+		rows.views, rows.selected = m.agents, m.selectedAgentIndex()
+	}
+	rows.end = len(rows.views)
+	if len(rows.views) > maximumAgentRows {
+		rows.end = maximumAgentRows - 1
+		if rows.selected >= 0 {
+			rows.start, rows.end = listWindow(rows.selected, maximumAgentRows-1, len(rows.views))
+		}
+	}
+	return rows
+}
+
+// agentAt is the child whose panel row is under the pointer.
+func (m model) agentAt(mouse tea.Mouse) *agentView {
+	if !m.agentPanelVisible() {
+		return nil
+	}
+	area := m.screenLayout().agents
+	if !area.contains(mouse) {
+		return nil
+	}
+	// The header takes the panel's first row.
+	rows := m.agentPanelRows()
+	if i := rows.start + mouse.Y - area.y - 1; i >= rows.start && i < rows.end {
+		return rows.views[i]
+	}
+	return nil
+}
+
 // agentPanelView lists the running subagents: what each does, on which
 // model, for how long. With the keyboard it lists every retained child,
-// finished ones with how they ended, and marks the selected one.
+// finished ones with how they ended, and marks the selected one. The row
+// under the pointer is marked too; hovering does not move the keyboard.
 func (m model) agentPanelView(width int) string {
 	if !m.agentPanelVisible() {
 		return ""
 	}
-	running := m.runningAgents()
-	views, selected := running, -1
-	header := " " + headerStyle.Render("Subagents") + " " + mutedStyle.Render(fmt.Sprint(len(running)))
-	if m.agentsFocused() {
-		views, selected = m.agents, m.selectedAgentIndex()
-		header = " " + headerStyle.Render("Subagents") + " " + mutedStyle.Render(fmt.Sprintf("%d running · %d", len(running), len(m.agents)))
+	list := m.agentPanelRows()
+	running := len(m.runningAgents())
+	header := " " + headerStyle.Render("Subagents") + " " + mutedStyle.Render(fmt.Sprint(running))
+	if list.selected >= 0 {
+		header = " " + headerStyle.Render("Subagents") + " " + mutedStyle.Render(fmt.Sprintf("%d running · %d", running, len(list.views)))
 	}
-	innerWidth := max(width-2, 1)
+	var hovered *agentView
+	if m.pointer.known {
+		hovered = m.agentAt(tea.Mouse{X: m.pointer.x, Y: m.pointer.y})
+	}
+	// Rows keep one gutter, marked or not, so focusing moves nothing.
+	rowWidth := max(width-3, 1)
 	rows := []string{header}
 	now := time.Now()
-	start, end := 0, len(views)
-	if len(views) > maximumAgentRows {
-		end = maximumAgentRows - 1
-		if selected >= 0 {
-			start, end = listWindow(selected, maximumAgentRows-1, len(views))
+	for i := list.start; i < list.end; i++ {
+		view := list.views[i]
+		gutter := "  "
+		switch {
+		case i == list.selected:
+			gutter = headerStyle.Render("›") + " "
+		case view == hovered:
+			gutter = mutedStyle.Render("›") + " "
 		}
+		rows = append(rows, gutter+m.agentRow(view, rowWidth, now))
 	}
-	for i := start; i < end; i++ {
-		gutter, rowWidth := " ", innerWidth
-		if selected >= 0 {
-			gutter, rowWidth = "  ", innerWidth-1
-			if i == selected {
-				gutter = headerStyle.Render("›") + " "
-			}
-		}
-		rows = append(rows, gutter+m.agentRow(views[i], rowWidth, now))
-	}
-	if hidden := len(views) - (end - start); hidden > 0 {
+	if hidden := len(list.views) - (list.end - list.start); hidden > 0 {
 		rows = append(rows, "   "+mutedStyle.Render(fmt.Sprintf("+%d more", hidden)))
 	}
 	return strings.Join(rows, "\n")
