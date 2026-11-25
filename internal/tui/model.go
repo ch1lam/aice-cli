@@ -178,9 +178,10 @@ type model struct {
 	agents       []*agentView
 	// agentFocus moves the keyboard from the composer to the subagent panel
 	// below it, where agentSelected names the selected child. stopAgent stops
-	// a background child.
+	// a background child; the first x only arms stopArmed with its ID.
 	agentFocus            bool
 	agentSelected         string
+	agentStopArmed        string
 	stopAgent             func(id string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage

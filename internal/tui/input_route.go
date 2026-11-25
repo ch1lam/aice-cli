@@ -187,8 +187,6 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m, nil, true
 	case inputActionQuit:
 		return m, tea.Quit, true
-	case inputActionCode:
-		m.toggleVisibleCode()
 	case inputActionProcess:
 		follow := m.viewport.AtBottom()
 		m.toggleProcessGroups()

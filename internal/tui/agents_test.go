@@ -347,8 +347,9 @@ func TestAgentPanelFocusNeedsChildren(t *testing.T) {
 	}
 }
 
-// x stops a running background child through the frontend; a synchronous one
-// stops with its response, so x does nothing for it. A failed stop is shown.
+// x pressed twice stops a running background child through the frontend; a
+// synchronous one stops with its response, so x does nothing for it. A
+// failed stop is shown.
 func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 	t.Parallel()
 	background := agentStart("bg-1", "task")
@@ -361,6 +362,16 @@ func TestAgentPanelStopsBackgroundChildren(t *testing.T) {
 	}
 	m = press(t, m, "down")
 	m = press(t, m, "down")
+	m = press(t, m, "x")
+	if len(stopped) != 0 || !strings.Contains(ansiStripped(m), "x again to stop") {
+		t.Fatalf("one x stopped %v", stopped)
+	}
+	m = press(t, m, "up")
+	m = press(t, m, "down")
+	m = press(t, m, "x")
+	if len(stopped) != 0 {
+		t.Fatalf("moving did not disarm the stop: %v", stopped)
+	}
 	m = press(t, m, "x")
 	if len(stopped) != 1 || stopped[0] != "bg-1" || m.agentView("bg-1").activity != "Stopping" {
 		t.Fatalf("stopped %v", stopped)

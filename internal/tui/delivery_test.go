@@ -72,12 +72,9 @@ func TestModelEnterSteersAndControlEnterQueues(t *testing.T) {
 	}
 
 	steered.input.SetValue("run after this")
-	queued, command, handled := steered.handleKey(tea.KeyPressMsg{
-		Code: tea.KeyEnter,
-		Mod:  tea.ModCtrl,
-	})
+	queued, command, handled := steered.handleKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	if !handled || command == nil {
-		t.Fatal("ctrl+enter did not queue asynchronously")
+		t.Fatal("Tab did not queue asynchronously")
 	}
 	queued = updateModel(t, queued, command())
 	if len(queued.pendingDeliveries) != 2 ||

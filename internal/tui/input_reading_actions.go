@@ -59,7 +59,7 @@ func (m model) readingInputBindings() []inputBinding {
 		actionBinding(inputActionReadingDirectory, "T/Ctrl+t", "questions", "t", "ctrl+t"),
 		actionBinding(inputActionReadingScrollUp, "", "", "up", "k"),
 		actionBinding(inputActionReadingScrollDown, "", "", "down", "j"),
-		actionBinding(inputActionReadingCode, "C/Alt+o", "toggle code", "c", "alt+o"),
+		actionBinding(inputActionReadingCode, "C", "toggle code", "c"),
 		actionBinding(inputActionReadingLatest, "End", "latest", "end"),
 		actionBinding(inputActionReadingPageUp, "", "", "pgup"),
 		actionBinding(inputActionReadingPageDown, "", "", "pgdown", "space", " "),

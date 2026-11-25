@@ -11,7 +11,6 @@ type keyMap struct {
 	scrollUp    key.Binding
 	scrollDown  key.Binding
 	process     key.Binding
-	code        key.Binding
 	editor      key.Binding
 	paste       key.Binding
 	commands    key.Binding
@@ -29,7 +28,6 @@ func newKeyMap() keyMap {
 	return keyMap{
 		close:    key.NewBinding(key.WithKeys("alt+esc"), key.WithHelp("Alt+Esc", "close")),
 		mode:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("Shift+Tab", "auto mode")),
-		code:     key.NewBinding(key.WithKeys("alt+o"), key.WithHelp("Alt+o", "visible code")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
 		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "history")),
 		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v")),
@@ -38,8 +36,8 @@ func newKeyMap() keyMap {
 			key.WithHelp("Enter", "send"),
 		),
 		queue: key.NewBinding(
-			key.WithKeys("ctrl+enter"),
-			key.WithHelp("Ctrl+Enter", "queue"),
+			key.WithKeys("tab"),
+			key.WithHelp("Tab", "queue"),
 		),
 		newline: key.NewBinding(
 			key.WithKeys("shift+enter", "alt+enter", "ctrl+j"),

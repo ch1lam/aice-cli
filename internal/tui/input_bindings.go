@@ -230,7 +230,6 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionSessions, binding: k.sessions},
 		{action: inputActionTurns, binding: k.turns},
 		{action: inputActionProcess, binding: k.process},
-		{action: inputActionCode, binding: k.code},
 		{action: inputActionEditor, binding: k.editor},
 		{action: inputActionClear, binding: k.clear, short: true},
 		{action: inputActionClose, binding: k.close, short: side},

@@ -17,7 +17,6 @@ const (
 	inputActionNewline   inputAction = "newline"
 	inputActionScroll    inputAction = "scroll"
 	inputActionProcess   inputAction = "process"
-	inputActionCode      inputAction = "code"
 	inputActionEditor    inputAction = "editor"
 	inputActionPaste     inputAction = "paste"
 	inputActionHistory   inputAction = "history"
@@ -88,7 +87,6 @@ func (m model) inputActionKeys() keyMap {
 	k.scrollUp.SetEnabled(conversation)
 	k.scrollDown.SetEnabled(conversation)
 	k.process.SetEnabled(main)
-	k.code.SetEnabled(main)
 	k.clear.SetEnabled(conversation)
 	k.interrupt.SetEnabled(main && (m.run.running() || m.slashCommandMenuVisible() || m.fileCompletionVisible()))
 	k.quit.SetEnabled(main && !m.run.running() && empty)
@@ -118,7 +116,7 @@ func (m model) inputActionKeys() keyMap {
 			label = "BTW threads"
 		}
 		k.send.SetHelp("Enter", label)
-		k.queue.SetHelp("Ctrl+Enter", label)
+		k.queue.SetHelp("Tab", label)
 	}
 	if m.clipboardRead.pending {
 		k.send.SetEnabled(false)
@@ -148,7 +146,7 @@ func (m model) inputActionKeys() keyMap {
 func (k *keyMap) bindings() []*key.Binding {
 	return []*key.Binding{
 		&k.sessions, &k.turns, &k.send, &k.queue, &k.newline, &k.scrollUp, &k.scrollDown,
-		&k.process, &k.code, &k.editor, &k.paste, &k.commands, &k.historyUp, &k.historyDown,
+		&k.process, &k.editor, &k.paste, &k.commands, &k.historyUp, &k.historyDown,
 		&k.help, &k.mode, &k.clear, &k.interrupt, &k.quit, &k.close,
 	}
 }

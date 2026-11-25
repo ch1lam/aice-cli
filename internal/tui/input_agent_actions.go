@@ -49,7 +49,7 @@ func (m *model) focusAgents() {
 
 // blurAgents returns the keyboard to the composer.
 func (m *model) blurAgents() tea.Cmd {
-	m.agentFocus = false
+	m.agentFocus, m.agentStopArmed = false, ""
 	m.resizeLayout()
 	m.refreshViewport(false)
 	return m.input.Focus()
@@ -59,6 +59,9 @@ func (m model) agentInputBindings() []inputBinding {
 	view := m.selectedAgent()
 	stop := actionBinding(inputActionAgentStop, "x", "stop", "x")
 	stop.binding.SetEnabled(m.stopAgent != nil && view != nil && view.running && view.start.Background)
+	if view != nil && m.agentStopArmed == view.id {
+		stop.binding.SetHelp("x", "again to stop")
+	}
 	return []inputBinding{
 		actionBinding(inputActionAgentOpen, "Enter", "open", "enter"),
 		actionBinding(inputActionAgentBack, "Esc", "back", "esc", "ctrl+c"),
@@ -68,7 +71,11 @@ func (m model) agentInputBindings() []inputBinding {
 	}
 }
 
+// handleAgentAction applies a panel action. Stopping takes x twice on the
+// same child; any other action disarms the first press.
 func (m model) handleAgentAction(match inputActionMatch) (model, tea.Cmd, bool) {
+	armed := m.agentStopArmed
+	m.agentStopArmed = ""
 	switch match.action {
 	case inputActionAgentMove:
 		next := m.selectedAgentIndex() + match.argument
@@ -81,6 +88,10 @@ func (m model) handleAgentAction(match inputActionMatch) (model, tea.Cmd, bool) 
 		return m.openAgent(m.selectedAgent()), nil, true
 	case inputActionAgentStop:
 		view := m.selectedAgent()
+		if armed != view.id {
+			m.agentStopArmed = view.id
+			return m, nil, true
+		}
 		view.activity = "Stopping"
 		return m, m.stopAgent(view.id), true
 	case inputActionAgentBack:

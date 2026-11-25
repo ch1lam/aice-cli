@@ -917,7 +917,7 @@ output remain distinct. Code panels highlight by language/path, escape terminal
 controls, number original lines and preserve source independently of wrapping.
 
 Completed main-answer code over 80 lines or at least 8 KiB starts with a 12-line
-preview. Click its status row or use `Alt+O` (history also accepts `C`) to toggle
+preview. Click its status row to toggle it; in the history reader `C` toggles
 the first visible expandable block. Search reveals hidden matching code.
 `[Copy]` copies the entire supplied source even while folded; a source-line click
 copies that original line without its final newline. Limited tool previews can
@@ -942,7 +942,7 @@ children too, and the footer shows the panel's keys:
 | --- | --- |
 | `↑`/`↓` | Select a child; `↑` on the top row returns to the composer |
 | `Enter` | Open the child's transcript; it follows the child live |
-| `x` | Stop a running background child; the parent agent is told |
+| `x` twice | Stop a running background child; the parent agent is told |
 | `Esc` or `Ctrl+C` | Return to the composer |
 | Other text | Return to the composer, which receives it |
 
@@ -958,7 +958,7 @@ The composer remains active while an Agent run is working:
 | Input | Effect while an Agent run is active |
 | --- | --- |
 | `Enter` | Send a steer into the active run at its next safe boundary |
-| `Ctrl+Enter` | Queue a follow-up interaction after the current one completes |
+| `Tab` | Queue a follow-up interaction after the current one completes |
 | `Shift+Enter`, `Alt+Enter`, or `Ctrl+J` | Insert a newline |
 | `Esc` | Cancel the active response, preserving the draft |
 | `Ctrl+C` | Clear the editor; press again consecutively to exit AICE |
@@ -1025,7 +1025,7 @@ continues to handle text; it does not transport clipboard image bytes.
 
 Images appear at the cursor as inline `[Image 1]`, `[Image 2]` placeholders.
 Like long text placeholders, arrow keys cross the whole token and
-Backspace/Delete removes the token and its image together. Send images with a caption or alone. `Enter` and `Ctrl+Enter` also carry
+Backspace/Delete removes the token and its image together. Send images with a caption or alone. `Enter` and `Tab` also carry
 images in steering and follow-up inputs. Rejected submissions preserve the
 text and images and display the reason. Choose a model with image input;
 text-only models do not silently discard attachments.
