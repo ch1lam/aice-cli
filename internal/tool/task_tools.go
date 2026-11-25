@@ -89,9 +89,16 @@ func (o *TaskOutput) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolRe
 	if err != nil {
 		return llm.ToolResult{}, fmt.Errorf("tool \"task_output\": %w", err)
 	}
+	// A subagent's report is its whole result, so finished subagents share
+	// the output budget instead of each getting a command's preview.
+	agentPreview := min(agentNoticeBytes, max(taskOutputPreviewBytes, maxOutputBytes/len(statuses)))
 	reports := make([]string, len(statuses))
 	for index, status := range statuses {
-		reports[index] = taskReport(status, taskOutputPreviewBytes)
+		preview := int64(taskOutputPreviewBytes)
+		if status.Kind == TaskAgent {
+			preview = int64(agentPreview)
+		}
+		reports[index] = taskReport(status, preview)
 	}
 	return withTaskDelegations(textResult(call, strings.Join(reports, "\n\n"), false), statuses...), nil
 }

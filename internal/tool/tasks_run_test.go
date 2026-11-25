@@ -429,3 +429,19 @@ func TestKillAllReportsUnreportedSubagents(t *testing.T) {
 		t.Fatal("the next Session got the previous Session's tasks")
 	}
 }
+
+// task_output shows a finished subagent's whole report, not a command's
+// preview, so the parent need not read the report file.
+func TestTaskOutputShowsWholeSubagentReport(t *testing.T) {
+	t.Parallel()
+	tasks, output, _ := newRunTasks(t)
+	report := strings.Repeat("evidence line\n", 1000) + "last line"
+	status := finishRun(t, tasks, tool.TaskAgent, report)
+	result, err := output.Execute(t.Context(), toolCall(t, "task_output", map[string]any{"task_ids": []string{status.ID}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := result.Content[0].Text; !strings.Contains(text, "last line") || strings.Contains(text, "continues in the file") {
+		t.Fatalf("task_output cut a %d-byte report: %q", len(report), text[len(text)-200:])
+	}
+}

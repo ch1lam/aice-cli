@@ -577,7 +577,9 @@ stdout and stderr go to one file in a private directory created per process
 The directory is a Guard read-only root, so `read` and `grep` inspect full
 output without an ask, also under `--print`. `task_output` takes 1–8 IDs,
 optionally waits up to 600 seconds for all of them to finish, and reports
-each status with the last 4 KiB of output; without IDs it lists every
+each status with the last 4 KiB of a command's output or a subagent's report
+from its start, the finished subagents sharing the 50 KiB result (at least
+4 KiB each, at most the whole report); without IDs it lists every
 retained task in one line each, reporting none of them. `task_kill` reports
 how the task ended; stopping a finished task is not an error.
 
@@ -632,14 +634,24 @@ for the child, and cancelling the parent (Esc, or the run ending) cancels it.
 A call that did not ask for the background runs synchronously where background
 tasks are unavailable.
 
-The tool's guidelines tell the model when to delegate (independent parts,
-reading across many files or searching blind, long command output, an
-unanchored review) and when not to (a few tool calls, a result its next step
-needs, tightly coupled parts); to plan first and start independent children
-together; to write prompts that stand alone and ask for checkable evidence; to
-end its turn when only waiting remains; and to verify reports before relying
-on them. The child's prompt section asks for the outcome first, then the
-evidence, then what it could not verify, without narrating its steps.
+The tool description opens with what to delegate and why (the work does not
+consume the parent's context), and a background start's result tells the
+parent not to read the files or rerun the searches it gave the child. The
+built-in system prompt gives the `agent` and `send_message` guidelines a
+`Delegating to subagents` section of their own. They open with why to
+delegate: the parent's context is the run's scarcest resource, and a child
+returns only its conclusion. They then tell the model to delegate by default
+for independent parts, reading across many files or searching blind, long
+command output and an unanchored review (given the code, not the parent's
+verdict), and to do it itself for a few tool calls, a result its next step
+needs or tightly coupled parts. The model plans first and starts independent
+children together, and leaves a delegated part to its child instead of reading
+the same files. It writes prompts that stand alone and ask for checkable
+evidence, ends its turn instead of waiting with `task_output` when only waiting
+remains, and verifies reports before relying on them. The child's prompt section
+says the delegation guidance is the parent's, asks it to stop once it can
+answer, and asks for the outcome first, then the evidence, then what it could
+not verify, as short as the evidence allows and without narrating its steps.
 
 - The child runs on the [subagent model and thinking](configuration.md#settings-and-precedence)
   settings, by default the parent run's own (a fork always on the parent's), and shares the parent's system
@@ -694,8 +706,8 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
 - shares the background task limits, `task_output`, `task_kill` and completion
   notifications with background commands; its output file receives its report
   (cut at 32 KiB like a synchronous child's) when it finishes, its
-  notification carries the whole report and `task_output` shows its first
-  4 KiB;
+  notification carries the whole report and `task_output` shows it within
+  its share of the result;
 - is not stopped by cancelling the run that started it; `/new`, resuming
   another Session, `task_kill` and exit cancel it, and after any of them it
   cannot [continue](#messaging-subagents). `/new`, resuming and exit leave no

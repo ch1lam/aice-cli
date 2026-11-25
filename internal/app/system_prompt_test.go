@@ -3,6 +3,9 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/ch1lam/aice-cli/internal/agent"
+	"github.com/ch1lam/aice-cli/internal/llm"
 )
 
 func TestDefaultSystemPromptKeepsAuthorityBoundaries(t *testing.T) {
@@ -83,5 +86,29 @@ func TestBuildDefaultSystemPromptInjectsRuntimeContextOnce(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Current working directory: C:/workspace") {
 		t.Errorf("prompt working directory was not normalized: %q", prompt)
+	}
+}
+
+func TestBuildDefaultSystemPromptGroupsDelegationGuidelines(t *testing.T) {
+	t.Parallel()
+
+	tools := []agent.Tool{
+		&stubTool{definition: llm.ToolDefinition{Name: "read", PromptGuidelines: []string{"Read before editing"}}},
+		&stubTool{definition: llm.ToolDefinition{Name: "agent", PromptGuidelines: []string{"Delegate broad reading"}}},
+		&stubTool{definition: llm.ToolDefinition{Name: "send_message", PromptGuidelines: []string{"Continue a subagent"}}},
+	}
+	prompt := buildDefaultSystemPrompt(tools, "/workspace")
+	guidelines, delegation, ok := strings.Cut(prompt, "Delegating to subagents:\n")
+	if !ok {
+		t.Fatalf("prompt has no delegation section: %q", prompt)
+	}
+	if !strings.Contains(guidelines, "Read before editing") || strings.Contains(guidelines, "Delegate broad reading") {
+		t.Errorf("general guidelines = %q, want read but not agent guidance", guidelines)
+	}
+	if !strings.HasPrefix(delegation, "- Delegate broad reading\n- Continue a subagent\n\nCurrent working directory:") {
+		t.Errorf("delegation section = %q", delegation)
+	}
+	if prompt := buildDefaultSystemPrompt(tools[:1], "/workspace"); strings.Contains(prompt, "Delegating to subagents") {
+		t.Errorf("prompt without agent has a delegation section: %q", prompt)
 	}
 }
