@@ -936,27 +936,30 @@ a reconstructed diff. Before execution, writes may show a bounded argument
 preview labelled `not executed`; it grants no authority. Display limits never
 limit file mutations or rewrite Session content.
 
-### Subagents
+### Tasks and subagents panel
 
-The [subagent panel](execution-sessions.md#subagents) sits below the main
-composer, and the arrow keys move between them. While subagents exist in the
-Session, `↓` on the composer's last row moves the keyboard to the panel once
-history recall is back at the draft; the panel then lists the recent finished
-children too, and the footer shows the panel's keys:
+The panel below the main composer lists running
+[shell tasks](execution-sessions.md#background-tasks) and
+[subagents](execution-sessions.md#subagents), and the arrow keys move between
+it and the composer. While either exists, `↓` on the composer's last row moves
+the keyboard to the panel's top row once history recall is back at the draft;
+the subagent section then lists the recent finished children too, and the
+footer shows the panel's keys:
 
-| Key | Effect in the subagent panel |
+| Key | Effect in the panel |
 | --- | --- |
-| `↑`/`↓` | Select a child; `↑` on the top row returns to the composer |
-| `Enter` | Open the child's transcript; it follows the child live |
-| `x` twice | Stop a running background child; the parent agent is told |
+| `↑`/`↓` | Select a row across both sections; `↑` on the top row returns to the composer |
+| `Enter` | Open a shell task's latest output, or a child's transcript; both follow live |
+| `x` twice | Stop a shell task or a running background child; the agent is told |
 | `Esc` or `Ctrl+C` | Return to the composer |
 | Other text | Return to the composer, which receives it |
 
 The mouse works without the keyboard: hovering marks a row without moving
-the keyboard, and clicking a row opens that child's transcript as `Enter`
-does, with the panel focused on it when the transcript closes.
+the keyboard, and clicking a row opens it as `Enter` does, with the panel
+focused on it when the view closes.
 
-In a child's transcript, `Esc` or `Enter` returns to the panel, and the
+In a shell task's output or a child's transcript, `Esc` or `Enter` returns
+to the panel, and the
 history reader's scrolling, folding and `T` question keys apply. A
 synchronous child stops with the response that waits for it (`Esc` in the
 composer). A permission prompt or question still takes the keyboard first.

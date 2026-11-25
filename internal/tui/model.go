@@ -165,10 +165,14 @@ type model struct {
 	// setPermissionMode switches it.
 	permissionMode    string
 	setPermissionMode func(string) tea.Cmd
-	// backgroundTasks is the running count; pollTasks schedules one recount.
-	backgroundTasks int
-	pollTasks       func() tea.Cmd
+	// tasks are the running background tasks; pollTasks fetches them after a
+	// delay, and taskPollPending marks the one scheduled poll. stopTask and
+	// readTaskOutput serve the panel's shell tasks.
+	tasks           []interaction.TaskInfo
+	pollTasks       func(time.Duration) tea.Cmd
 	taskPollPending bool
+	stopTask        func(id string) tea.Cmd
+	readTaskOutput  func(id string, delay time.Duration) tea.Cmd
 	// awaitTasks waits for a finished task to report while the view is idle;
 	// taskWaitPending marks the one wait in flight.
 	awaitTasks      func() tea.Cmd
@@ -176,12 +180,12 @@ type model struct {
 	// agentUpdates delivers subagent runs, which agents shows in start order.
 	agentUpdates <-chan interaction.AgentUpdate
 	agents       []*agentView
-	// agentFocus moves the keyboard from the composer to the subagent panel
-	// below it, where agentSelected names the selected child. stopAgent stops
+	// panelFocus moves the keyboard from the composer to the subagent panel
+	// below it, where panelSelected names the selected child. stopAgent stops
 	// a background child; the first x only arms stopArmed with its ID.
-	agentFocus            bool
-	agentSelected         string
-	agentStopArmed        string
+	panelFocus            bool
+	panelSelected         string
+	panelStopArmed        string
 	stopAgent             func(id string) tea.Cmd
 	apiKeyConfigured      bool
 	sessionUsage          interaction.DisplayUsage
@@ -581,8 +585,11 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case usageAnimationTickMsg:
 		return m, m.usageAnimation.Update(message)
 	case backgroundTasksMsg:
-		m.taskPollPending = false
-		return m, m.followBackgroundTasks(message.running)
+		return m.applyBackgroundTasks(message)
+	case taskStopMsg:
+		return m.applyTaskStop(message)
+	case taskOutputMsg:
+		return m.applyTaskOutput(message)
 	case taskCompletionMsg:
 		return m.wakeForTasks(message)
 	case agentStopMsg:
@@ -606,7 +613,7 @@ func (m model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var command tea.Cmd
 		m.spinner, command = m.spinner.Update(message)
-		if m.run.running() || m.side.anyRunning() || len(m.runningAgents()) > 0 {
+		if m.run.running() || m.side.anyRunning() || len(m.runningAgents()) > 0 || len(m.shellTasks()) > 0 {
 			m.thinkingShimmer++
 			hasPendingSteer := m.hasPendingSteer()
 			if hasPendingSteer {
@@ -659,7 +666,7 @@ func (m model) View() tea.View {
 		frame = append(frame, dialog)
 	}
 	frame = append(frame, m.composerView(width))
-	if panel := m.agentPanelView(width); panel != "" {
+	if panel := m.panelView(width); panel != "" {
 		frame = append(frame, panel)
 	}
 	frame = append(frame, m.footerView(width))

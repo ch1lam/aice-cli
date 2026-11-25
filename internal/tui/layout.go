@@ -48,8 +48,8 @@ func (r screenRect) contains(mouse tea.Mouse) bool {
 	return mouse.X >= r.x && mouse.X < r.x+r.width && mouse.Y >= r.y && mouse.Y < r.y+r.height
 }
 
-type chromeMeasurements struct{ header, menu, agents, question, composer, footer int }
-type screenLayout struct{ header, transcript, menu, agents, question, composer, footer screenRect }
+type chromeMeasurements struct{ header, menu, panel, question, composer, footer int }
+type screenLayout struct{ header, transcript, menu, panel, question, composer, footer screenRect }
 
 func (m model) screenLayout() screenLayout {
 	x, y, width := m.horizontalPadding(), m.verticalPadding(), m.layoutWidth()
@@ -59,7 +59,7 @@ func (m model) screenLayout() screenLayout {
 	menu := screenRect{x, transcript.y + transcript.height, width, c.menu}
 	question := screenRect{x, menu.y + menu.height, width, c.question}
 	composer := screenRect{x, question.y + question.height, width, c.composer}
-	agents := screenRect{x, composer.y + composer.height, width, c.agents}
-	footer := screenRect{x, agents.y + agents.height, width, c.footer}
-	return screenLayout{header, transcript, menu, agents, question, composer, footer}
+	panel := screenRect{x, composer.y + composer.height, width, c.panel}
+	footer := screenRect{x, panel.y + panel.height, width, c.footer}
+	return screenLayout{header, transcript, menu, panel, question, composer, footer}
 }

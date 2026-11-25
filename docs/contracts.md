@@ -505,8 +505,11 @@ The runtime boundary preserves these ownership rules:
   tasks; environment close stops and joins all of them. Completions reach the
   Loop only as notifications (`Tasks.TakeNotice`); `Tasks.Changed` closes a
   channel per completion for a waiter, which takes it before checking state.
-  The TUI polls the running count through `interaction.BackgroundTasks` only
-  while tasks run.
+  The TUI polls the running tasks (`BackgroundTasks.Tasks`) only while tasks
+  run, and at once when a run reports a count its list does not match; it
+  reads a shell task's output tail (`TaskOutput`, 64 KiB) while the person
+  views it and stops one with `StopTask`, which is `Tasks.Stop`: the
+  completion still reaches the agent, with the reason.
 - An idle TUI keeps one `BackgroundTasks.AwaitCompletion` wait pending; it
   returns when a finished task waits to be reported. Still idle, the TUI
   starts a run with `RunInput.Notification`, whose prompt the application

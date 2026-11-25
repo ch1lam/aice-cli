@@ -50,8 +50,8 @@ func (m model) readingInputBindings() []inputBinding {
 	if m.reading.previous == nil || m.reading.previous.sessionPicker == nil {
 		resume = "return to conversation"
 	}
-	if m.reading.agent != "" {
-		resume = "back to subagents"
+	if m.reading.agent != "" || m.reading.task != nil {
+		resume = "back to panel"
 	}
 	bindings := []inputBinding{
 		actionBinding(inputActionReadingResume, "Enter", resume, "enter"),

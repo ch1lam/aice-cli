@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ch1lam/aice-cli/internal/agent"
 	"github.com/ch1lam/aice-cli/internal/config"
@@ -180,5 +181,62 @@ func TestInteractiveSessionNewRecordsStoppedSubagents(t *testing.T) {
 	}
 	if summary.Delegations != 1 || summary.DelegatedUsage.InputTokens != 300 || summary.Total.OutputTokens != 40 {
 		t.Fatalf("previous Session usage = %+v, want the stopped subagent's", summary)
+	}
+}
+
+// A frontend lists running shell tasks, reads their output and stops them;
+// the stop reaches the agent as an ordinary completion with its reason.
+func TestInteractiveSessionFollowsShellTasks(t *testing.T) {
+	t.Parallel()
+	shell, err := deps.FindNativeBash(deps.DefaultOptions())
+	if err != nil {
+		t.Skipf("native Bash unavailable: %v", err)
+	}
+	tasks, err := tool.NewTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tasks.Close() })
+	bash, err := tool.NewBash(t.Context(), testWorkspace(t, t.TempDir()), tool.BashShells{Native: shell}, tasks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bash.Execute(t.Context(), llm.ToolCall{ID: "start", Name: "bash",
+		Arguments: json.RawMessage(`{"command":"echo ready; sleep 60","description":"serve","run_in_background":true}`)}); err != nil {
+		t.Fatal(err)
+	}
+	s := &interactiveSession{tasks: tasks}
+	running := s.Tasks()
+	if len(running) != 1 || running[0].Kind != interaction.TaskShell || running[0].Description != "serve" || running[0].Started.IsZero() {
+		t.Fatalf("tasks = %+v", running)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		output, err := s.TaskOutput(running[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(output, "ready") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("output = %q", output)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := s.StopTask(running[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	done, err := tasks.Done(running[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if len(s.Tasks()) != 0 {
+		t.Fatal("a stopped task is still listed")
+	}
+	completions := tasks.TakeCompletions()
+	if len(completions) != 1 || !strings.Contains(completions[0].Reason, "stopped by the user") {
+		t.Fatalf("completions = %+v", completions)
 	}
 }
