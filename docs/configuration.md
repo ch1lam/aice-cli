@@ -886,8 +886,8 @@ flight is allowed to finish before its idle clock restarts.
 Side questions and answers do not enter the main transcript, prompt history,
 Session JSONL, usage totals, or compaction input, and all disappear when AICE
 exits, `/new` detaches the Session or another Session is restored. In a side panel, Enter asks a follow-up, Escape cancels the visible side
-answer (or closes the panel when idle), and Alt+Escape returns to the main
-view without cancelling. Ctrl+C clears the visible editor; a consecutive
+answer (or closes the panel when idle), and Alt+Escape, shown as a clickable
+`hide` hint while an answer runs, returns to the main view without cancelling. Ctrl+C clears the visible editor; a consecutive
 second press exits AICE. Ctrl+D ends the thread; ending a running thread asks
 for confirmation and waits for its answer to stop before deleting it.
 

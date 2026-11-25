@@ -285,6 +285,12 @@ func (m model) closeSideThread() (model, tea.Cmd, bool) {
 	return m, nil, true
 }
 
+// sideAnswering reports whether the visible side thread is answering.
+func (m model) sideAnswering() bool {
+	thread := m.side.activeThread()
+	return m.side.newPending != nil || thread != nil && thread.isRunning
+}
+
 // sideComposerEditable mirrors the newline guards below: the side composer
 // accepts text only for a pending-free new thread or an idle, writable
 // thread.

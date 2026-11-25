@@ -311,7 +311,8 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionProcess, binding: k.process},
 		{action: inputActionEditor, binding: k.editor},
 		{action: inputActionClear, binding: k.clear, short: true},
-		{action: inputActionClose, binding: k.close, short: side},
+		// Hiding keeps a running answer going; an idle thread closes with Esc.
+		{action: inputActionClose, binding: k.close, short: side && m.sideAnswering()},
 		{action: inputActionQuit, binding: k.quit, short: side},
 		{action: inputActionMode, binding: k.mode, short: true},
 	}

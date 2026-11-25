@@ -858,8 +858,11 @@ func (m model) footerHintAt(mouse tea.Mouse) (inputBinding, bool) {
 	case m.reading != nil:
 		_, segments := inputBindingsHints(m.inputBindings(), m.layoutWidth(), m.help.ShowAll)
 		return hintAt(segments, mouse.X-footer.x)
-	case m.questionVisible() || m.side.isVisible:
+	case m.questionVisible():
 		return inputBinding{}, false
+	case m.side.isVisible:
+		prefix, _, segments := m.sideStatusHints(footerContentWidth(m.layoutWidth()))
+		return hintAt(segments, mouse.X-footer.x-1-ansi.StringWidth(prefix))
 	}
 	_, segments := m.statusHints(footerContentWidth(m.layoutWidth()))
 	return hintAt(segments, mouse.X-footer.x-1)

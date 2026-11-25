@@ -103,7 +103,7 @@ func (m model) inputActionKeys() keyMap {
 		if thread != nil && !thread.isRunning && thread.readOnly() && m.isBTWCommandInput() {
 			k.send.SetEnabled(true)
 		}
-		if m.side.newPending != nil || thread != nil && thread.isRunning {
+		if m.sideAnswering() {
 			k.interrupt.SetHelp("Esc", "cancel")
 		}
 		k.quit.SetEnabled(thread != nil)
