@@ -84,9 +84,14 @@ func (m model) sessionInputBindings() []inputBinding {
 		binding.argument, binding.short = direction.step, false
 		bindings = append(bindings, binding)
 	}
-	rename := actionBinding(inputActionSessionRename, "F2", "rename", "f2")
+	// Letters act on the selected Session only once the keyboard left the
+	// search field; there they type.
+	if m.inputContext().focus == inputFocusSearch {
+		return bindings
+	}
+	rename := actionBinding(inputActionSessionRename, "r", "rename", "r")
 	rename.binding.SetEnabled(selected && item.Problem == "" && m.renameSession != nil)
-	read := actionBinding(inputActionSessionRead, "F4", "read", "f4")
+	read := actionBinding(inputActionSessionRead, "o", "read", "o")
 	read.binding.SetEnabled(selected && item.Problem == "" && m.readSession != nil)
 	return append(bindings, rename, read)
 }

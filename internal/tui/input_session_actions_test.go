@@ -44,9 +44,9 @@ func TestSessionUnavailableActionsAreHiddenAndCannotReachComposer(t *testing.T) 
 			t.Fatalf("unavailable action in help: %q", help)
 		}
 	}
-	for _, code := range []rune{tea.KeyEnter, tea.KeyF2, tea.KeyF4} {
-		m = updateModel(t, m, tea.KeyPressMsg{Code: code})
-	}
+	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = pickerKey(t, m, 'r')
+	m = pickerKey(t, m, 'o')
 	if m.sessionPicker.rename != nil || m.run.running() || m.input.Value() != "keep my draft" || m.sessionPicker.notice != "Broken session" {
 		t.Fatal("disabled session action executed or leaked input")
 	}
@@ -59,12 +59,12 @@ func TestSessionTitleSavePendingAcceptsOnlyCancel(t *testing.T) {
 		saves++
 		return nil, func() {}
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+	m = pickerKey(t, m, 'r')
 	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	before := m.sessionPicker.rename.input.Value()
 	for _, msg := range []tea.Msg{
 		tea.KeyPressMsg{Code: tea.KeyEnter},
-		tea.KeyPressMsg{Code: tea.KeyF2},
+		tea.KeyPressMsg{Code: 'r', Text: "r"},
 		tea.KeyPressMsg{Code: 'x', Text: "x"},
 		tea.PasteMsg{Content: "changed"},
 	} {

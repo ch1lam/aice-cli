@@ -65,7 +65,7 @@ func TestInputComponentRepliesStayWithTheirEditor(t *testing.T) {
 				// Both editors use textinput, so type-based routing alone would
 				// let the search clipboard result enter the rename field.
 				m.renameSession = func(uint64, string, string) (tea.Cmd, context.CancelFunc) { return nil, nil }
-				m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+				m = pickerKey(t, m, 'r')
 			}
 			before := m.input.Value()
 			var title string

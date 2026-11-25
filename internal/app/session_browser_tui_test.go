@@ -91,7 +91,7 @@ func TestSessionBrowserTUI(t *testing.T) {
 	waitFor("Last activity")
 	send("\x1b")
 	waitFor("CURRENT PROJECT")
-	send("\x1bOS") // F4: read without replacing the live conversation.
+	send("o") // The list has the keyboard: read without replacing the live conversation.
 	waitFor("HISTORY · READ ONLY")
 	send("\x1b[5~") // PageUp into the long list.
 	waitFor("History list item")

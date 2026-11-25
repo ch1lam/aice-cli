@@ -1109,11 +1109,11 @@ never creates a missing Session.
 | Control | Action |
 | --- | --- |
 | Up/Down, click | Select Session/group; Enter restores or folds a group |
-| `/` | Focus search; search matches title, filename stem and user/assistant prose across branches |
+| `/` | Focus search, where letters type; search matches title, filename stem and user/assistant prose across branches |
 | Right / Left | Open/focus preview / return to list |
 | Mouse wheel | Scroll the pane under the pointer without changing keyboard focus |
-| F2 | Rename; Enter saves, empty restores automatic title, Esc cancels |
-| F4 | Read-only transcript at a match or latest conversation |
+| `r` in the list or preview | Rename; Enter saves, empty restores automatic title, Esc cancels |
+| `o` in the list or preview | Read-only transcript at a match or latest conversation |
 | T in reader / Ctrl+T in idle main view | User-question directory |
 | End in reader | Latest active-branch conversation |
 | Enter in reader | Restore saved active branch |

@@ -844,7 +844,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Open Session information in the Usage window |
-| `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
+| `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; `r` renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |
