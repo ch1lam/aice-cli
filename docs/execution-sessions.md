@@ -577,7 +577,9 @@ stdout and stderr go to one file in a private directory created per process
 The directory is a Guard read-only root, so `read` and `grep` inspect full
 output without an ask, also under `--print`. `task_output` takes 1–8 IDs,
 optionally waits up to 600 seconds for all of them to finish, and reports
-each status with the last 4 KiB of output; without IDs it lists every
+each status with the last 4 KiB of a command's output or a subagent's report
+from its start, the finished subagents sharing the 50 KiB result (at least
+4 KiB each, at most the whole report); without IDs it lists every
 retained task in one line each, reporting none of them. `task_kill` reports
 how the task ended; stopping a finished task is not an error.
 
@@ -694,8 +696,8 @@ most 4 subagents run at once, within the 8 running tasks. A background child:
 - shares the background task limits, `task_output`, `task_kill` and completion
   notifications with background commands; its output file receives its report
   (cut at 32 KiB like a synchronous child's) when it finishes, its
-  notification carries the whole report and `task_output` shows its first
-  4 KiB;
+  notification carries the whole report and `task_output` shows it within
+  its share of the result;
 - is not stopped by cancelling the run that started it; `/new`, resuming
   another Session, `task_kill` and exit cancel it, and after any of them it
   cannot [continue](#messaging-subagents). `/new`, resuming and exit leave no
