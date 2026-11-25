@@ -186,7 +186,7 @@ func (m model) applyRunBatch(batch runBatchMsg) (tea.Model, tea.Cmd) {
 			commands = append(commands, m.followBackgroundTasks(update.state.BackgroundTasks))
 			if update.state.Transcript != nil || update.state.SessionChanged {
 				// The previous Session's subagents stopped with it.
-				m.agents, m.agentFocus = nil, false
+				m.agents, m.panelFocus = nil, false
 			}
 			if update.state.Transcript != nil {
 				m.replaceTranscript(update.state.Transcript)

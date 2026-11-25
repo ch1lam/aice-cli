@@ -26,12 +26,12 @@ const (
 	inputActionQuit      inputAction = "quit"
 	inputActionClose     inputAction = "close"
 	inputActionMode      inputAction = "mode"
-	inputActionAgents    inputAction = "agents"
+	inputActionPanel     inputAction = "panel"
 
-	inputActionAgentMove inputAction = "agent.move"
-	inputActionAgentOpen inputAction = "agent.open"
-	inputActionAgentStop inputAction = "agent.stop"
-	inputActionAgentBack inputAction = "agent.back"
+	inputActionPanelMove inputAction = "panel.move"
+	inputActionPanelOpen inputAction = "panel.open"
+	inputActionPanelStop inputAction = "panel.stop"
+	inputActionPanelBack inputAction = "panel.back"
 
 	inputActionQuestionMove      inputAction = "question.move"
 	inputActionQuestionSwitch    inputAction = "question.switch"
@@ -103,7 +103,7 @@ func (m model) inputActionKeys() keyMap {
 		if thread != nil && !thread.isRunning && thread.readOnly() && m.isBTWCommandInput() {
 			k.send.SetEnabled(true)
 		}
-		if m.side.newPending != nil || thread != nil && thread.isRunning {
+		if m.sideAnswering() {
 			k.interrupt.SetHelp("Esc", "cancel")
 		}
 		k.quit.SetEnabled(thread != nil)

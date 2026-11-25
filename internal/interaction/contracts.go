@@ -198,10 +198,35 @@ type RuntimeState struct {
 	Transcript *Transcript
 }
 
+// TaskKind names what a background task runs.
+type TaskKind uint8
+
+const (
+	// TaskShell is a background shell command.
+	TaskShell TaskKind = iota + 1
+	// TaskSubagent is a background subagent, which Agents also follows.
+	TaskSubagent
+)
+
+// TaskInfo is one running background task as a frontend shows it.
+type TaskInfo struct {
+	ID          string
+	Kind        TaskKind
+	Command     string
+	Description string
+	Started     time.Time
+}
+
 // BackgroundTasks lets a frontend follow background tasks between runs.
 type BackgroundTasks interface {
-	// RunningTasks counts the tasks still running.
-	RunningTasks() int
+	// Tasks lists the running tasks in start order.
+	Tasks() []TaskInfo
+	// StopTask asks a task to end on the person's behalf without waiting; its
+	// completion reaches the agent as usual, with the reason.
+	StopTask(id string) error
+	// TaskOutput returns the end of a task's output, marked when earlier
+	// output was left out.
+	TaskOutput(id string) (string, error)
 	// AwaitCompletion returns once a finished task waits to be reported, at
 	// once if one already does, or with ctx's error when ctx ends. A frontend
 	// that is idle then starts a Notification run.

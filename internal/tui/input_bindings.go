@@ -42,8 +42,8 @@ func (m model) inputBindings() []inputBinding {
 		return m.secretInputBindings()
 	case inputCommand:
 		return m.commandInputBindings()
-	case inputAgents:
-		return m.agentInputBindings()
+	case inputPanel:
+		return m.panelInputBindings()
 	default:
 		bindings := m.conversationInputBindings()
 		if m.inputContext().domain == inputMain && !m.deliveryPending {
@@ -311,7 +311,8 @@ func (m model) conversationInputBindings() []inputBinding {
 		{action: inputActionProcess, binding: k.process},
 		{action: inputActionEditor, binding: k.editor},
 		{action: inputActionClear, binding: k.clear, short: true},
-		{action: inputActionClose, binding: k.close, short: side},
+		// Hiding keeps a running answer going; an idle thread closes with Esc.
+		{action: inputActionClose, binding: k.close, short: side && m.sideAnswering()},
 		{action: inputActionQuit, binding: k.quit, short: side},
 		{action: inputActionMode, binding: k.mode, short: true},
 	}
@@ -329,8 +330,12 @@ func (m model) conversationInputBindings() []inputBinding {
 	)
 	// Down past the newest prompt continues into the subagent panel below
 	// the composer; it is absent otherwise, so history and the editor keep Down.
-	if !side && m.agentPanelReachable() {
-		bindings = append(bindings, actionBinding(inputActionAgents, "↓", "subagents", "down"))
+	if !side && m.panelReachable() {
+		label := "subagents"
+		if len(m.shellTasks()) > 0 {
+			label = "tasks"
+		}
+		bindings = append(bindings, actionBinding(inputActionPanel, "↓", label, "down"))
 	}
 	if k.historyUp.Enabled() {
 		bindings = append(bindings, inputBinding{action: inputActionHistory, binding: k.historyUp, argument: -1})

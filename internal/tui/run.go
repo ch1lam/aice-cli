@@ -143,7 +143,9 @@ func Run(ctx context.Context, frontend interaction.Frontend, options Options) er
 		initialModel.permissionMode = frontend.State.RuntimeState().PermissionMode
 	}
 	if frontend.Tasks != nil {
-		initialModel.pollTasks = backgroundTaskPoll(frontend.Tasks)
+		initialModel.pollTasks = backgroundTaskList(frontend.Tasks)
+		initialModel.stopTask = taskStopCommand(frontend.Tasks)
+		initialModel.readTaskOutput = taskOutputCommand(frontend.Tasks)
 		initialModel.awaitTasks = taskCompletionWait(controllerCtx, frontend.Tasks)
 		// Init starts the first wait; Bubble Tea keeps no state Init sets.
 		initialModel.taskWaitPending = true

@@ -191,13 +191,13 @@ func TestAgentPanelShowsRunningChildren(t *testing.T) {
 			t.Fatalf("view lacks %q:\n%s", want, view)
 		}
 	}
-	if m.chrome.agents != 3 || m.viewport.Height() != base.viewport.Height()-3 {
-		t.Fatalf("panel takes %d rows, viewport %d (was %d)", m.chrome.agents, m.viewport.Height(), base.viewport.Height())
+	if m.chrome.panel != 3 || m.viewport.Height() != base.viewport.Height()-3 {
+		t.Fatalf("panel takes %d rows, viewport %d (was %d)", m.chrome.panel, m.viewport.Height(), base.viewport.Height())
 	}
 
 	m = applyAgents(t, m, agentEnd("bg-1", nil, time.Second), agentEnd("bg-2", nil, time.Second))
-	if view := ansiStripped(m); strings.Contains(view, "Subagents") || m.chrome.agents != 0 || m.viewport.Height() != base.viewport.Height() {
-		t.Fatalf("panel stays without running children (%d rows):\n%s", m.chrome.agents, view)
+	if view := ansiStripped(m); strings.Contains(view, "Subagents") || m.chrome.panel != 0 || m.viewport.Height() != base.viewport.Height() {
+		t.Fatalf("panel stays without running children (%d rows):\n%s", m.chrome.panel, view)
 	}
 }
 
@@ -205,12 +205,12 @@ func TestAgentPanelShowsRunningChildren(t *testing.T) {
 func TestAgentPanelCountsChildrenBeyondItsRows(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 100, 30)
-	for i := range maximumAgentRows + 2 {
+	for i := range maximumPanelRows + 2 {
 		m = applyAgents(t, m, agentStart(fmt.Sprintf("bg-%d", i), "task"))
 	}
 	view := ansiStripped(m)
-	if !strings.Contains(view, "Subagents 7") || !strings.Contains(view, "+3 more") || m.chrome.agents != maximumAgentRows+1 {
-		t.Fatalf("panel of %d rows:\n%s", m.chrome.agents, view)
+	if !strings.Contains(view, "Subagents 7") || !strings.Contains(view, "+3 more") || m.chrome.panel != maximumPanelRows+1 {
+		t.Fatalf("panel of %d rows:\n%s", m.chrome.panel, view)
 	}
 }
 
@@ -269,8 +269,8 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 		agentStart("bg-3", "task"), agentEnd("bg-3", errors.New("quota exceeded"), time.Second),
 	)
 	m = press(t, m, "down")
-	if c := m.inputContext(); c.domain != inputAgents || c.editor || m.agentSelected != "bg-1" {
-		t.Fatalf("focus = %#v on %q, want the top row", c, m.agentSelected)
+	if c := m.inputContext(); c.domain != inputPanel || c.editor || m.panelSelected != "bg-1" {
+		t.Fatalf("focus = %#v on %q, want the top row", c, m.panelSelected)
 	}
 	view := ansiStripped(m)
 	for _, want := range []string{"Subagents 1 running · 3", "› ✓ find loader · completed in 2s", "⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
@@ -284,13 +284,13 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 	m = press(t, m, "down")
 	m = press(t, m, "down")
 	m = press(t, m, "down")
-	if m.agentSelected != "bg-3" {
-		t.Fatalf("selected %q after moving past the end", m.agentSelected)
+	if m.panelSelected != "bg-3" {
+		t.Fatalf("selected %q after moving past the end", m.panelSelected)
 	}
 	m = press(t, m, "up")
 	m = press(t, m, "up")
-	if m.agentSelected != "bg-1" || m.inputContext().domain != inputAgents {
-		t.Fatalf("selected %q, want the first child", m.agentSelected)
+	if m.panelSelected != "bg-1" || m.inputContext().domain != inputPanel {
+		t.Fatalf("selected %q, want the first child", m.panelSelected)
 	}
 	m = press(t, m, "up")
 	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
@@ -333,7 +333,7 @@ func TestAgentPanelFollowsHistoryAndDraft(t *testing.T) {
 		t.Fatalf("Down left a draft row for the panel: domain %v, line %d", m.inputContext().domain, m.input.Line())
 	}
 	m = press(t, m, "down")
-	if m.inputContext().domain != inputAgents {
+	if m.inputContext().domain != inputPanel {
 		t.Fatalf("Down on the last row kept the composer: %v", m.inputContext().domain)
 	}
 }
@@ -342,7 +342,7 @@ func TestAgentPanelFollowsHistoryAndDraft(t *testing.T) {
 func TestAgentPanelFocusNeedsChildren(t *testing.T) {
 	t.Parallel()
 	m := press(t, testModel(t, 100, 30), "down")
-	if m.inputContext().domain != inputMain || m.agentFocus {
+	if m.inputContext().domain != inputMain || m.panelFocus {
 		t.Fatalf("focus = %#v", m.inputContext())
 	}
 }
@@ -401,7 +401,7 @@ func TestAgentReaderFollowsTheChild(t *testing.T) {
 		t.Fatalf("reading = %#v", m.reading)
 	}
 	view := ansiStripped(m)
-	for _, want := range []string{"SUBAGENT · find loader · child-model", "find the config loader", "looking around", "Enter back to subagents"} {
+	for _, want := range []string{"SUBAGENT · find loader · child-model", "find the config loader", "looking around", "Enter back to panel"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("reader lacks %q:\n%s", want, view)
 		}
@@ -417,7 +417,7 @@ func TestAgentReaderFollowsTheChild(t *testing.T) {
 		t.Fatalf("the child changed the main transcript: %#v", m.reading.previous.entries)
 	}
 	m = press(t, m, "esc")
-	if m.reading != nil || m.inputContext().domain != inputAgents {
+	if m.reading != nil || m.inputContext().domain != inputPanel {
 		t.Fatalf("after closing: reading %v, domain %v", m.reading, m.inputContext().domain)
 	}
 }
@@ -483,7 +483,7 @@ func TestRunEventsUpdateSessionTotals(t *testing.T) {
 func TestAgentPanelPointer(t *testing.T) {
 	t.Parallel()
 	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"), agentStart("bg-2", "second task"))
-	area := m.screenLayout().agents
+	area := m.screenLayout().panel
 	row := tea.Mouse{X: area.x + 4, Y: area.y + 2, Button: tea.MouseLeft}
 	m = updateModel(t, m, tea.MouseMotionMsg(row))
 	lines := strings.Split(ansiStripped(m), "\n")
@@ -497,13 +497,13 @@ func TestAgentPanelPointer(t *testing.T) {
 		t.Fatalf("click opened %#v", m.reading)
 	}
 	m = press(t, m, "esc")
-	if m.inputContext().domain != inputAgents || m.agentSelected != "bg-2" {
-		t.Fatalf("after closing: domain %v on %q", m.inputContext().domain, m.agentSelected)
+	if m.inputContext().domain != inputPanel || m.panelSelected != "bg-2" {
+		t.Fatalf("after closing: domain %v on %q", m.inputContext().domain, m.panelSelected)
 	}
 
 	// A press that leaves its row opens nothing.
 	m = press(t, m, "esc")
-	area = m.screenLayout().agents
+	area = m.screenLayout().panel
 	first := tea.Mouse{X: area.x + 4, Y: area.y + 1, Button: tea.MouseLeft}
 	m = updateModel(t, m, tea.MouseClickMsg(first))
 	moved := first
@@ -545,7 +545,7 @@ func TestFooterHintsAreClickable(t *testing.T) {
 		t.Fatal("hovering a hint changed nothing but its style")
 	}
 	m = clickAt(t, hovered, hint)
-	if m.inputContext().domain != inputAgents {
+	if m.inputContext().domain != inputPanel {
 		t.Fatalf("clicking the hint left domain %v", m.inputContext().domain)
 	}
 	m = clickAt(t, m, footerHint(t, m, "Esc back"))

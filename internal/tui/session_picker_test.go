@@ -91,6 +91,14 @@ func (pickerBrowser) RenameSession(context.Context, string, string) (interaction
 	return interaction.SessionSummary{}, errors.New("session renaming unavailable")
 }
 
+// pickerKey leaves the search field, where letters type, and presses a
+// Session action's letter.
+func pickerKey(t *testing.T, m model, letter rune) model {
+	t.Helper()
+	m.sessionPicker.input.Blur()
+	return updateModel(t, m, tea.KeyPressMsg{Code: letter, Text: string(letter)})
+}
+
 func pickerModel(t *testing.T, width, height int) model {
 	t.Helper()
 	m := testModel(t, width, height, interaction.Command{Name: "history"})
@@ -389,7 +397,7 @@ func TestSessionPickerCloseButton(t *testing.T) {
 			if m.sessionPicker == nil {
 				t.Fatal("release without press closed picker")
 			}
-			m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+			m = pickerKey(t, m, 'r')
 			m = updateModel(t, m, tea.MouseClickMsg(mouse))
 			m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
 			if m.sessionPicker != nil || m.input.Value() != "keep my draft" {
@@ -660,5 +668,22 @@ func TestSessionPickerSearchCursorUsesDisplayWidth(t *testing.T) {
 		if cursor.X != wantX || cursor.Y != l.y+2 {
 			t.Fatalf("query %q: cursor = (%d, %d), want (%d, %d)", query, cursor.X, cursor.Y, wantX, l.y+2)
 		}
+	}
+}
+
+// The picker's key hints run their actions when clicked.
+func TestSessionPickerHintsAreClickable(t *testing.T) {
+	m := pickerModel(t, 120, 30)
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	y := m.sessionPickerLayout().helpY()
+	x := strings.Index(lines[y], "Esc close")
+	if x < 0 {
+		t.Fatalf("hint row %d lacks Esc close: %q", y, lines[y])
+	}
+	mouse := tea.Mouse{X: ansi.StringWidth(lines[y][:x]), Y: y, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	m = updateModel(t, m, tea.MouseReleaseMsg(mouse))
+	if m.sessionPicker != nil || m.input.Value() != "keep my draft" {
+		t.Fatal("clicking Esc close kept the picker or lost the draft")
 	}
 }

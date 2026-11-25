@@ -193,7 +193,8 @@ creates no Session or Agent run.
 
 Use Tab/Shift+Tab to switch categories. Press `/` to search, use arrows to
 select a row, and press Enter to edit it. Press `?` for details. Click a heading
-or use Left/Right to fold or unfold a group.
+or use Left/Right to fold or unfold a group. The footer lists the keys of the
+current step, and clicking a hint runs it.
 
 Action rows show their state as the value: `●` ready or configured, `▲` needs
 attention, `✕` failed, `○` off or not set up. Enter opens the row's actions with
@@ -213,9 +214,10 @@ frozen startup layers, removes the corresponding runtime choices, and does not
 reload another process's changes. “Known saved” is startup/latest-local-save data.
 
 Shared-resource edits require idle main/BTW responses and no input preparation.
-Restart-only preferences can still be saved during a run. The panel's **Stop
-current run** action (F6) cancels and waits for completion before editing resumes;
-Esc only closes or backs out. Resource changes reject previously prepared runs
+Restart-only preferences can still be saved during a run. While a run is
+active the footer offers `x stop run` (whenever no editor has the keyboard); it
+cancels and waits for completion before editing resumes. Esc only closes or
+backs out. Resource changes reject previously prepared runs
 and make old BTW snapshots read-only. Failed preparation or saving preserves
 the prior runtime; committed changes survive closing the panel. Domain actions
 report partial external effects separately. See [Settings lifecycle
@@ -844,7 +846,7 @@ The composer retains the real terminal cursor for IME composition.
 | `/thinking` | Select and save a supported reasoning level |
 | `/trust` | Save a Trust choice for restart; temporary choices are available only at startup |
 | `/session` | Open Session information in the Usage window |
-| `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; F2 renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
+| `/history [id]` | Browse conversation history in the current project (also Ctrl+R, labeled `history`; `r` renames the selected session, an empty title restores the first question), or restore an existing local session by filename stem |
 | `/tree` | Show all Session branches |
 | `/checkout` | Select where the next branch starts |
 | `/compact` | Append a compaction checkpoint for the active branch |
@@ -884,8 +886,8 @@ flight is allowed to finish before its idle clock restarts.
 Side questions and answers do not enter the main transcript, prompt history,
 Session JSONL, usage totals, or compaction input, and all disappear when AICE
 exits, `/new` detaches the Session or another Session is restored. In a side panel, Enter asks a follow-up, Escape cancels the visible side
-answer (or closes the panel when idle), and Alt+Escape returns to the main
-view without cancelling. Ctrl+C clears the visible editor; a consecutive
+answer (or closes the panel when idle), and Alt+Escape, shown as a clickable
+`hide` hint while an answer runs, returns to the main view without cancelling. Ctrl+C clears the visible editor; a consecutive
 second press exits AICE. Ctrl+D ends the thread; ending a running thread asks
 for confirmation and waits for its answer to stop before deleting it.
 
@@ -934,27 +936,30 @@ a reconstructed diff. Before execution, writes may show a bounded argument
 preview labelled `not executed`; it grants no authority. Display limits never
 limit file mutations or rewrite Session content.
 
-### Subagents
+### Tasks and subagents panel
 
-The [subagent panel](execution-sessions.md#subagents) sits below the main
-composer, and the arrow keys move between them. While subagents exist in the
-Session, `↓` on the composer's last row moves the keyboard to the panel once
-history recall is back at the draft; the panel then lists the recent finished
-children too, and the footer shows the panel's keys:
+The panel below the main composer lists running
+[shell tasks](execution-sessions.md#background-tasks) and
+[subagents](execution-sessions.md#subagents), and the arrow keys move between
+it and the composer. While either exists, `↓` on the composer's last row moves
+the keyboard to the panel's top row once history recall is back at the draft;
+the subagent section then lists the recent finished children too, and the
+footer shows the panel's keys:
 
-| Key | Effect in the subagent panel |
+| Key | Effect in the panel |
 | --- | --- |
-| `↑`/`↓` | Select a child; `↑` on the top row returns to the composer |
-| `Enter` | Open the child's transcript; it follows the child live |
-| `x` twice | Stop a running background child; the parent agent is told |
+| `↑`/`↓` | Select a row across both sections; `↑` on the top row returns to the composer |
+| `Enter` | Open a shell task's latest output, or a child's transcript; both follow live |
+| `x` twice | Stop a shell task or a running background child; the agent is told |
 | `Esc` or `Ctrl+C` | Return to the composer |
 | Other text | Return to the composer, which receives it |
 
 The mouse works without the keyboard: hovering marks a row without moving
-the keyboard, and clicking a row opens that child's transcript as `Enter`
-does, with the panel focused on it when the transcript closes.
+the keyboard, and clicking a row opens it as `Enter` does, with the panel
+focused on it when the view closes.
 
-In a child's transcript, `Esc` or `Enter` returns to the panel, and the
+In a shell task's output or a child's transcript, `Esc` or `Enter` returns
+to the panel, and the
 history reader's scrolling, folding and `T` question keys apply. A
 synchronous child stops with the response that waits for it (`Esc` in the
 composer). A permission prompt or question still takes the keyboard first.

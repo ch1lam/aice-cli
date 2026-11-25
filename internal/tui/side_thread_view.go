@@ -87,20 +87,31 @@ func sanitizeSideTitle(title string) string {
 }
 
 func (m model) sideStatusLine(width int) string {
-	text := ""
-	if !m.help.ShowAll {
-		text = m.inputHelp(width, false)
+	prefix, text, segments := m.sideStatusHints(width)
+	hover := -1
+	if footer := m.screenLayout().footer; m.pointer.known && m.pointer.y == footer.y {
+		hover = m.pointer.x - footer.x - 1 - ansi.StringWidth(prefix)
 	}
+	return ansi.Truncate(mutedStyle.Render(prefix)+styleHints(text, segments, hover), width, "…")
+}
+
+// sideStatusHints is the side thread's status row: a read-only marker, then
+// its key hints and where each went after the marker.
+func (m model) sideStatusHints(width int) (string, string, []hintSegment) {
+	prefix := ""
 	if m.inputContext().domain == inputSide {
 		if thread := m.side.activeThread(); thread != nil && thread.readOnly() {
-			if text == "" {
-				text = "read-only"
-			} else {
-				text = "read-only · " + text
-			}
+			prefix = "read-only"
 		}
 	}
-	return mutedStyle.Render(ansi.Truncate(text, width, "…"))
+	if m.help.ShowAll {
+		return prefix, "", nil
+	}
+	if prefix != "" {
+		prefix += " · "
+	}
+	text, segments := inputBindingsHints(m.inputBindings(), max(width-ansi.StringWidth(prefix), 1), false)
+	return prefix, text, segments
 }
 
 func (m model) sideMenuView(width int) string {

@@ -1037,8 +1037,50 @@ func (s *interactiveSession) frontend() interaction.Frontend {
 	return frontend
 }
 
-// RunningTasks counts the Session's running background tasks.
-func (s *interactiveSession) RunningTasks() int { return s.tasks.Running() }
+// taskOutputBytes bounds the output a frontend shows for one task.
+const taskOutputBytes = 64 << 10
+
+// Tasks lists the Session's running background tasks.
+func (s *interactiveSession) Tasks() []interaction.TaskInfo {
+	if s.tasks == nil {
+		return nil
+	}
+	var running []interaction.TaskInfo
+	for _, status := range s.tasks.List() {
+		if !status.Running {
+			continue
+		}
+		kind := interaction.TaskShell
+		if status.Kind == tool.TaskAgent {
+			kind = interaction.TaskSubagent
+		}
+		running = append(running, interaction.TaskInfo{
+			ID: status.ID, Kind: kind, Command: status.Command,
+			Description: status.Description, Started: status.Started,
+		})
+	}
+	return running
+}
+
+// StopTask stops one background task as the person; the agent learns why.
+func (s *interactiveSession) StopTask(id string) error {
+	if s.tasks == nil {
+		return fmt.Errorf("no background task %s", id)
+	}
+	return s.tasks.Stop(id, "stopped by the user")
+}
+
+// TaskOutput returns the end of one background task's output.
+func (s *interactiveSession) TaskOutput(id string) (string, error) {
+	if s.tasks == nil {
+		return "", fmt.Errorf("no background task %s", id)
+	}
+	text, truncated, err := s.tasks.OutputTail(id, taskOutputBytes)
+	if truncated {
+		text = "[earlier output omitted]\n" + text
+	}
+	return text, err
+}
 
 // AwaitCompletion returns once a finished background task waits to be
 // reported, so an idle frontend can start a notification run.

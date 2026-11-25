@@ -25,8 +25,10 @@ type sessionReading struct {
 	turns         []int
 	selected      int
 	savedViewport transcriptViewport
-	// agent names the subagent whose transcript the reader follows live.
+	// agent names the subagent whose transcript the reader follows live;
+	// task is the shell task whose output it shows.
 	agent string
+	task  *interaction.TaskInfo
 }
 
 // readerMessage reports whether a message belongs to an open reader: terminal
@@ -36,7 +38,7 @@ func readerMessage(message tea.Msg) bool {
 	switch message.(type) {
 	case tea.KeyPressMsg, tea.KeyReleaseMsg, tea.PasteMsg,
 		tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.BlurMsg,
-		tea.WindowSizeMsg, copyNoticeExpiredMsg, sessionReadingResult:
+		tea.WindowSizeMsg, copyNoticeExpiredMsg, sessionReadingResult, taskOutputMsg:
 		return true
 	}
 	return false

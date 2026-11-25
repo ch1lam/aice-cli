@@ -110,8 +110,9 @@ func TestSessionGroupDoesNotLoadOrRestoreSession(t *testing.T) {
 	if strings.Contains(m.sessionPicker.previewText, "obsolete") {
 		t.Fatal("obsolete session preview replaced group instructions")
 	}
-	for _, key := range []rune{tea.KeyF2, tea.KeyF4, tea.KeyEnter} {
-		next, command = m.Update(tea.KeyPressMsg{Code: key})
+	m.sessionPicker.input.Blur()
+	for _, key := range []tea.KeyPressMsg{{Code: 'r', Text: "r"}, {Code: 'o', Text: "o"}, {Code: tea.KeyEnter}} {
+		next, command = m.Update(key)
 		m = next.(model)
 		if command != nil || m.run.running() || m.sessionPicker.rename != nil || m.reading != nil {
 			t.Fatal("group dispatched a session operation")

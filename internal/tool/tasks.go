@@ -103,6 +103,7 @@ type TaskStatus struct {
 	Command     string
 	Description string
 	OutputPath  string
+	Started     time.Time
 	Running     bool
 	// ExitCode is meaningful when Reason is empty; Reason names why AICE
 	// terminated the task.
@@ -431,7 +432,7 @@ func exitCode(err error) int {
 func (c *task) status() TaskStatus {
 	status := TaskStatus{
 		ID: c.id, Kind: c.kind, Command: c.command, Description: c.description,
-		OutputPath: c.path, Running: true,
+		OutputPath: c.path, Started: c.started, Running: true,
 	}
 	select {
 	case <-c.done:
@@ -522,6 +523,16 @@ func (t *Tasks) Stop(id, reason string) error {
 	default:
 	}
 	return nil
+}
+
+// OutputTail returns at most limit trailing bytes of one task's output and
+// whether earlier output was left out.
+func (t *Tasks) OutputTail(id string, limit int64) (string, bool, error) {
+	tasks, err := t.lookup([]string{id})
+	if err != nil {
+		return "", false, err
+	}
+	return outputTail(tasks[0].path, limit)
 }
 
 // Running reports how many tasks are still running.

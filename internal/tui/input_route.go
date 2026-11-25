@@ -32,9 +32,9 @@ func (m model) handleKey(message tea.KeyPressMsg) (model, tea.Cmd, bool) {
 		return m.handleQuestionText(message)
 	case m.deliveryPending:
 		return m, nil, true
-	case c.domain == inputAgents && message.Text != "":
+	case c.domain == inputPanel && message.Text != "":
 		// Typing returns to the composer, which receives the text.
-		return m, m.blurAgents(), false
+		return m, m.blurPanel(), false
 	}
 	conversation := c.domain == inputMain || c.domain == inputSide
 	if c.editor {
@@ -73,8 +73,8 @@ func (m model) runInputAction(domain inputDomain, match inputActionMatch) (model
 		return m.handleCommandAction(match)
 	case inputSecret:
 		return m.handleSecretAction(match)
-	case inputAgents:
-		return m.handleAgentAction(match)
+	case inputPanel:
+		return m.handlePanelAction(match)
 	default:
 		return m.handleComposerAction(match)
 	}
@@ -149,8 +149,8 @@ func (m model) handleComposerAction(match inputActionMatch) (model, tea.Cmd, boo
 		return m.openSessionPicker()
 	case inputActionTurns:
 		return m.openCurrentReading(), nil, true
-	case inputActionAgents:
-		m.focusAgents()
+	case inputActionPanel:
+		m.focusPanel()
 		return m, nil, true
 	case inputActionPaste:
 		m.clipboardRead = clipboardRead{pending: true, inSide: m.side.isVisible, sideID: m.side.activeID}

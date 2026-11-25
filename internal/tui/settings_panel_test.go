@@ -117,7 +117,7 @@ func TestSettingsCollectionAtomicAndMouseEnum(t *testing.T) {
 		t.Fatal("unsaved form discarded without choice")
 	}
 	m = updateModel(t, m, tea.KeyPressMsg{Code: 'k', Text: "k"})
-	mouse = settingsPaintedMouse(t, m, "[Save]")
+	mouse = settingsPaintedMouse(t, m, "Ctrl+s save list")
 	m = updateModel(t, m, tea.MouseClickMsg(mouse))
 	next, cmd = m.Update(tea.MouseReleaseMsg(mouse))
 	m = next.(model)

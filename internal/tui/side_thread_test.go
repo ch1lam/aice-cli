@@ -1221,3 +1221,18 @@ func TestModelEscapeBeforeSideRunStartsDefersCancellation(t *testing.T) {
 		t.Fatal("deferred Escape did not cancel the started side answer")
 	}
 }
+
+// The side thread's footer hints run their actions when clicked.
+func TestSideThreadFooterHintsAreClickable(t *testing.T) {
+	t.Parallel()
+	current := sideTestModel(t, newFakeSideManager())
+	updated, _, _, ch := createSideThread(t, current, "question")
+	updated = updateModel(t, updated, sideRunBatchMsg{source: ch, updates: []runUpdate{{done: true}}})
+	if !updated.side.isVisible {
+		t.Fatal("side thread is not visible")
+	}
+	updated = clickAt(t, updated, footerHint(t, updated, "Esc close"))
+	if updated.side.isVisible {
+		t.Fatal("clicking Esc close kept the side thread")
+	}
+}

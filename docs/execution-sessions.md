@@ -572,6 +572,14 @@ file; when every retained task runs or waits to be reported, starting fails
 instead of stopping or dropping one. A Session change deletes the output files
 of the tasks it stops.
 
+The interactive TUI lists running background commands under **Shell tasks**
+in the panel below the composer, above the [subagents](#subagents), with why
+each runs (its `description`), the command and how long it has run. `↓` from
+the composer reaches them like the subagents; `Enter` or a click shows the
+command's latest output (its last 64 KiB), re-read every second while it
+runs, and `x` twice stops it: the agent receives the completion with the
+reason `stopped by the user`, as after `task_kill` but as a notification.
+
 stdout and stderr go to one file in a private directory created per process
 (`aice-tasks-*` under the temporary directory, mode 0700) and removed on exit.
 The directory is a Guard read-only root, so `read` and `grep` inspect full
@@ -693,7 +701,7 @@ turns and tool calls, the error it failed with, or that it was stopped. A
 continued child updates the same call. The panel gives way to menus, dialogs,
 side threads and the history reader. `↓` from the composer focuses the panel to select any
 recent child, open its transcript as it runs, or stop a background one (see
-[Configuration](configuration.md#subagents)); a stop ends the child like
+[Configuration](configuration.md#tasks-and-subagents-panel)); a stop ends the child like
 `task_kill` but reports its completion to the parent as usual, and the child
 may still be continued. `--print` and ACP show only the parent's `agent` call
 and its result.
@@ -1109,11 +1117,11 @@ never creates a missing Session.
 | Control | Action |
 | --- | --- |
 | Up/Down, click | Select Session/group; Enter restores or folds a group |
-| `/` | Focus search; search matches title, filename stem and user/assistant prose across branches |
+| `/` | Focus search, where letters type; search matches title, filename stem and user/assistant prose across branches |
 | Right / Left | Open/focus preview / return to list |
 | Mouse wheel | Scroll the pane under the pointer without changing keyboard focus |
-| F2 | Rename; Enter saves, empty restores automatic title, Esc cancels |
-| F4 | Read-only transcript at a match or latest conversation |
+| `r` in the list or preview | Rename; Enter saves, empty restores automatic title, Esc cancels |
+| `o` in the list or preview | Read-only transcript at a match or latest conversation |
 | T in reader / Ctrl+T in idle main view | User-question directory |
 | End in reader | Latest active-branch conversation |
 | Enter in reader | Restore saved active branch |

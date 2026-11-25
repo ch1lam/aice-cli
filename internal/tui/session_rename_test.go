@@ -22,7 +22,7 @@ func TestSessionRenameEditorSavesWithoutSwitchingAndPreservesSelection(t *testin
 			return sessionRenameResult{generation: generation, item: interaction.SessionSummary{Key: key, ID: key, Title: title, UpdatedAt: 300}}
 		}, func() {}
 	}
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+	m = pickerKey(t, m, 'r')
 	if m.sessionPicker.rename == nil || !strings.Contains(ansi.Strip(m.View().Content), "RENAME SESSION") || m.View().Cursor == nil {
 		t.Fatal("rename editor not visible")
 	}
@@ -40,7 +40,7 @@ func TestSessionRenameEditorSavesWithoutSwitchingAndPreservesSelection(t *testin
 
 func TestSessionRenameFailureCancelAndStaleResults(t *testing.T) {
 	m := pickerModel(t, 55, 18)
-	m = updateModel(t, m, tea.KeyPressMsg{Code: tea.KeyF2})
+	m = pickerKey(t, m, 'r')
 	generation := m.sessionQueryGeneration
 	m.sessionPicker.rename.saving = true
 	m = updateModel(t, m, sessionRenameResult{generation: generation, err: errors.New("busy writer")})

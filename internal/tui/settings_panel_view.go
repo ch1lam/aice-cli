@@ -158,32 +158,26 @@ func (m model) settingsPanelView() string {
 	if notice != "" {
 		search = mutedStyle.Render(ansi.Truncate("  "+sanitizeSingleLineText(notice), l.inner, "…"))
 	}
-	footer, footerX := settingsFooterLayout(m.settingsFooter(), l.inner)
+	footer, segments, footerX := m.settingsFooter()
+	hint := -1
+	if p.pointer != nil && p.pointer.Y == l.y+l.height-2 {
+		hint = p.pointer.X - l.x - 2 - footerX
+	}
 	content := strings.Join([]string{
 		"", ansi.Truncate(p.tabs(), l.inner, "…"), "", ansi.Truncate(search, l.inner, "…"),
 		"", body, "",
-		strings.Repeat(" ", footerX) + mutedStyle.Render(footer),
+		strings.Repeat(" ", footerX) + styleHints(footer, segments, hint),
 	}, "\n")
 	hover := p.pointer != nil && l.closeContains(*p.pointer)
 	return modalFrame(title, content, l, hover, p.pressed == "close")
 }
 
-func (m model) settingsFooter() string {
-	p := m.settings
-	footer := p.footer()
-	if m.run.running() && !p.usage {
-		footer = "[Stop current run] F6 · Esc back"
-		if m.run.cancelRequested {
-			footer = "Stopping… · Esc back"
-		}
-	}
-	return footer
-}
-
-// Use the same truncated text and offset for painting and footer hit testing.
-func settingsFooterLayout(text string, width int) (string, int) {
-	text = ansi.Truncate(text, width, "…")
-	return text, max(0, (width-ansi.StringWidth(text))/2)
+// settingsFooter is the panel's key hints, centred under its body, and
+// where each hint went; painting, hover and clicks share it.
+func (m model) settingsFooter() (string, []hintSegment, int) {
+	width := m.settings.layout.inner
+	text, segments := inputBindingsHints(m.settingsInputBindings(), width, false)
+	return text, segments, max(0, (width-ansi.StringWidth(text))/2)
 }
 
 func (m model) overlaySettings(content string) (string, *tea.Cursor) {
@@ -289,8 +283,12 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		if event.Button != tea.MouseLeft || pressed == "" || pressed != target || p.pressedLayout != p.layout {
 			return m, nil
 		}
-		if target == "stop-run" {
-			m.requestRunCancellation()
+		var index int
+		if sscan(target, "hint:%d", &index) {
+			if _, segments, _ := m.settingsFooter(); index < len(segments) {
+				item := segments[index].item
+				return m.handleSettingsAction(inputActionMatch{action: item.action, argument: item.argument, matched: true, enabled: item.binding.Enabled()})
+			}
 			return m, nil
 		}
 		if p.editing != nil && target != "close" && target != "outside" {
@@ -304,10 +302,12 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.closeSettings()
 			}
 			return m, nil
-		case target == "next":
-			return m.handleSettings(tea.KeyPressMsg{Code: tea.KeyTab})
-		case target == "previous":
-			return m.handleSettings(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+		case target == "next", target == "previous":
+			step := 1
+			if target == "previous" {
+				step = -1
+			}
+			return m.handleSettingsAction(inputActionMatch{action: inputActionSettingsTab, argument: step, matched: true, enabled: true})
 		case strings.HasPrefix(target, "tab:"):
 			if p.editing != nil {
 				return m, nil
@@ -356,11 +356,15 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch p.mode() {
 		case settingsModeAction:
-			deltaKey := tea.KeyDown
+			// The wheel turns as the arrows do: it pages a long prompt and
+			// selects among choices.
+			arrow := tea.KeyPressMsg{Code: tea.KeyDown}
 			if delta < 0 {
-				deltaKey = tea.KeyUp
+				arrow.Code = tea.KeyUp
 			}
-			return m.settingActionKey(tea.KeyPressMsg{Code: deltaKey})
+			if match := matchInputBindings(m.settingsInputBindings(), arrow); match.matched && match.enabled {
+				return m.handleSettingsAction(match)
+			}
 		case settingsModeCollection:
 			if !p.collection.editing {
 				p.collection.row = max(0, min(p.collection.row+delta, p.collection.count()-1))
@@ -378,13 +382,14 @@ func (m model) settingsPointer(message tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) settingsTarget(mouse tea.Mouse) string {
 	p := m.settings
-	if m.run.running() && !p.usage && mouse.Y == p.layout.y+p.layout.height-2 {
-		_, footerX := settingsFooterLayout(m.settingsFooter(), p.layout.inner)
-		x := mouse.X - p.layout.x - 2 - footerX
-		if !m.run.cancelRequested && x >= 0 && x < min(p.layout.inner, len("[Stop current run]")) {
-			return "stop-run"
+	if l := p.layout; mouse.Y == l.y+l.height-2 && mouse.X >= l.x && mouse.X < l.x+l.width {
+		_, segments, footerX := m.settingsFooter()
+		x := mouse.X - l.x - 2 - footerX
+		for i, segment := range segments {
+			if x >= segment.x && x < segment.x+segment.width {
+				return fmt.Sprintf("hint:%d", i)
+			}
 		}
-		// The run controls replace, rather than overlay, the editor footer.
 		return ""
 	}
 	return p.target(mouse)
