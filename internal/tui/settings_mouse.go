@@ -2,23 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 )
 
 func (p *settingsPanel) editTarget(x, y int) string {
-	if y == p.layout.height-4 {
-		_, footerX := settingsFooterLayout(p.footer(), p.layout.inner)
-		x -= footerX
-		if x >= 0 && x < 6 {
-			return "save"
-		}
-		if x >= 7 && x < 15 {
-			return "cancel"
-		}
-	}
 	row := y - 4
 	if row < 0 || row >= p.layout.bodyHeight {
 		return ""
@@ -30,18 +19,6 @@ func (p *settingsPanel) editTarget(x, y int) string {
 				return fmt.Sprintf("cell:%d", row/2)
 			}
 			return ""
-		}
-		if row == max(1, p.layout.bodyHeight-4) {
-			switch {
-			case x < 5:
-				return "add"
-			case x >= 6 && x < 14:
-				return "delete"
-			case x >= 15 && x < 18:
-				return "move-up"
-			case x >= 19 && x < 22:
-				return "move-down"
-			}
 		}
 		start := max(0, d.row-p.layout.bodyHeight+5)
 		if row+start < d.count() && row < p.layout.bodyHeight-4 {
@@ -60,7 +37,7 @@ func (p *settingsPanel) editTarget(x, y int) string {
 			}
 			index := row - len(layout.header) + layout.start
 			if row >= len(layout.header) && index >= layout.start && index < layout.end {
-				return "action:" + menu.Options[index].Label + ":" + menu.Options[index].Arguments
+				return fmt.Sprintf("action:%d", index)
 			}
 			return ""
 		}
@@ -72,7 +49,7 @@ func (p *settingsPanel) editTarget(x, y int) string {
 	if field := p.editing; field != nil && field.Kind == interaction.SettingEnum && !field.AllowCustom && !p.confirmUnset {
 		start, end := p.visibleChoices()
 		if row+start < end {
-			return "choice:" + field.Choices[row+start].Value
+			return fmt.Sprintf("choice:%d", row+start)
 		}
 	}
 	if row == 1 {
@@ -80,72 +57,41 @@ func (p *settingsPanel) editTarget(x, y int) string {
 	}
 	return ""
 }
+
+// settingEditClick applies a click inside an editor as the action its row
+// stands for: choosing a row is selecting it and pressing Enter.
 func (m model) settingEditClick(target string) (tea.Model, tea.Cmd) {
 	p := m.settings
+	accept := inputActionMatch{action: inputActionSettingsAccept, matched: true, enabled: true}
+	var index int
 	switch {
 	case target == "action-next":
-		return m.settingActionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	case target == "add":
-		return m.collectionKey(tea.KeyPressMsg{Code: 'a', Text: "a"})
-	case target == "delete":
-		return m.collectionKey(tea.KeyPressMsg{Code: tea.KeyDelete})
-	case target == "move-up":
-		return m.collectionKey(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModCtrl})
-	case target == "move-down":
-		return m.collectionKey(tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModCtrl})
-	case target == "cancel":
-		return m.handleSettings(tea.KeyPressMsg{Code: tea.KeyEscape})
-	case target == "save":
-		if p.collection != nil {
-			if p.collection.editing {
-				next, cmd := m.collectionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-				m = next.(model)
-				if m.settings.collection.editing {
-					return m, cmd
-				}
-			}
-			return m.collectionKey(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-		}
-		return m.handleSettings(tea.KeyPressMsg{Code: tea.KeyEnter})
+		return m.handleSettingsAction(inputActionMatch{action: inputActionSettingsPage, argument: 1, matched: true, enabled: true})
 	case target == "editor":
 		return m, p.input.Focus()
-	case strings.HasPrefix(target, "choice:"):
-		for i, c := range p.editing.Choices {
-			if target == "choice:"+c.Value {
-				p.choice = i
-				return m.handleSettings(tea.KeyPressMsg{Code: tea.KeyEnter})
-			}
-		}
-	case strings.HasPrefix(target, "collection:"):
-		_, _ = fmt.Sscanf(target, "collection:%d", &p.collection.row)
-		return m.collectionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	case strings.HasPrefix(target, "cell:"):
+	case sscan(target, "choice:%d", &index):
+		p.choice = index
+		return m.handleSettingsAction(accept)
+	case sscan(target, "collection:%d", &index):
+		p.collection.row = index
+		return m.handleSettingsAction(accept)
+	case sscan(target, "cell:%d", &index):
 		d := p.collection
 		d.cells[d.cell] = p.input.Value()
-		_, _ = fmt.Sscanf(target, "cell:%d", &d.cell)
+		d.cell = index
 		p.input.SetValue(d.cells[d.cell])
 		return m, p.input.Focus()
-	case strings.HasPrefix(target, "action:"):
-		if menu, selection := p.action.activeMenu(); menu != nil {
-			for i, c := range menu.Options {
-				if target == "action:"+c.Label+":"+c.Arguments {
-					*selection = i
-					return m.settingActionKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-				}
-			}
+	case sscan(target, "action:%d", &index):
+		if _, selection := p.action.activeMenu(); selection != nil {
+			*selection = index
+			return m.handleSettingsAction(accept)
 		}
 	}
 	return m, nil
 }
-func (p *settingsPanel) footer() string {
-	if p.editing != nil && p.editing.Kind == interaction.SettingInfo {
-		return "↑↓ / PgUp PgDn scroll · Esc back"
-	}
-	if p.editing != nil {
-		return "[Save] [Cancel] · Enter confirm · Esc back"
-	}
-	if p.usage {
-		return "Tab category · ↑↓ select · r refresh · Esc close"
-	}
-	return "Tab category · ↑↓ · Enter edit · ? details · D default · u inherit · / search · Esc"
+
+// sscan reports whether target has the format, filling value.
+func sscan(target, format string, value *int) bool {
+	n, err := fmt.Sscanf(target, format, value)
+	return err == nil && n == 1
 }

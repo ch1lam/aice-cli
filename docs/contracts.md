@@ -611,6 +611,9 @@ The runtime boundary preserves these ownership rules:
   A click on a footer hint runs its action through the same domain handler as
   its key (`runInputAction`); the hint layout that renders the row also
   reports each hint's cells, so paint, hover and hit testing cannot disagree.
+  Settings resolves keys through the same tables by mode
+  ([input_settings_actions.go](../internal/tui/input_settings_actions.go)), and
+  its clicks apply actions rather than synthesizing key presses.
   Dialog input is exclusive; disabled reserved keys cannot fall through. Async
   editor replies carry input identity/generation and are rejected after domain,
   focus or draft changes. Pending completion keys cannot accidentally submit.

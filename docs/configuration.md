@@ -193,7 +193,8 @@ creates no Session or Agent run.
 
 Use Tab/Shift+Tab to switch categories. Press `/` to search, use arrows to
 select a row, and press Enter to edit it. Press `?` for details. Click a heading
-or use Left/Right to fold or unfold a group.
+or use Left/Right to fold or unfold a group. The footer lists the keys of the
+current step, and clicking a hint runs it.
 
 Action rows show their state as the value: `●` ready or configured, `▲` needs
 attention, `✕` failed, `○` off or not set up. Enter opens the row's actions with
@@ -213,9 +214,10 @@ frozen startup layers, removes the corresponding runtime choices, and does not
 reload another process's changes. “Known saved” is startup/latest-local-save data.
 
 Shared-resource edits require idle main/BTW responses and no input preparation.
-Restart-only preferences can still be saved during a run. The panel's **Stop
-current run** action (F6) cancels and waits for completion before editing resumes;
-Esc only closes or backs out. Resource changes reject previously prepared runs
+Restart-only preferences can still be saved during a run. While a run is
+active the footer offers `x stop run` (whenever no editor has the keyboard); it
+cancels and waits for completion before editing resumes. Esc only closes or
+backs out. Resource changes reject previously prepared runs
 and make old BTW snapshots read-only. Failed preparation or saving preserves
 the prior runtime; committed changes survive closing the panel. Domain actions
 report partial external effects separately. See [Settings lifecycle

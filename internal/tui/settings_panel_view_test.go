@@ -55,7 +55,7 @@ func TestSettingsPaddingTabsAndSearchGeometry(t *testing.T) {
 			footer := ansi.Cut(lines[len(lines)-2], 2, l.width-2)
 			left := len(footer) - len(strings.TrimLeft(footer, " "))
 			right := len(footer) - len(strings.TrimRight(footer, " "))
-			if !strings.Contains(footer, "Tab category") || right-left < 0 || right-left > 1 {
+			if !strings.Contains(footer, "Esc") || right-left < 0 || right-left > 1 {
 				t.Fatalf("footer is not centered against the bottom border: %q", footer)
 			}
 			if strings.Contains(lines[2], "[") || strings.Contains(lines[2], "]") {

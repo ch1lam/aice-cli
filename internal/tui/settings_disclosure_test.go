@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,7 +54,7 @@ func TestSettingsDisclosurePagesBeforeActionAndSharesMouseGeometry(t *testing.T)
 			}
 			layout := m.settings.actionMenuLayout(menu, m.settings.action.selection)
 			target := m.settings.editTarget(1, 4+len(layout.header)+1)
-			if target != "action:Continue:continue" {
+			if index := slices.IndexFunc(menu.Options, func(o interaction.CommandOption) bool { return o.Arguments == "continue" }); target != fmt.Sprintf("action:%d", index) {
 				t.Fatalf("wrong hit target: %s", target)
 			}
 			_, _ = m.settingEditClick(target)

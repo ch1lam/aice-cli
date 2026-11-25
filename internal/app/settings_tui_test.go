@@ -164,13 +164,13 @@ func TestSettingsUsageTUI(t *testing.T) {
 	send("wait for explicit cancellation\r")
 	waitFor("Synthetic run waiting")
 	send("/desktop\r")
-	waitFor("Stop current run")
+	waitFor("x stop run")
 	// Esc only closes the modal; the next open must still offer Stop.
 	send("\x1b")
 	waitFor("Synthetic run waiting")
 	send("/desktop\r")
-	waitFor("Stop current run")
-	send("\x1b[17~") // F6: the explicit Settings stop control.
+	waitFor("x stop run")
+	send("x") // The explicit Settings stop control.
 	send("\x1b")
 	waitFor("Response cancelled", "● READY")
 

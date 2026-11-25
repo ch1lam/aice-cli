@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -432,181 +431,15 @@ func (m model) handleSettings(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if key, ok := message.(tea.KeyPressMsg); ok {
 		p.pointer = nil
-		name := key.String()
-		if name == "f6" && !p.usage && m.run.running() {
-			m.requestRunCancellation()
-			return m, nil
-		}
-		mode := p.mode()
-		if mode == settingsModeAction {
-			return m.settingActionKey(key)
-		}
-		if mode == settingsModeCollection && !p.saving {
-			return m.collectionKey(key)
-		}
-		if name == "esc" {
-			if p.saving {
-				m.closeSettings()
+		if match := matchInputBindings(m.settingsInputBindings(), key); match.matched {
+			if !match.enabled {
 				return m, nil
 			}
-			if p.editing != nil {
-				p.editing = nil
-				p.confirmUnset = false
-				p.input.SetValue("")
-				p.input.Blur()
-				p.notice = ""
-				return m, nil
-			}
-			if p.search {
-				p.search = false
-				p.input.SetValue("")
-				p.input.Blur()
-				p.selection = p.positions[p.tab]
-				return m, nil
-			}
-			m.closeSettings()
-			return m, nil
+			return m.handleSettingsAction(match)
 		}
-		if p.saving {
-			return m, nil
-		}
-		field := p.editing
-		switch mode {
-		case settingsModeInfo:
-			switch name {
-			case "up":
-				p.detailOffset = max(0, p.detailOffset-1)
-			case "down":
-				p.detailOffset++
-			case "pgdown":
-				p.detailOffset += p.layout.bodyHeight
-			case "pgup":
-				p.detailOffset = max(0, p.detailOffset-p.layout.bodyHeight)
-			}
-			return m, nil
-		case settingsModeConfirmUnset:
-			if name == "enter" {
-				changes := []interaction.SettingChange{{ID: field.ID, Unset: true}}
-				if len(field.ResetIDs) > 0 {
-					changes = nil
-					for _, id := range field.ResetIDs {
-						changes = append(changes, interaction.SettingChange{ID: id, Unset: true})
-					}
-				}
-				return m, m.submitSettings(changes)
-			}
-			return m, nil
-		case settingsModeChoice:
-			switch name {
-			case "up":
-				p.choice = clampIndex(p.choice-1, len(field.Choices))
-			case "down":
-				p.choice = clampIndex(p.choice+1, len(field.Choices))
-			case "enter":
-				if len(field.Choices) > 0 {
-					return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: interaction.SettingValue{Kind: field.Kind, Text: field.Choices[p.choice].Value}})
-				}
-			}
-			return m, nil
-		case settingsModeText:
-			if name == "enter" {
-				value := interaction.SettingValue{Kind: field.Kind}
-				var err error
-				switch field.Kind {
-				case interaction.SettingInt:
-					value.Int, err = strconv.ParseInt(strings.TrimSpace(p.input.Value()), 10, 64)
-				case interaction.SettingDuration:
-					value.Duration, err = time.ParseDuration(strings.TrimSpace(p.input.Value()))
-				default:
-					value.Text = p.input.Value()
-				}
-				if err != nil {
-					p.notice = err.Error()
-					return m, nil
-				}
-				return m, m.submitSetting(interaction.SettingChange{ID: field.ID, Value: value})
-			}
-		case settingsModeBrowse, settingsModeSearch:
-			switch name {
-			case "tab", "shift+tab", "ctrl+right", "ctrl+left":
-				delta := 1
-				if name == "shift+tab" || name == "ctrl+left" {
-					delta = -1
-				}
-				n := len(p.snapshot.Categories)
-				if n > 0 {
-					p.positions[p.tab] = p.selection
-					p.tab = wrapIndex(p.tab, delta, n)
-					p.selection = p.positions[p.tab]
-				}
-				return m, nil
-			case "up":
-				p.moveSettingSelection(-1)
-				return m, nil
-			case "down":
-				p.moveSettingSelection(1)
-				return m, nil
-			case "left", "right":
-				if !p.search {
-					if fields := p.fields(); len(fields) > 0 {
-						field := fields[min(p.selection, len(fields)-1)]
-						p.setSectionCollapsed(settingSectionKey(field), name == "left")
-					}
-					return m, nil
-				}
-			case "enter":
-				return m.beginSettingEdit(false)
-			case " ":
-				if !p.search {
-					return m.beginSettingEdit(false)
-				}
-			case "?":
-				if !p.search {
-					fields := p.fields()
-					if len(fields) > 0 && !p.selectedSectionCollapsed(fields) {
-						f := fields[min(p.selection, len(fields)-1)]
-						f.Description = settingDetails(f, p.snapshot.SavePath)
-						f.Kind = interaction.SettingInfo
-						p.editing = &f
-						p.detailOffset = 0
-						p.input.Blur()
-					}
-					return m, nil
-				}
-			case "D":
-				if !p.search {
-					fields := p.fields()
-					if len(fields) > 0 && !p.selectedSectionCollapsed(fields) {
-						f := fields[min(p.selection, len(fields)-1)]
-						if f.Default != nil && f.DisabledReason == "" {
-							if len(f.DefaultChanges) > 0 {
-								return m, m.submitSettings(f.DefaultChanges)
-							}
-							return m, m.submitSetting(interaction.SettingChange{ID: f.ID, Value: *f.Default})
-						}
-					}
-					return m, nil
-				}
-			case "u":
-				if !p.search {
-					return m.beginSettingEdit(true)
-				}
-			case "r":
-				if !p.search {
-					return m, m.refreshSettings()
-				}
-			case "/":
-				if !p.search {
-					p.search = true
-					p.searchCollapsed = nil
-					p.notice = ""
-					p.positions[p.tab] = p.selection
-					p.selection = 0
-					p.input.SetValue("")
-					return m, p.input.Focus()
-				}
-			}
-		}
+	}
+	if p.saving {
+		return m, nil
 	}
 	if p.input.Focused() {
 		var command tea.Cmd
