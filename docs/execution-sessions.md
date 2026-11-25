@@ -662,7 +662,7 @@ not verify, as short as the evidence allows and without narrating its steps.
   `agent` (depth is 1), `send_message`, `request_user_input`, `task_output` and `task_kill`,
   and its `bash` offers no `run_in_background`. Its run has the configured
   [run limits](configuration.md#run-limits) of its own.
-- `type: "explore"` has no `write` or `edit` tool and denies file writes
+- `subagent_type: "explore"` has no `write` or `edit` tool and denies file writes
   (including bash redirections), bash commands not known to be read-only, and
   MCP tools, whose effects AICE cannot see. `general` (the default) may edit
   and run builds and tests.

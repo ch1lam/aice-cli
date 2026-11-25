@@ -78,7 +78,7 @@ func testForkRepeatsTheParentRequest(t *testing.T, withSession bool) {
 			case 1:
 				return forkCall(request, "look", "ls", map[string]any{"path": "."})
 			case 2:
-				return forkCall(request, "fork", "agent", map[string]any{"description": "probe", "prompt": "check the listing", "type": "explore", "fork": true, "run_in_background": false})
+				return forkCall(request, "fork", "agent", map[string]any{"description": "probe", "prompt": "check the listing", "subagent_type": "explore", "fork": true, "run_in_background": false})
 			}
 			return textEventStream(request.Model, "parent done", llm.Usage{}, llm.StopReasonStop)
 		},
@@ -135,7 +135,7 @@ func TestBackgroundForkContinues(t *testing.T) {
 			}
 			switch notice := noticeText(last); {
 			case len(m.parents) == 1:
-				return forkCall(request, "fork", "agent", map[string]any{"description": "probe", "prompt": "first part", "type": "explore", "fork": true})
+				return forkCall(request, "fork", "agent", map[string]any{"description": "probe", "prompt": "first part", "subagent_type": "explore", "fork": true})
 			case strings.Contains(notice, "second report"):
 				return textEventStream(request.Model, "parent done", llm.Usage{}, llm.StopReasonStop)
 			case strings.Contains(notice, "first report"):

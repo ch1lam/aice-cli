@@ -125,7 +125,7 @@ func TestSendMessageContinuesFinishedSubagent(t *testing.T) {
 			case strings.Contains(notice, "first report"):
 				return m.call(request, "more", "send_message", map[string]any{"to": m.taskID(), "message": "dig deeper"})
 			case len(request.Messages) == 1:
-				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "type": "explore"})
+				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "subagent_type": "explore"})
 			}
 			return textEventStream(request.Model, "waiting", llm.Usage{}, llm.StopReasonStop)
 		},
@@ -175,7 +175,7 @@ func TestSendMessageSteersRunningSubagent(t *testing.T) {
 				}
 			}
 			if len(request.Messages) == 1 {
-				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "type": "explore"})
+				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "subagent_type": "explore"})
 			}
 			return textEventStream(request.Model, "waiting", llm.Usage{}, llm.StopReasonStop)
 		},
@@ -221,7 +221,7 @@ func TestSendMessageInterruptsRunningSubagent(t *testing.T) {
 				}
 			}
 			if len(request.Messages) == 1 {
-				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "type": "explore"})
+				return m.call(request, "start", "agent", map[string]any{"description": "probe", "prompt": "look around", "subagent_type": "explore"})
 			}
 			return textEventStream(request.Model, "waiting", llm.Usage{}, llm.StopReasonStop)
 		},

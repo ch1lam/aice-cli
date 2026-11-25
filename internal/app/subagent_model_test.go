@@ -90,7 +90,7 @@ func TestSubagentRunsOnItsModel(t *testing.T) {
 			if result, ok := last.(llm.ToolResultMessage); ok {
 				return textEventStream(request.Model, "parent saw: "+result.Content[0].Text, llm.Usage{}, llm.StopReasonStop)
 			}
-			return m.call(request, "probe", "agent", map[string]any{"description": "probe", "prompt": "look", "type": "explore", "run_in_background": false})
+			return m.call(request, "probe", "agent", map[string]any{"description": "probe", "prompt": "look", "subagent_type": "explore", "run_in_background": false})
 		},
 	}
 	cfg := config.Config{APIKeys: map[string]string{"deepseek": "test-key"}, Thinking: llm.ThinkingLevelMax, SubagentModel: deepseek.ModelV4Pro, SubagentThinking: llm.ThinkingLevelLow}
