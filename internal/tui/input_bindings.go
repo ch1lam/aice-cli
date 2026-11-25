@@ -108,6 +108,15 @@ type inputHelpKeys []inputBinding
 
 func (bindings inputHelpKeys) help(full bool) []key.Binding {
 	var result []key.Binding
+	for _, item := range bindings.visible(full) {
+		result = append(result, item.binding)
+	}
+	return result
+}
+
+// visible lists the advertised bindings once each, in order.
+func (bindings inputHelpKeys) visible(full bool) []inputBinding {
+	var result []inputBinding
 	seen := make(map[key.Help]bool)
 	for _, item := range bindings {
 		h := item.binding.Help()
@@ -115,7 +124,7 @@ func (bindings inputHelpKeys) help(full bool) []key.Binding {
 			continue
 		}
 		seen[h] = true
-		result = append(result, item.binding)
+		result = append(result, item)
 	}
 	return result
 }
@@ -138,42 +147,112 @@ func (m model) inputHelp(width int, full bool) string {
 	return inputBindingsHelp(m.inputBindings(), width, full)
 }
 
+// hintSegment is where one advertised binding shows in a hint line, in
+// cells from the line's start; a click there runs the binding's action.
+type hintSegment struct {
+	item     inputBinding
+	x, width int
+}
+
+func hintAt(segments []hintSegment, x int) (inputBinding, bool) {
+	for _, segment := range segments {
+		if x >= segment.x && x < segment.x+segment.width {
+			return segment.item, true
+		}
+	}
+	return inputBinding{}, false
+}
+
 func inputBindingsHelp(bindings []inputBinding, width int, full bool) string {
-	keys := inputHelpKeys(bindings).help(full)
-	if width <= 0 || len(keys) == 0 {
-		return ""
+	text, _ := inputBindingsHints(bindings, width, full)
+	return text
+}
+
+const hintSeparator = " · "
+
+// inputBindingsHints lays out the advertised bindings as "Key action"
+// parts joined by hintSeparator within width, and reports where each went.
+func inputBindingsHints(bindings []inputBinding, width int, full bool) (string, []hintSegment) {
+	items := inputHelpKeys(bindings).visible(full)
+	if width <= 0 || len(items) == 0 {
+		return "", nil
 	}
-	parts := make([]string, len(keys))
-	for i, binding := range keys {
-		h := binding.Help()
-		parts[i] = h.Key + " " + h.Desc
+	long := func(item inputBinding) string { h := item.binding.Help(); return h.Key + " " + h.Desc }
+	short := func(item inputBinding) string { return item.binding.Help().Key }
+	joined := func(items []inputBinding, label func(inputBinding) string) int {
+		total := 0
+		for i, item := range items {
+			total += ansi.StringWidth(label(item))
+			if i > 0 {
+				total += ansi.StringWidth(hintSeparator)
+			}
+		}
+		return total
 	}
-	if text := strings.Join(parts, " · "); ansi.StringWidth(text) <= width {
-		return text
+	var (
+		text     string
+		segments []hintSegment
+	)
+	add := func(item inputBinding, label string) bool {
+		x := ansi.StringWidth(text)
+		if text != "" {
+			x += ansi.StringWidth(hintSeparator)
+		}
+		if x+ansi.StringWidth(label) > width {
+			return false
+		}
+		if text != "" {
+			text += hintSeparator
+		}
+		segments = append(segments, hintSegment{item: item, x: x, width: ansi.StringWidth(label)})
+		text += label
+		return true
+	}
+	if joined(items, long) <= width {
+		for _, item := range items {
+			add(item, long(item))
+		}
+		return text, segments
 	}
 	// The first two actions are the local confirm/back controls. Keep both
 	// discoverable before spending width on lower-priority navigation or aliases.
-	count := min(2, len(parts))
-	result := strings.Join(parts[:count], " · ")
-	if ansi.StringWidth(result) > width {
-		for i := range count {
-			parts[i] = keys[i].Help().Key
-		}
-		result = strings.Join(parts[:count], " · ")
+	count := min(2, len(items))
+	first := long
+	if joined(items[:count], long) > width {
+		first = short
 	}
-	if ansi.StringWidth(result) > width {
-		return ansi.Truncate(result, width, "…")
-	}
-	for i := count; i < len(parts); i++ {
-		next := result + " · " + parts[i]
-		if ansi.StringWidth(next) > width {
-			next = result + " · " + keys[i].Help().Key
+	if joined(items[:count], first) > width {
+		plain := short(items[0])
+		if count > 1 {
+			plain += hintSeparator + short(items[1])
 		}
-		if ansi.StringWidth(next) <= width {
-			result = next
+		return ansi.Truncate(plain, width, "…"), nil
+	}
+	for _, item := range items[:count] {
+		add(item, first(item))
+	}
+	for _, item := range items[count:] {
+		if !add(item, long(item)) {
+			add(item, short(item))
 		}
 	}
-	return result
+	return text, segments
+}
+
+// styleHints renders a hint line in the muted style, underlining the part
+// at hover (a cell offset, or -1) to show that it is clickable.
+func styleHints(text string, segments []hintSegment, hover int) string {
+	for i := len(segments) - 1; i >= 0; i-- {
+		segment := segments[i]
+		if hover < segment.x || hover >= segment.x+segment.width {
+			continue
+		}
+		end := segment.x + segment.width
+		return mutedStyle.Render(ansi.Cut(text, 0, segment.x)) +
+			mutedStyle.Underline(true).Render(ansi.Cut(text, segment.x, end)) +
+			mutedStyle.Render(ansi.Cut(text, end, ansi.StringWidth(text)))
+	}
+	return mutedStyle.Render(text)
 }
 
 // Full help wraps complete actions rather than letting column layout silently

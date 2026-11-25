@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -154,14 +155,18 @@ func (m model) headerView(width int) string {
 
 func (m model) footerView(width int) string {
 	if m.reading != nil {
-		help := m.inputHelp(width, m.help.ShowAll)
-		return mutedStyle.Width(width).Render(ansi.Truncate(help, width, "…"))
+		text, segments := inputBindingsHints(m.inputBindings(), width, m.help.ShowAll)
+		hover := -1
+		if footer := m.screenLayout().footer; m.pointer.known && m.pointer.y == footer.y {
+			hover = m.pointer.x - footer.x
+		}
+		return lipgloss.NewStyle().Width(width).Render(styleHints(ansi.Truncate(text, width, "…"), segments, hover))
 	}
 	innerWidth := max(width-2, 1)
 	style := lipgloss.NewStyle().
 		Width(innerWidth).
 		Padding(0, 1)
-	contentWidth := max(innerWidth-style.GetHorizontalFrameSize(), 1)
+	contentWidth := footerContentWidth(width)
 	if m.questionVisible() {
 		rows := strings.Split(m.inputFullHelp(contentWidth), "\n")
 		// Controls start directly below the frame. Usage shares their first
@@ -838,30 +843,96 @@ func (m model) activityIndicator() string {
 	return m.spinner.View() + " " + mutedStyle.Render(status)
 }
 
+// footerContentWidth is the width of the footer's rows inside its one-cell
+// padding on each side.
+func footerContentWidth(width int) int { return max(max(width-2, 1)-2, 1) }
+
+// footerHintAt is the key hint under the pointer in the footer's first row,
+// which a click runs as its key would.
+func (m model) footerHintAt(mouse tea.Mouse) (inputBinding, bool) {
+	footer := m.screenLayout().footer
+	if mouse.Y != footer.y || m.guard.request != nil {
+		return inputBinding{}, false
+	}
+	switch {
+	case m.reading != nil:
+		_, segments := inputBindingsHints(m.inputBindings(), m.layoutWidth(), m.help.ShowAll)
+		return hintAt(segments, mouse.X-footer.x)
+	case m.questionVisible() || m.side.isVisible:
+		return inputBinding{}, false
+	}
+	_, segments := m.statusHints(footerContentWidth(m.layoutWidth()))
+	return hintAt(segments, mouse.X-footer.x-1)
+}
+
 func (m model) statusLine(width int) string {
-	shortcuts := ""
+	line, _ := m.statusHints(width)
+	return line
+}
+
+// statusHints is the footer's status row and where its key hints are, in
+// cells from the row's start. The hint under the pointer is underlined.
+func (m model) statusHints(width int) (string, []hintSegment) {
+	hover := -1
+	if footer := m.screenLayout().footer; m.pointer.known && m.pointer.y == footer.y {
+		hover = m.pointer.x - footer.x - 1
+	}
+	shortcuts, segments := "", []hintSegment(nil)
 	if !m.help.ShowAll {
-		shortcuts = m.help.ShortHelpView(m.footerKeys().ShortHelp())
+		shortcuts, segments = m.shortcutHints(hover)
 	}
 	usages := m.usageStatuses()
 	for _, usage := range usages {
 		if line, ok := alignStatusLine(shortcuts, usage, width); ok {
-			return line
+			return line, segments
 		}
 	}
 	// Active controls take priority when usage and shortcuts cannot share a row.
 	if shortcuts != "" {
-		return mutedStyle.Render(m.inputHelp(width, false))
+		text, segments := inputBindingsHints(m.inputBindings(), width, false)
+		return styleHints(text, segments, hover), segments
 	}
 	for _, usage := range usages {
 		if line, ok := alignStatusLine("", usage, width); ok {
-			return line
+			return line, nil
 		}
 	}
-	if line, ok := alignStatusLine(shortcuts, "", width); ok {
-		return line
+	return "", nil
+}
+
+// shortcutHints renders the short help as bubbles' help does, within its
+// width, and reports where each hint went.
+func (m model) shortcutHints(hover int) (string, []hintSegment) {
+	styles := m.help.Styles
+	separator := styles.ShortSeparator.Inline(true).Render(m.help.ShortSeparator)
+	var (
+		line     strings.Builder
+		segments []hintSegment
+		total    int
+	)
+	for _, item := range m.footerKeys().visible(false) {
+		h := item.binding.Help()
+		gap := ""
+		if total > 0 {
+			gap = separator
+		}
+		x := total + lipgloss.Width(gap)
+		width := lipgloss.Width(h.Key) + 1 + lipgloss.Width(h.Desc)
+		if limit := m.help.Width(); limit > 0 && x+width > limit {
+			if tail := " " + styles.Ellipsis.Inline(true).Render(m.help.Ellipsis); total+lipgloss.Width(tail) < limit {
+				line.WriteString(tail)
+			}
+			break
+		}
+		keyStyle, descStyle := styles.ShortKey.Inline(true), styles.ShortDesc.Inline(true)
+		if hover >= x && hover < x+width {
+			keyStyle, descStyle = keyStyle.Underline(true), descStyle.Underline(true)
+		}
+		line.WriteString(gap + keyStyle.Render(h.Key) + descStyle.Render(" "+h.Desc))
+		segments = append(segments, hintSegment{item: item, x: x, width: width})
+		total = x + width
 	}
-	return ""
+	return line.String(), segments
 }
 
 func (m model) contextStatus() string {

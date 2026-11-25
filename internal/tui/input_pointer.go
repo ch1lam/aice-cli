@@ -127,6 +127,12 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if _, ok := m.footerHintAt(message.Mouse()); ok && message.Button == tea.MouseLeft {
+			// The release on the same hint runs it.
+			m.selection.clear()
+			m.composerActive = false
+			return m, nil
+		}
 		if message.Button == tea.MouseLeft && m.agentAt(message.Mouse()) != nil {
 			// The release on the same row opens the child.
 			m.selection.clear()
@@ -156,6 +162,14 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			if press.X == message.X && press.Y == message.Y && m.workspaceContains(message.Mouse()) {
 				command := m.activateWorkspace(press.Mod)
 				return m, command
+			}
+			return m, nil
+		}
+		if item, ok := m.footerHintAt(message.Mouse()); ok && m.capture.active && message.Button == tea.MouseLeft {
+			if pressed, ok := m.footerHintAt(m.capture.origin); ok && pressed.action == item.action && pressed.argument == item.argument {
+				match := inputActionMatch{action: item.action, argument: item.argument, matched: true, enabled: item.binding.Enabled(), blocked: item.blocked}
+				updated, command, _ := m.runInputAction(m.inputContext().domain, match)
+				return updated, command
 			}
 			return m, nil
 		}

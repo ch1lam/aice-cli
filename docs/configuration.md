@@ -902,6 +902,8 @@ Drag transcript text to copy on release. Click the header directory to copy its
 absolute path; Command-click (macOS) or Ctrl-click (Windows/Linux) opens it in
 the system file manager if the terminal forwards that gesture. Composer clicks
 highlight the frame but do not position the caret; use keyboard editing.
+The key hints in the footer are clickable: the hint under the pointer is
+underlined, and a click runs it as its key would.
 See the [known textarea limitation](maintenance.md#composer-click-positioning-and-textarea-capabilities).
 
 Shortcut help follows the focused window. Dialog keys cannot trigger background

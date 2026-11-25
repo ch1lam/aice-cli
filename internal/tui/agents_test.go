@@ -514,3 +514,42 @@ func TestAgentPanelPointer(t *testing.T) {
 		t.Fatal("a dragged press opened a child")
 	}
 }
+
+// footerHint is the screen cell of a footer hint's first character.
+func footerHint(t *testing.T, m model, hint string) tea.Mouse {
+	t.Helper()
+	y := m.screenLayout().footer.y
+	line := strings.Split(ansiStripped(m), "\n")[y]
+	i := strings.Index(line, hint)
+	if i < 0 {
+		t.Fatalf("footer lacks %q: %q", hint, line)
+	}
+	return tea.Mouse{X: ansi.StringWidth(line[:i]), Y: y, Button: tea.MouseLeft}
+}
+
+func clickAt(t *testing.T, m model, mouse tea.Mouse) model {
+	t.Helper()
+	m = updateModel(t, m, tea.MouseClickMsg(mouse))
+	return updateModel(t, m, tea.MouseReleaseMsg(mouse))
+}
+
+// A footer hint underlines under the pointer and runs its action when
+// clicked, as its key does, in whichever domain shows it.
+func TestFooterHintsAreClickable(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"))
+	hint := footerHint(t, m, "↓ subagents")
+	plain := m.View().Content
+	hovered := updateModel(t, m, tea.MouseMotionMsg(hint))
+	if hovered.View().Content == plain || ansiStripped(hovered) != ansi.Strip(plain) {
+		t.Fatal("hovering a hint changed nothing but its style")
+	}
+	m = clickAt(t, hovered, hint)
+	if m.inputContext().domain != inputAgents {
+		t.Fatalf("clicking the hint left domain %v", m.inputContext().domain)
+	}
+	m = clickAt(t, m, footerHint(t, m, "Esc back"))
+	if m.inputContext().domain != inputMain {
+		t.Fatalf("clicking Esc back left domain %v", m.inputContext().domain)
+	}
+}
