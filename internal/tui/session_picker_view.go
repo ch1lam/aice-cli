@@ -123,7 +123,11 @@ func (m model) sessionPickerView() string {
 	if p.previewFocused {
 		title = "HISTORY · PREVIEW"
 	}
-	help := m.inputHelp(l.inner, false)
+	help, segments := inputBindingsHints(m.inputBindings(), l.inner, false)
+	hint := -1
+	if p.pointer != nil && p.pointer.Y == l.helpY() {
+		hint = p.pointer.X - l.x - 2
+	}
 	notice := p.notice
 	if p.loading {
 		if p.input.Value() == "" {
@@ -147,7 +151,7 @@ func (m model) sessionPickerView() string {
 	}
 	content := strings.Join([]string{
 		mutedStyle.Render(ansi.Truncate(sanitizeToolDetail(notice, false), l.inner, "…")), input, body,
-		mutedStyle.Render(ansi.Truncate(help, l.inner, "…")),
+		styleHints(help, segments, hint),
 	}, "\n")
 	return modalFrame(title, content, l.modalLayout, m.sessionPickerCloseHovered(), p.closePressed)
 }
@@ -246,11 +250,22 @@ func sessionPickerTextCursor(input textinput.Model) *tea.Cursor {
 	return cursor
 }
 
+// helpY is the screen row of the key hints, the last row inside the frame.
+func (l sessionPickerLayout) helpY() int { return l.y + l.height - 2 }
+
 func (m model) clickSessionPicker(mouse tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	p := m.sessionPicker
 	l := m.sessionPickerLayout()
 	x, y := mouse.X-l.x-2, mouse.Y-l.y-1
 	if mouse.Button != tea.MouseLeft || x < 0 || x >= l.inner {
+		return m, nil
+	}
+	if mouse.Y == l.helpY() {
+		// A key hint runs as its key would; a disabled one is not shown.
+		_, segments := inputBindingsHints(m.inputBindings(), l.inner, false)
+		if item, ok := hintAt(segments, x); ok {
+			return m.handleSessionAction(inputActionMatch{action: item.action, argument: item.argument, matched: true, enabled: true})
+		}
 		return m, nil
 	}
 	if y == 1 {
