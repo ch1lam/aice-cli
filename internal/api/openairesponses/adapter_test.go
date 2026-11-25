@@ -895,3 +895,40 @@ func assertRequestBody(t *testing.T, body map[string]any) {
 		t.Errorf("tool = %#v", tool)
 	}
 }
+
+// Event types the adapter does not know, such as Codex's response.metadata,
+// carry no content and must not fail the stream.
+func TestAdapterIgnoresUnknownStreamEvents(t *testing.T) {
+	t.Parallel()
+
+	server := apitest.NewSSEServer(t, []string{
+		`{"type":"response.created","sequence_number":0,"response":{"id":"resp-1","model":"gpt-5.6-terra","status":"in_progress"}}`,
+		`{"type":"response.metadata","sequence_number":1,"metadata":{"region":"test"}}`,
+		`{"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"msg-1","type":"message","role":"assistant","content":[],"status":"in_progress"}}`,
+		`{"type":"response.output_text.delta","sequence_number":3,"output_index":0,"content_index":0,"item_id":"msg-1","delta":"ok","logprobs":[]}`,
+		`{"type":"response.output_item.done","sequence_number":4,"output_index":0,"item":{"id":"msg-1","type":"message","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[]}],"status":"completed"}}`,
+		`{"type":"response.completed","sequence_number":5,"response":{"id":"resp-1","model":"gpt-5.6-terra","status":"completed"}}`,
+	})
+	defer server.Close()
+
+	adapter, err := openairesponses.New(openairesponses.Config{
+		APIKey:     "test-key",
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	modelStream, err := adapter.Stream(context.Background(), apitest.MinimalRequest(openairesponses.API))
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer modelStream.Close()
+
+	events := apitest.CollectEvents(t, modelStream)
+	last := events[len(events)-1]
+	if last.Type != llm.EventTypeDone || last.Message == nil ||
+		len(last.Message.Content) != 1 || last.Message.Content[0].Text != "ok" {
+		t.Fatalf("last event = %#v, want done with text ok", last)
+	}
+}
