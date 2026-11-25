@@ -34,30 +34,61 @@ func (p *Provider) Models() []llm.Model             { return Models() }
 func (p *Provider) DefaultModel() llm.Model         { return DefaultModel() }
 func (p *Provider) Configured(c config.Config) bool { return c.CodexCredentials.Configured() }
 
+// defaultModelID is selected when none is chosen. Model access depends on the
+// ChatGPT plan: on 2026-11-25 a live account rejected every Astra and Sol
+// model and GPT-6.1 Terra with model_not_in_accessible_catalog but accepted
+// GPT-5.6 Terra and GPT-6 Luna, so the default stays on GPT-5.6 Terra.
+const defaultModelID = "gpt-5.6-terra"
+
 // Models is deliberately independent of API billing prices and credentials.
-// ContextWindow follows the default context_window in OpenAI's bundled
-// codex-rs/models-manager/models.json, not max_context_window or API limits.
+// The list is the model set ChatGPT accounts may use on the Codex backend,
+// flagship first, following pi's openai-codex catalog (checked 2026-11-25).
+// ContextWindow is the default context window /backend-api/codex/models
+// returns, not the maximum context window or API limits. off records whether
+// the model accepts reasoning effort none; the GPT-6 Astra models, GPT-6.1 Sol
+// and GPT-6.2 Sol reject it.
 func Models() []llm.Model {
 	var models []llm.Model
-	for _, entry := range []struct{ id, name string }{
-		{"gpt-6-astra", "GPT-6 Astra"},
-		{"gpt-5.6-sol", "GPT-5.6 Sol"},
-		{"gpt-5.6-terra", "GPT-5.6 Terra"},
-		{"gpt-5.6-luna", "GPT-5.6 Luna"},
+	for _, entry := range []struct {
+		id, name      string
+		contextWindow int64
+		off           bool
+	}{
+		{"gpt-6.2-astra", "GPT-6.2 Astra", 272_000, false},
+		{"gpt-6.2-sol", "GPT-6.2 Sol", 500_000, false},
+		{"gpt-6.1-sol", "GPT-6.1 Sol", 500_000, false},
+		{"gpt-6.1-terra", "GPT-6.1 Terra", 500_000, true},
+		{"gpt-6-astra", "GPT-6 Astra", 272_000, false},
+		{"gpt-6-sol", "GPT-6 Sol", 272_000, true},
+		{"gpt-6-luna", "GPT-6 Luna", 272_000, true},
+		{"gpt-5.6-sol", "GPT-5.6 Sol", 272_000, true},
+		{"gpt-5.6-terra", "GPT-5.6 Terra", 272_000, true},
+		{"gpt-5.6-luna", "GPT-5.6 Luna", 272_000, true},
 	} {
+		levels := llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium,
+			llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax)
+		if entry.off {
+			levels[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
+		}
 		models = append(models, llm.Model{
 			ID: entry.id, Name: entry.name, API: openairesponses.API, Provider: ProviderID,
 			SupportsThinking: true,
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium,
-				llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
-			InputModalities: []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
-			ContextWindow:   272_000, MaxTokens: 128_000,
+			ThinkingLevelMap: levels,
+			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
+			ContextWindow:    entry.contextWindow, MaxTokens: 128_000,
 		})
 	}
 	return models
 }
 
-func DefaultModel() llm.Model { return Models()[2] }
+func DefaultModel() llm.Model {
+	for _, model := range Models() {
+		if model.ID == defaultModelID {
+			return model
+		}
+	}
+	panic("codex: default model is missing from the catalog")
+}
 
 func (p *Provider) New(c config.Config) (llm.Streamer, error) {
 	if !p.Configured(c) {

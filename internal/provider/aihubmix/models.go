@@ -8,15 +8,17 @@ import (
 )
 
 // Models returns independent catalog values. Facts come from AiHubMix's public
-// /api/v1/models and /model-data/index.json (2026-09-25), not direct-vendor
-// catalogs. Prices are base-tier USD estimates, excluding long-context tiers.
+// /api/v1/models and /model-data/index.json (checked 2026-11-25), not
+// direct-vendor catalogs. Prices are base-tier USD estimates, excluding
+// long-context tiers. GPT-6.2 effort levels follow pi's OpenAI family rules:
+// AiHubMix's index marks their full set as not yet verified.
 func Models() []llm.Model {
 	return []llm.Model{
 		gptModel(
-			"gpt-6-sol",
-			"GPT 6 Sol",
-			llm.Pricing{Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5},
-			true,
+			"gpt-6.2-sol",
+			"GPT 6.2 Sol",
+			llm.Pricing{Input: 2, Output: 10, CacheRead: .1, CacheWrite: 2.5},
+			false,
 		),
 		gptModel(
 			"gpt-6-luna",
@@ -25,16 +27,16 @@ func Models() []llm.Model {
 			true,
 		),
 		gptModel(
-			"gpt-6-astra",
-			"GPT 6 Astra",
-			llm.Pricing{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5},
+			"gpt-6.2-astra",
+			"GPT 6.2 Astra",
+			llm.Pricing{Input: 8, Output: 40, CacheRead: .4, CacheWrite: 10},
 			false,
 		),
 		claudeModel(
-			"claude-sonnet-5",
-			"Claude Sonnet 5",
-			llm.Pricing{Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5},
-			true,
+			"claude-sonnet-5-5",
+			"Claude Sonnet 5.5",
+			llm.Pricing{Input: 2, Output: 10, CacheRead: .1, CacheWrite: 2.5},
+			false,
 		),
 		claudeModel(
 			"claude-opus-5-5",
@@ -53,17 +55,17 @@ func Models() []llm.Model {
 				llm.ThinkingLevelHigh,
 				llm.ThinkingLevelMax,
 			),
-			// AiHubMix's listed rate includes its current promotion; billing may change.
-			Pricing: llm.Pricing{Input: .1408, Output: .5632, CacheRead: .002816},
+			// AiHubMix's listed rate may include promotions; billing may change.
+			Pricing: llm.Pricing{Input: .155, Output: .62, CacheRead: .0031},
 		},
 		{
-			ID: "kimi-k3", Name: "Kimi K3", Provider: ProviderID, API: openaicompletions.API,
+			ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", Provider: ProviderID, API: openaicompletions.API,
 			ContextWindow: 1_048_576, MaxTokens: 131_072,
 			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 			SupportsThinking: true,
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 			// AICE uses a bounded output budget below the gateway's advertised maximum.
-			Pricing: llm.Pricing{Input: 3, Output: 15, CacheRead: .3},
+			Pricing: llm.Pricing{Input: 2, Output: 10, CacheRead: .2},
 		},
 	}
 }
@@ -104,5 +106,5 @@ func reasoningModel(id, name string, pricing llm.Pricing, supportsOff bool) llm.
 	}
 }
 
-// DefaultModel selects the coding-oriented GPT 6 Sol route.
+// DefaultModel selects the coding-oriented GPT 6.2 Sol route.
 func DefaultModel() llm.Model { return Models()[0] }

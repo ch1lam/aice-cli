@@ -44,8 +44,8 @@ func TestCatalogResponsesAndThinking(t *testing.T) {
 						if !ok || reasoning["effort"] != wantEffort {
 							t.Errorf("reasoning = %#v, want effort %q", body["reasoning"], wantEffort)
 						}
-						wantContext, wantOutput := int64(262144), float64(32768)
-						if model.ID == "kimi-k3" {
+						wantContext, wantOutput := int64(262144), float64(262144)
+						if strings.HasPrefix(model.ID, "kimi-k3") {
 							wantContext, wantOutput = 1048576, 131072
 						}
 						if model.ContextWindow != wantContext || body["max_output_tokens"] != wantOutput {

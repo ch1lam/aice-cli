@@ -51,24 +51,18 @@ func TestCatalogThinkingOnWire(t *testing.T) {
 					t.Fatal(err)
 				}
 				wantType := "adaptive"
-				if model.ID == anthropic.ModelHaiku45 {
-					wantType = "enabled"
-				}
 				if level == llm.ThinkingLevelOff {
 					wantType = "disabled"
 				}
 				if body.Model != model.ID || body.Thinking.Type != wantType {
 					t.Fatalf("unexpected request: %+v", body)
 				}
-				if wantType == "enabled" && body.Thinking.Budget != 1024 {
-					t.Fatalf("budget = %d", body.Thinking.Budget)
-				}
 				if wantType == "adaptive" {
 					if body.Thinking.Budget != 0 || body.OutputConfig == nil || body.OutputConfig.Effort != string(level) {
 						t.Fatalf("adaptive thinking: %+v", body)
 					}
 				} else if body.OutputConfig != nil {
-					t.Fatal("disabled/Haiku thinking must omit effort")
+					t.Fatal("disabled thinking must omit effort")
 				}
 			})
 		}
@@ -86,7 +80,7 @@ func TestAlwaysThinkingModelsRejectOffBeforeHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, model := range anthropic.Models() {
-		if model.ID != anthropic.ModelOpus55 && model.ID != anthropic.ModelFable51 {
+		if model.ID == anthropic.ModelHaiku55 {
 			continue
 		}
 		request := apitest.MinimalRequest(model.API)

@@ -25,6 +25,7 @@ func TestCatalogCapabilitiesAndWireControls(t *testing.T) {
 	}{
 		{"glm-5.3", 1_000_000, 131_072, false, []llm.ThinkingLevel{"low", "high", "max"}, true},
 		{"glm-5.3-flash", 1_000_000, 131_072, true, []llm.ThinkingLevel{"low", "high", "max"}, true},
+		{"glm-5.3-flashx", 1_000_000, 131_072, true, []llm.ThinkingLevel{"low", "high", "max"}, true},
 		{"glm-5.2", 1_000_000, 131_072, false, []llm.ThinkingLevel{"off", "high", "max"}, true},
 		{"glm-5.1", 200_000, 131_072, false, []llm.ThinkingLevel{"off", "high"}, false},
 		{"glm-5", 200_000, 131_072, false, []llm.ThinkingLevel{"off", "high"}, false},
@@ -114,12 +115,17 @@ func TestCatalogCapabilitiesAndWireControls(t *testing.T) {
 		})
 	}
 	coding := zhipu.CodingPlan().Models()
-	if len(coding) != 2 || coding[0].ID != "glm-5.3" || coding[1].ID != "glm-5.3-flash" {
+	if len(coding) != 3 || coding[0].ID != "glm-5.4" || coding[1].ID != "glm-5.3" || coding[2].ID != "glm-5.3-flash" {
 		t.Fatalf("coding catalog = %#v", coding)
+	}
+	glm54 := coding[0]
+	if glm54.ContextWindow != 1_000_000 || glm54.MaxTokens != 131_072 || !slices.Contains(glm54.InputModalities, llm.InputModalityImage) ||
+		!glm54.SupportsReasoningEffort || !slices.Equal(llm.SupportedThinkingLevels(glm54), []llm.ThinkingLevel{"low", "high", "max"}) {
+		t.Fatalf("GLM-5.4 = %#v", glm54)
 	}
 }
 
-func TestCodingRejectsPlatformOnlyModels(t *testing.T) {
+func TestPlansRejectEachOthersExclusiveModels(t *testing.T) {
 	t.Parallel()
 	service, err := zhipu.NewCoding(zhipu.Config{APIKey: "fake"})
 	if err != nil {
@@ -132,5 +138,16 @@ func TestCodingRejectsPlatformOnlyModels(t *testing.T) {
 		if _, err := service.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "unsupported model") {
 			t.Fatalf("%s error = %v", model.ID, err)
 		}
+	}
+	platform, err := zhipu.New(zhipu.Config{APIKey: "fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := zhipu.CodingPlan().DefaultModel()
+	model.Provider = zhipu.ProviderID
+	request := apitest.MinimalRequest(model.API)
+	request.Model = model
+	if _, err := platform.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "unsupported model") {
+		t.Fatalf("platform accepted Coding Plan-only %s: %v", model.ID, err)
 	}
 }

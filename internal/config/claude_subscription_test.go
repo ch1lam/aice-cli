@@ -118,7 +118,7 @@ func TestClaudeSubscriptionCredentialSurvivesSettingsChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := loaded.WithSettings(map[Setting]string{SettingProvider: "anthropic-subscription", SettingModel: "claude-sonnet-5"})
+	next, err := loaded.WithSettings(map[Setting]string{SettingProvider: "anthropic-subscription", SettingModel: "claude-sonnet-5-5"})
 	if err != nil || next.ClaudeSubscriptionCredentials != loaded.ClaudeSubscriptionCredentials || !next.ClaudeSubscriptionCredentials.Configured() {
 		t.Fatalf("settings lost OAuth credential: %v", err)
 	}

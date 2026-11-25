@@ -98,22 +98,16 @@ func anthropicBaseURL(baseURL string) string {
 	return strings.TrimSuffix(baseURL, "/v1")
 }
 
-// Models returns the OpenCode Go catalog in menu order. It follows the
-// gateway's /zen/go/v1/models endpoint (checked 2026-10-21); models still
-// served but omitted from the Go documentation list are retained for existing
-// selections. Gemini 4 Argon Contributor is advertised by OpenCode Go but
-// served only over Google's generative API, which AICE does not implement.
+// Models returns the OpenCode Go catalog in menu order. It follows the chat
+// models the gateway's /zen/go/v1/models endpoint lists with tools on a wire
+// protocol AICE implements (checked 2026-11-25): Gemini 4 Argon is served only
+// over Google's APIs, and decision and embedding models are not chat models.
+// Models the endpoint stopped listing are retired; the gateway rejects them.
 // Each call builds fresh values so callers cannot mutate a shared catalog.
 func Models() []llm.Model {
 	models := []llm.Model{
 		{
 			ID: "grok-4.7", Name: "Grok 4.7", API: openairesponses.API,
-			ContextWindow: 500_000, MaxTokens: 500_000, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh),
-			Pricing:          llm.Pricing{Input: 2, Output: 6, CacheRead: 0.5},
-		},
-		{
-			ID: "grok-4.6", Name: "Grok 4.6", API: openairesponses.API,
 			ContextWindow: 500_000, MaxTokens: 500_000, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh),
 			Pricing:          llm.Pricing{Input: 2, Output: 6, CacheRead: 0.5},
@@ -151,26 +145,19 @@ func Models() []llm.Model {
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
 			Pricing:          llm.Pricing{Input: 1.4, Output: 4.4, CacheRead: 0.26},
 		},
-		// GLM-5.2 always reasons at high or max; the gateway rejects disabling
-		// thinking and the lower effort tiers (Pi's opencode-go override).
+		// Kimi K3.1 Pro defaults to max effort and also accepts low and high.
 		{
-			ID: "glm-5.2", Name: "GLM-5.2", API: openaicompletions.API,
-			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: textInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
-			Pricing:          llm.Pricing{Input: 1.4, Output: 4.4, CacheRead: 0.26},
-		},
-		{
-			ID: "glm-5.1", Name: "GLM-5.1", API: openaicompletions.API,
-			ContextWindow: 202_752, MaxTokens: 32_768, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 1.4, Output: 4.4, CacheRead: 0.26},
+			ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro", API: openaicompletions.API,
+			ContextWindow: 1_048_576, MaxTokens: 1_048_576, InputModalities: imageInput(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax),
+			Pricing:          llm.Pricing{Input: 2, Output: 10, CacheRead: 0.2, CacheWrite: 2},
 		},
 		// Kimi K3 always reasons at max.
 		{
 			ID: "kimi-k3", Name: "Kimi K3", API: openaicompletions.API,
-			ContextWindow: 1_048_576, MaxTokens: 131_072, InputModalities: imageInput(),
+			ContextWindow: 1_048_576, MaxTokens: 1_048_576, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelMax),
-			Pricing:          llm.Pricing{Input: 3, Output: 15, CacheRead: 0.3},
+			Pricing:          llm.Pricing{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3},
 		},
 		{
 			ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", API: openaicompletions.API,
@@ -178,24 +165,9 @@ func Models() []llm.Model {
 			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
 			Pricing:          llm.Pricing{Input: 0.95, Output: 4, CacheRead: 0.19},
 		},
-		// OpenCode Go exposes Kimi K2.6 thinking as a DeepSeek-style toggle
-		// with only on/off plus high; the gateway rejects reasoning_effort
-		// (Pi's opencode-go override).
 		{
-			ID: "kimi-k2.6", Name: "Kimi K2.6", API: openaicompletions.API,
-			ContextWindow: 262_144, MaxTokens: 65_536, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
-			ThinkingFormat:   llm.ThinkingFormatDeepSeek,
-			Pricing:          llm.Pricing{Input: 0.95, Output: 4, CacheRead: 0.16},
-		},
-		{
-			ID: "longcat-2.5-preview-free", Name: "LongCat 2.5 Preview Free", API: openaicompletions.API,
-			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-		},
-		{
-			ID: "longcat-2.0", Name: "LongCat-2.0", API: openaicompletions.API,
-			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: textInput(),
+			ID: "longcat-2.5", Name: "LongCat-2.5", API: openaicompletions.API,
+			ContextWindow: 1_000_000, MaxTokens: 262_144, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
 			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.006},
 		},
@@ -210,14 +182,15 @@ func Models() []llm.Model {
 			ContextWindow: 1_048_576, MaxTokens: 131_072, InputModalities: textInput(),
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
 		},
-		// Omen Alpha is served by the gateway endpoint but is absent from the Go
-		// documentation list and models.dev; retain its historical metadata for
-		// existing selections.
 		{
-			ID: "omen-alpha", Name: "Omen Alpha", API: openaicompletions.API,
-			ContextWindow: 500_000, MaxTokens: 128_000, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh),
-			Pricing:          llm.Pricing{Input: 0.2, Output: 0.66, CacheRead: 0.04},
+			ID: "iceman-contributor-free", Name: "Iceman Contributor Free", API: openaicompletions.API,
+			ContextWindow: 262_144, MaxTokens: 131_072, InputModalities: textInput(),
+			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+		},
+		{
+			ID: "hungerg-free", Name: "HungerG Free", API: openaicompletions.API,
+			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: imageInput(),
+			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
 		},
 		{
 			ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", API: openaicompletions.API,
@@ -249,39 +222,16 @@ func Models() []llm.Model {
 			Pricing:          llm.Pricing{Input: 0.14, Output: 0.28, CacheRead: 0.0028},
 		},
 		{
-			ID: "mimo-v2.5", Name: "MiMo V2.5", API: openaicompletions.API,
-			ContextWindow: 1_000_000, MaxTokens: 128_000, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 0.14, Output: 0.28, CacheRead: 0.0028},
-		},
-		{
-			ID: "mimo-v2.5-pro", Name: "MiMo V2.5 Pro", API: openaicompletions.API,
-			ContextWindow: 1_048_576, MaxTokens: 128_000, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 0.435, Output: 0.87, CacheRead: 0.003625},
-		},
-		{
 			ID: "minimax-m3", Name: "MiniMax M3", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
 			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.06},
 		},
 		{
-			ID: "minimax-m3.1-flash-free", Name: "MiniMax M3.1 Flash Free", API: openaicompletions.API,
+			ID: "minimax-m3.1-flash", Name: "MiniMax M3.1 Flash", API: openaicompletions.API,
 			ContextWindow: 1_000_000, MaxTokens: 512_000, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
-		},
-		{
-			ID: "minimax-m2.7", Name: "MiniMax M2.7", API: anthropic.API,
-			ContextWindow: 204_800, MaxTokens: 131_072, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.06, CacheWrite: 0.375},
-		},
-		{
-			ID: "minimax-m2.5", Name: "MiniMax M2.5", API: anthropic.API,
-			ContextWindow: 204_800, MaxTokens: 65_536, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.06, CacheWrite: 0.375},
+			Pricing:          llm.Pricing{Input: 0.15, Output: 0.6, CacheRead: 0.015},
 		},
 		{
 			ID: "muse-spark-1.3-contributor", Name: "Muse Spark 1.3 Contributor", API: openairesponses.API,
@@ -294,6 +244,13 @@ func Models() []llm.Model {
 			ContextWindow: 1_048_576, MaxTokens: 131_072, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelMinimal, llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh),
 			Pricing:          llm.Pricing{Input: 0.1, Output: 0.2, CacheRead: 0.002},
+		},
+		// Qwen4 Max takes budgeted Messages thinking like Qwen3.8.
+		{
+			ID: "qwen4-max", Name: "Qwen4 Max", API: anthropic.API,
+			ContextWindow: 1_000_000, MaxTokens: 262_144, InputModalities: imageInput(),
+			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			Pricing:          llm.Pricing{Input: 1.5, Output: 4.5, CacheRead: 0.075, CacheWrite: 1.875},
 		},
 		{
 			ID: "qwen3.8-max", Name: "Qwen3.8 Max", API: anthropic.API,
@@ -308,26 +265,25 @@ func Models() []llm.Model {
 			Pricing:          llm.Pricing{Input: 0.15, Output: 0.47, CacheRead: 0.016, CacheWrite: 0.2},
 		},
 		{
-			ID: "qwen3.7-max", Name: "Qwen3.7 Max", API: anthropic.API,
-			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 2.5, Output: 7.5, CacheRead: 0.5, CacheWrite: 3.125},
-		},
-		{
 			ID: "qwen3.7-plus", Name: "Qwen3.7 Plus", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: imageInput(),
 			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
 			Pricing:          llm.Pricing{Input: 0.4, Output: 1.6, CacheRead: 0.04, CacheWrite: 0.5},
 		},
 		{
-			ID: "qwen3.6-plus", Name: "Qwen3.6 Plus", API: anthropic.API,
-			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
-			Pricing:          llm.Pricing{Input: 0.5, Output: 3, CacheRead: 0.05, CacheWrite: 0.625},
+			ID: "hy4", Name: "Hy4", API: openaicompletions.API,
+			ContextWindow: 1_048_576, MaxTokens: 65_536, InputModalities: imageInput(),
+			ThinkingLevelMap: noneOff(llm.ThinkingLevelHigh),
+			Pricing:          llm.Pricing{Input: 0.834, Output: 2.501, CacheRead: 0.042},
+		},
+		{
+			ID: "hy4-flash-free", Name: "Hy4 Flash Free", API: openaicompletions.API,
+			ContextWindow: 1_048_576, MaxTokens: 65_536, InputModalities: imageInput(),
+			ThinkingLevelMap: noneOff(llm.ThinkingLevelHigh),
 		},
 		{
 			ID: "hy4-preview", Name: "Hy4 preview", API: openaicompletions.API,
-			ContextWindow: 1_024_000, MaxTokens: 64_000, InputModalities: textInput(),
+			ContextWindow: 1_048_576, MaxTokens: 65_536, InputModalities: textInput(),
 			ThinkingLevelMap: noneOff(llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 0.834, Output: 2.501, CacheRead: 0.042},
 		},

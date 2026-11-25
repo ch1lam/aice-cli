@@ -19,10 +19,12 @@ const (
 	// BaseURL is Moonshot's official API root.
 	BaseURL = "https://api.moonshot.cn/v1"
 
-	ModelK3           = "kimi-k3"
-	ModelK27Code      = "kimi-k2.7-code"
-	ModelK27HighSpeed = "kimi-k2.7-code-highspeed"
-	ModelK26          = "kimi-k2.6"
+	ModelK31Pro          = "kimi-k3.1-pro"
+	ModelK31ProHighSpeed = "kimi-k3.1-pro-highspeed"
+	ModelK3              = "kimi-k3"
+	ModelK27Code         = "kimi-k2.7-code"
+	ModelK27HighSpeed    = "kimi-k2.7-code-highspeed"
+	ModelK26             = "kimi-k2.6"
 )
 
 // Config contains Moonshot connection settings.
@@ -69,6 +71,8 @@ func New(configuration Config) (*Provider, error) {
 // Models returns the Moonshot models supported by this provider.
 func Models() []llm.Model {
 	return []llm.Model{
+		model(ModelK31Pro, "Kimi K3.1 Pro"),
+		model(ModelK31ProHighSpeed, "Kimi K3.1 Pro HighSpeed"),
 		model(ModelK3, "Kimi K3"),
 		model(ModelK27Code, "Kimi K2.7 Code"),
 		model(ModelK27HighSpeed, "Kimi K2.7 Code HighSpeed"),
@@ -76,26 +80,29 @@ func Models() []llm.Model {
 	}
 }
 
-// DefaultModel returns the platform's flagship K3 model.
-func DefaultModel() llm.Model { return model(ModelK3, "Kimi K3") }
+// DefaultModel returns the platform's flagship K3.1 Pro model.
+func DefaultModel() llm.Model { return model(ModelK31Pro, "Kimi K3.1 Pro") }
 
 // Stream validates compatibility before making a request.
 func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream, error) {
 	return p.route.Stream(ctx, request)
 }
 
-// Capabilities follow https://platform.kimi.com/docs/api/models-overview.
+// Capabilities follow https://platform.kimi.com/docs/api/models-overview
+// (checked 2026-11-25). K2.x output limits follow models.dev; the K3 family
+// keeps Kimi K3's canonical 131,072-token output limit.
 func model(id, name string) llm.Model {
 	levels := llm.ThinkingLevelsMap(llm.ThinkingLevelHigh)
 	result := llm.Model{
 		ID: id, Name: name, API: openairesponses.API, Provider: ProviderID,
 		SupportsThinking: true, ThinkingLevelMap: levels,
 		InputModalities: []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
-		ContextWindow:   262_144, MaxTokens: 32_768,
+		ContextWindow:   262_144, MaxTokens: 262_144,
 		// CNY platform prices are not represented by AICE's USD cost estimates.
 	}
 	switch id {
-	case ModelK3:
+	case ModelK31Pro, ModelK31ProHighSpeed, ModelK3:
+		// Reasoning is always on; reasoning_effort accepts low, high and max.
 		result.ContextWindow = 1_048_576
 		result.MaxTokens = 131_072
 		result.ThinkingLevelMap = llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax)

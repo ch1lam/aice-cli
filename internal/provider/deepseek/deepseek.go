@@ -81,18 +81,20 @@ func New(config Config) (*Provider, error) {
 // official off-peak USD rates; peak billing is twice these estimates. Flash
 // serves DeepSeek-V4.1-Flash with native vision; V4 Pro serves
 // DeepSeek-V4-Pro-0813, is text-only, and uses the Anthropic-compatible API.
+// IDs, budgets, modalities and efforts follow the live /models response
+// (checked 2026-11-25).
 func Models() []llm.Model {
 	return []llm.Model{
 		{
 			ID: ModelV4Flash, Name: "DeepSeek Flash", API: openairesponses.API, Provider: ProviderID,
-			ContextWindow: 1_000_000, MaxTokens: 384_000,
+			ContextWindow: 1_048_576, MaxTokens: 393_216,
 			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(),
 			Pricing: llm.Pricing{Input: 0.15, Output: 0.6, CacheRead: 0.003},
 		},
 		{
 			ID: ModelV4Pro, Name: "DeepSeek V4 Pro", API: anthropic.API, Provider: ProviderID,
-			ContextWindow: 1_000_000, MaxTokens: 384_000,
+			ContextWindow: 1_048_576, MaxTokens: 393_216,
 			InputModalities:  []llm.InputModality{llm.InputModalityText},
 			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(), SupportsReasoningEffort: true,
 			Pricing: llm.Pricing{Input: 0.66, Output: 1.98, CacheRead: 0.022},

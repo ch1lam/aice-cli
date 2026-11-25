@@ -19,6 +19,8 @@ const (
 	// BaseURL is Kimi's official API root.
 	BaseURL = "https://api.kimi.com/coding/v1"
 
+	ModelK31Pro             = "k3.1-pro"
+	ModelK31ProHighSpeed    = "k3.1-pro-highspeed"
 	ModelForCoding          = "kimi-for-coding"
 	ModelForCodingHighSpeed = "kimi-for-coding-highspeed"
 	ModelK3                 = "k3"
@@ -69,10 +71,12 @@ func New(configuration Config) (*Provider, error) {
 // Models returns the Kimi models supported by this provider.
 func Models() []llm.Model {
 	return []llm.Model{
+		model(ModelK31Pro, "Kimi K3.1 Pro"),
+		model(ModelK31ProHighSpeed, "Kimi K3.1 Pro HighSpeed"),
 		model(ModelForCoding, "Kimi For Coding"),
 		model(ModelForCodingHighSpeed, "Kimi For Coding HighSpeed"),
-		model(ModelK3256K, "Kimi K3 256K"),
 		model(ModelK3, "Kimi K3"),
+		model(ModelK3256K, "Kimi K3 256K"),
 	}
 }
 
@@ -86,11 +90,20 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 	return p.route.Stream(ctx, request)
 }
 
-// Capabilities follow https://www.kimi.com/code/docs/en/kimi-code/models.html.
+// Capabilities follow https://www.kimi.com/code/docs/en/kimi-code/models.html
+// (checked 2026-11-25). Every model always thinks; only the highspeed
+// kimi-for-coding variant lacks adjustable effort.
 func model(id, name string) llm.Model {
-	levels := llm.ThinkingLevelsMap(llm.ThinkingLevelHigh)
-	if id == ModelK3 || id == ModelK3256K {
-		levels = llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax)
+	levels := llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax)
+	if id == ModelForCodingHighSpeed {
+		levels = llm.ThinkingLevelsMap(llm.ThinkingLevelHigh)
+	}
+	// The 1M tier of K3 and K3.1 Pro depends on membership. Use the common
+	// 256K limit; entitled users can opt in through context_windows.
+	// kimi-for-coding serves 1M to every member.
+	contextWindow := int64(262_144)
+	if id == ModelForCoding {
+		contextWindow = 1_048_576
 	}
 	return llm.Model{
 		ID:               id,
@@ -100,9 +113,7 @@ func model(id, name string) llm.Model {
 		SupportsThinking: true,
 		ThinkingLevelMap: levels,
 		InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
-		// K3's 1M tier depends on membership. Use the common 256K limit;
-		// entitled users can opt in through context_windows.
-		ContextWindow: 262_144,
+		ContextWindow:    contextWindow,
 		// Conservative AICE output budget, not an advertised server maximum.
 		MaxTokens: 32_768,
 		// Subscription quota has no per-token API price.

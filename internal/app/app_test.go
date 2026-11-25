@@ -249,18 +249,18 @@ func TestResolveModelSettingsOpencode(t *testing.T) {
 
 	model, options, err := resolveModelSettings(defaultProviders(), config.Config{
 		Provider: string(opencode.ProviderID),
-		Model:    "kimi-k2.6",
+		Model:    "glm-5.3",
 		Thinking: llm.ThinkingLevelMedium,
 	})
 	if err != nil {
 		t.Fatalf("resolveModelSettings() error = %v", err)
 	}
-	if model.Provider != opencode.ProviderID || model.ID != "kimi-k2.6" {
-		t.Errorf("model = %#v, want kimi-k2.6 via opencode-go", model)
+	if model.Provider != opencode.ProviderID || model.ID != "glm-5.3" {
+		t.Errorf("model = %#v, want glm-5.3 via opencode-go", model)
 	}
 	if options.Thinking != llm.ThinkingLevelHigh {
 		t.Errorf(
-			"options.Thinking = %q, want high (kimi-k2.6 clamps medium to high)",
+			"options.Thinking = %q, want high (glm-5.3 clamps medium to high)",
 			options.Thinking,
 		)
 	}
@@ -289,8 +289,8 @@ func TestResolveModelSettingsOpenAIDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveModelSettings() error = %v", err)
 	}
-	if model.ID != openai.ModelGPT56Terra {
-		t.Errorf("default model = %q, want %s", model.ID, openai.ModelGPT56Terra)
+	if model.ID != "gpt-6.2-sol" {
+		t.Errorf("default model = %q, want gpt-6.2-sol", model.ID)
 	}
 	if options.Thinking != llm.ThinkingLevelMedium {
 		t.Errorf("default thinking = %q, want medium", options.Thinking)
