@@ -97,7 +97,7 @@ func TestContextWindowsFollowProviderAndModel(t *testing.T) {
 	}{
 		{"openai-codex", "gpt-5.6-terra", 272_000},
 		{"openai", "gpt-5.6-terra", 1_050_000},
-		{"opencode-go", "kimi-k2.6", 262_144},
+		{"opencode-go", "glm-5.3", 1_000_000},
 		{"custom", "Org/Model.v1", 32_768},
 	} {
 		t.Run(test.provider+"/"+test.model, func(t *testing.T) {

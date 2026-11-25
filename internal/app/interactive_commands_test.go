@@ -962,16 +962,16 @@ func TestInteractiveSessionOpencodeMenusAndModelSelection(t *testing.T) {
 
 	output, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "model",
-		Arguments: "kimi-k2.6",
+		Arguments: "kimi-k3.1-pro",
 	})
 	if err != nil {
 		t.Fatalf("/model error = %v", err)
 	}
-	if runner.model.ID != "kimi-k2.6" || runner.model.Provider != opencode.ProviderID {
-		t.Errorf("/model selected = %#v, want kimi-k2.6 via opencode-go", runner.model)
+	if runner.model.ID != "kimi-k3.1-pro" || runner.model.Provider != opencode.ProviderID {
+		t.Errorf("/model selected = %#v, want kimi-k3.1-pro via opencode-go", runner.model)
 	}
-	if !strings.Contains(output, "kimi-k2.6") {
-		t.Errorf("/model output = %q, want kimi-k2.6", output)
+	if !strings.Contains(output, "kimi-k3.1-pro") {
+		t.Errorf("/model output = %q, want kimi-k3.1-pro", output)
 	}
 }
 
@@ -1045,13 +1045,13 @@ func TestInteractiveSessionThinkingKeepsRequestedLevelAndClampsPerModel(t *testi
 	// A model that always thinks at high or max still clamps the request.
 	if _, err := runner.RunSlashCommand(t.Context(), interaction.CommandRequest{
 		Name:      "model",
-		Arguments: "glm-5.2",
+		Arguments: "glm-5.3",
 	}); err != nil {
 		t.Fatalf("/model error = %v", err)
 	}
 	if runner.options.Thinking != llm.ThinkingLevelMax {
 		t.Errorf(
-			"effective thinking on glm-5.2 = %q, want max (xhigh clamps up to max)",
+			"effective thinking on glm-5.3 = %q, want max (xhigh clamps up to max)",
 			runner.options.Thinking,
 		)
 	}

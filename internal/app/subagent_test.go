@@ -138,7 +138,7 @@ func (m *subagentModel) Stream(_ context.Context, request llm.Request) (llm.Stre
 	}
 	m.parent = append(m.parent, request)
 	if len(m.parent) == 1 {
-		return call("delegate", "agent", map[string]any{"description": "find loader", "prompt": "find the config loader", "type": "explore", "run_in_background": false}), nil
+		return call("delegate", "agent", map[string]any{"description": "find loader", "prompt": "find the config loader", "subagent_type": "explore", "run_in_background": false}), nil
 	}
 	return textEventStream(request.Model, "parent done", llm.Usage{InputTokens: 2, TotalTokens: 2}, llm.StopReasonStop), nil
 }
@@ -365,7 +365,7 @@ func (m *parallelSubagentModel) Stream(ctx context.Context, request llm.Request)
 	switch len(m.parent) {
 	case 1, 2:
 		name := map[int]string{1: "a", 2: "b"}[len(m.parent)]
-		return call("start-"+name, "agent", map[string]any{"description": "probe " + name, "prompt": name, "type": "explore", "run_in_background": true}), nil
+		return call("start-"+name, "agent", map[string]any{"description": "probe " + name, "prompt": name, "subagent_type": "explore", "run_in_background": true}), nil
 	}
 	var reported string
 	for _, message := range request.Messages {
@@ -481,7 +481,7 @@ func (m *askingChildModel) Stream(_ context.Context, request llm.Request) (llm.S
 	m.parent = append(m.parent, request)
 	switch len(m.parent) {
 	case 1:
-		return call("start", "agent", map[string]any{"description": "probe", "prompt": "read it", "type": "explore", "run_in_background": true}), nil
+		return call("start", "agent", map[string]any{"description": "probe", "prompt": "read it", "subagent_type": "explore", "run_in_background": true}), nil
 	case 2:
 		if started, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {
 			m.id = regexp.MustCompile(`bg-[0-9a-f]{6}`).FindString(started.Content[0].Text)

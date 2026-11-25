@@ -104,7 +104,7 @@ func TestProviderConnectionSurvivesSettingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := c.WithSettings(map[Setting]string{SettingProvider: "aihubmix", SettingModel: "gpt-6-sol"})
+	next, err := c.WithSettings(map[Setting]string{SettingProvider: "aihubmix", SettingModel: "gpt-6.2-sol"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -179,9 +180,16 @@ func TestCodexRejectsAPIKeyAndIncompatibleModel(t *testing.T) {
 	if _, err := p.Stream(t.Context(), request); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v", err)
 	}
+	// These models reject reasoning effort none, so off is unavailable.
+	noneRejected := map[string]bool{"gpt-6.2-astra": true, "gpt-6.2-sol": true, "gpt-6.1-sol": true, "gpt-6-astra": true}
 	for _, model := range Models() {
-		if model.Provider != ProviderID || model.ContextWindow <= model.MaxTokens || len(llm.SupportedThinkingLevels(model)) != 5 {
-			t.Fatal("invalid model catalog")
+		levels := llm.SupportedThinkingLevels(model)
+		want := []llm.ThinkingLevel{llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax}
+		if !noneRejected[model.ID] {
+			want = append([]llm.ThinkingLevel{llm.ThinkingLevelOff}, want...)
+		}
+		if model.Provider != ProviderID || model.ContextWindow <= model.MaxTokens || !slices.Equal(levels, want) {
+			t.Fatalf("invalid model catalog entry %q: levels %v", model.ID, levels)
 		}
 		if model.Pricing != (llm.Pricing{}) {
 			t.Fatal("subscription must not quote API billing prices")

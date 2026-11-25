@@ -19,10 +19,10 @@ const (
 	// BaseURL is Anthropic's official API root.
 	BaseURL = "https://api.anthropic.com"
 
-	ModelSonnet5 = "claude-sonnet-5"
-	ModelOpus55  = "claude-opus-5-5"
-	ModelFable51 = "claude-fable-5-1"
-	ModelHaiku45 = "claude-haiku-4-5-20251001"
+	ModelSonnet55 = "claude-sonnet-5-5"
+	ModelOpus55   = "claude-opus-5-5"
+	ModelFable52  = "claude-fable-5-2"
+	ModelHaiku55  = "claude-haiku-5-5"
 )
 
 // Config contains Anthropic connection settings.
@@ -68,25 +68,21 @@ func New(configuration Config) (*Provider, error) {
 }
 
 // Models returns independent catalog values from Anthropic's model and effort
-// documentation (2026-09-26). Cache write estimates use the five-minute rate.
+// documentation, models.dev and pi's Anthropic overrides (checked 2026-11-25).
+// Cache write estimates use the five-minute rate. Only Haiku 5.5 accepts
+// disabled thinking; the other models reject `thinking: {type: "disabled"}`.
 func Models() []llm.Model {
 	return []llm.Model{
-		adaptiveModel(ModelSonnet5, "Claude Sonnet 5", llm.Pricing{Input: 2, Output: 10, CacheRead: .2, CacheWrite: 2.5}, true),
+		adaptiveModel(ModelSonnet55, "Claude Sonnet 5.5", llm.Pricing{Input: 2, Output: 10, CacheRead: .1, CacheWrite: 2.5}, false),
 		adaptiveModel(ModelOpus55, "Claude Opus 5.5", llm.Pricing{Input: 4, Output: 20, CacheRead: .2, CacheWrite: 5}, false),
-		adaptiveModel(ModelFable51, "Claude Fable 5.1", llm.Pricing{Input: 10, Output: 50, CacheRead: 1, CacheWrite: 12.5}, false),
-		{
-			ID: ModelHaiku45, Name: "Claude Haiku 4.5", Provider: ProviderID, API: anthropicapi.API,
-			ContextWindow: 200_000, MaxTokens: 64_000,
-			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
-			SupportsThinking: true,
-			// Extended thinking uses the adapter's 1,024-token budget; Haiku has no effort parameter.
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
-			Pricing:          llm.Pricing{Input: 1, Output: 5, CacheRead: .1, CacheWrite: 1.25},
-		},
+		adaptiveModel(ModelFable52, "Claude Fable 5.2", llm.Pricing{Input: 8, Output: 40, CacheRead: .2, CacheWrite: 10}, false),
+		// Base rates apply up to 100K context tokens; the higher long-context tier
+		// (0.5/2.5/0.05/0.625) is not modeled.
+		adaptiveModel(ModelHaiku55, "Claude Haiku 5.5", llm.Pricing{Input: .1, Output: .5, CacheRead: .01, CacheWrite: .125}, true),
 	}
 }
 
-// DefaultModel selects Claude Sonnet 5.
+// DefaultModel selects Claude Sonnet 5.5.
 func DefaultModel() llm.Model { return Models()[0] }
 
 // Stream validates Anthropic compatibility before making a request.

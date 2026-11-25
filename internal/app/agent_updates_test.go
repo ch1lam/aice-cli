@@ -153,7 +153,7 @@ func (m *followedChildModel) Stream(_ context.Context, request llm.Request) (llm
 	switch m.parent {
 	case 1:
 		return call("delegate", "agent", map[string]any{"description": "find loader", "prompt": "find the config loader",
-			"type": "explore", "run_in_background": m.background}), nil
+			"subagent_type": "explore", "run_in_background": m.background}), nil
 	case 2:
 		if m.background {
 			if started, ok := request.Messages[len(request.Messages)-1].(llm.ToolResultMessage); ok {

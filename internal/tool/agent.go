@@ -100,7 +100,6 @@ func (a *Agent) Definition() llm.ToolDefinition {
 			"that works with your tools in its own fresh context, so the work does not consume yours: it returns only its final report, never its intermediate steps. " +
 			"fork starts it instead with a copy of this conversation up to this call, on your model, sharing your prompt cache. " +
 			"By default it runs in the background: the call returns a task id at once, and the report arrives later as a notification, also after you end your turn. " +
-			"type \"explore\" has no write tools, denies every write and is for research, locating code and review; \"general\" (default) may edit and run builds and tests. " +
 			"isolation \"worktree\" runs a general subagent in its own git worktree from the current commit: it sees no uncommitted changes, " +
 			"and its changes come back as a branch for you to review and apply. It is the default for a background general subagent in a git repository. " +
 			"Writers sharing the workspace never change the same file: a write to a file another running writer changed is denied.",
@@ -110,7 +109,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 				"description": {"type": "string", "description": "3-5 word label shown to the user"},
 				"prompt": {"type": "string", "description": "The complete task. Unless forked, the subagent sees nothing else from this conversation: include the goal, relevant paths, constraints and what to report. A fork knows the conversation, so say only what to do and report."},
 				"fork": {"type": "boolean", "description": "Start the subagent with a copy of this conversation instead of a fresh context (default: false)"},
-				"type": {"type": "string", "enum": ["general", "explore"]},
+				"subagent_type": {"type": "string", "enum": ["general", "explore"], "description": "\"explore\" has no write tools and denies every write, for research, locating code and review; \"general\" (default) may edit and run builds and tests"},
 				"run_in_background": {"type": "boolean", "description": "Run the subagent as a background task and return its task id at once (default: true); false waits for its report in this call and, unless it works in a worktree, gives it your MCP tools"},
 				"isolation": {"type": "string", "enum": ["none", "worktree"], "description": "Where a general subagent changes files: \"worktree\" (default in the background) or \"none\" to share your workspace (default when synchronous)"}
 			},
@@ -119,7 +118,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 		}`),
 		PromptSnippet: "Delegate a self-contained task to a subagent that works beside you and returns only its report",
 		PromptGuidelines: []string{
-			"Your context is the run's scarcest resource: every file you read and every long output stays in it for the rest of the task and crowds out what matters. A subagent spends its own context and returns only its conclusion. So delegate by default when the work splits into independent parts, when answering means reading across many files or searching without knowing where to look (type explore), when a command's output is long and you need only the failures, or when you want a review not anchored on your own conclusion: give the reviewer the code or diff and the question, not your verdict",
+			"Your context is the run's scarcest resource: every file you read and every long output stays in it for the rest of the task and crowds out what matters. A subagent spends its own context and returns only its conclusion. So delegate by default when the work splits into independent parts, when answering means reading across many files or searching without knowing where to look (subagent_type explore), when a command's output is long and you need only the failures, or when you want a review not anchored on your own conclusion: give the reviewer the code or diff and the question, not your verdict",
 			"Do it yourself when it takes a few tool calls, when your very next step depends on it, or when the parts are tightly coupled",
 			"Plan first: decide what you do yourself now and which independent parts can run beside you. Start independent subagents together in one response, then continue with work they do not cover",
 			"A delegated part belongs to its subagent: do not read its files, rerun its searches or start it twice while it works. If its report falls short, send_message to it rather than redoing the work",
@@ -135,7 +134,7 @@ func (a *Agent) Definition() llm.ToolDefinition {
 type agentArguments struct {
 	Description string `json:"description"`
 	Prompt      string `json:"prompt"`
-	Type        string `json:"type,omitempty"`
+	Type        string `json:"subagent_type,omitempty"`
 	Background  *bool  `json:"run_in_background,omitempty"`
 	Isolation   string `json:"isolation,omitempty"`
 	Fork        bool   `json:"fork,omitempty"`
@@ -169,7 +168,7 @@ func (a *Agent) Execute(ctx context.Context, call llm.ToolCall) (llm.ToolResult,
 	case args.Description == "" || utf8.RuneCountInString(args.Description) > 80:
 		return llm.ToolResult{}, fmt.Errorf("tool %q: description must be a short non-empty label", "agent")
 	case args.Type != "" && args.Type != AgentGeneral && args.Type != AgentExplore:
-		return llm.ToolResult{}, fmt.Errorf("tool %q: type must be %q or %q", "agent", AgentGeneral, AgentExplore)
+		return llm.ToolResult{}, fmt.Errorf("tool %q: subagent_type must be %q or %q", "agent", AgentGeneral, AgentExplore)
 	case args.Isolation != "" && args.Isolation != IsolationNone && args.Isolation != IsolationWorktree:
 		return llm.ToolResult{}, fmt.Errorf("tool %q: isolation must be %q or %q", "agent", IsolationNone, IsolationWorktree)
 	case args.Isolation == IsolationWorktree && args.Type == AgentExplore:

@@ -47,7 +47,7 @@ func TestAgentValidatesBeforeDelegating(t *testing.T) {
 		{"description": "x", "prompt": "task", "type": "admin"},
 		{"description": "x", "prompt": "task", "extra": true},
 		{"description": "x", "prompt": "task", "isolation": "container"},
-		{"description": "x", "prompt": "task", "type": "explore", "isolation": "worktree"},
+		{"description": "x", "prompt": "task", "subagent_type": "explore", "isolation": "worktree"},
 	} {
 		if _, err := agentTool.Execute(t.Context(), agentCall(t, arguments)); err == nil {
 			t.Errorf("arguments %v were accepted", arguments)
@@ -72,7 +72,7 @@ func TestAgentStoppedChildKeepsReportAndUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := agentTool.Execute(ctx, agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore", "run_in_background": false}))
+	result, err := agentTool.Execute(ctx, agentCall(t, map[string]any{"description": "probe", "prompt": "task", "subagent_type": "explore", "run_in_background": false}))
 	if !errors.Is(err, context.Canceled) || !request.ReadOnly {
 		t.Fatalf("err = %v, read-only = %v", err, request.ReadOnly)
 	}
@@ -111,7 +111,7 @@ func TestAgentStartsExploreInBackground(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "type": "explore", "run_in_background": true}))
+	result, err := agentTool.Execute(t.Context(), agentCall(t, map[string]any{"description": "probe", "prompt": "task", "subagent_type": "explore", "run_in_background": true}))
 	if err != nil || result.IsError || !strings.Contains(result.Content[0].Text, "bg-000001") || result.Details != nil {
 		t.Fatalf("result = %#v, %v", result, err)
 	}

@@ -24,6 +24,7 @@ const (
 	CodingProviderID llm.ProviderID = "zhipu-coding"
 	CodingBaseURL                   = "https://open.bigmodel.cn/api/coding/paas/v4"
 
+	ModelGLM54      = "glm-5.4"
 	ModelGLM53      = "glm-5.3"
 	ModelGLM53Flash = "glm-5.3-flash"
 )
@@ -114,9 +115,13 @@ func (p *Provider) MenuDescription() string {
 
 // Models returns the Zhipu model catalog.
 func (p *Provider) Models() []llm.Model {
+	served := platform
+	if p.codingPlan {
+		served = coding
+	}
 	models := make([]llm.Model, 0, len(modelSpecs))
 	for _, spec := range modelSpecs {
-		if p.codingPlan && !codingModel(spec.id) {
+		if spec.plans&served == 0 {
 			continue
 		}
 		models = append(models, catalogModel(spec, p.ProviderID()))
@@ -124,7 +129,8 @@ func (p *Provider) Models() []llm.Model {
 	return models
 }
 
-// DefaultModel returns GLM-5.3, which both plans serve.
+// DefaultModel returns the plan's flagship: GLM-5.3 on the API Platform and
+// GLM-5.4 on the Coding Plan.
 func (p *Provider) DefaultModel() llm.Model { return p.Models()[0] }
 
 // credential is the selected plan's API key in AICE configuration.

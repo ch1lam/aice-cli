@@ -577,10 +577,10 @@ func (s *stream) translate(event responses.ResponseStreamEventUnion) ([]llm.Even
 			Err:  errors.New("openai responses: " + message),
 		}
 	default:
-		return nil, fmt.Errorf(
-			"openai responses: unsupported stream event %q",
-			event.Type,
-		)
+		// The API adds event types over time, such as Codex's
+		// response.metadata; content still arrives through the output item
+		// events above, so an unknown event carries nothing to translate.
+		return nil, nil
 	}
 }
 

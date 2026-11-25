@@ -61,7 +61,7 @@ Example global settings:
 ```json
 {
   "provider": "opencode-go",
-  "model": "kimi-k2.6",
+  "model": "kimi-k3.1-pro",
   "thinking": "high",
   "default_project_trust": "ask"
 }
@@ -479,12 +479,12 @@ Provider keys are stored side by side; updating one does not erase another.
 Choose `/login` → `Sign in with an API key` → `Anthropic (Claude API)`, or:
 
 ```sh
-ANTHROPIC_API_KEY="your-key" aice --provider anthropic --model claude-sonnet-5
+ANTHROPIC_API_KEY="your-key" aice --provider anthropic --model claude-sonnet-5-5
 ```
 
 This uses the separately billed Messages API. `AICE_ANTHROPIC_BASE_URL` is the
 API root: omit `/v1/messages` and `/v1`, which the SDK appends. The default model
-is `claude-sonnet-5`; [anthropic.go](../internal/provider/anthropic/anthropic.go)
+is `claude-sonnet-5-5`; [anthropic.go](../internal/provider/anthropic/anthropic.go)
 owns models, image support, budgets and thinking choices. `/model` and `/thinking`
 expose those choices. Claude Pro/Max uses the separate OAuth provider below.
 
@@ -501,7 +501,7 @@ browser callback; there is no device-code flow.
 ```sh
 aice auth login --provider anthropic-subscription
 aice auth status --provider anthropic-subscription
-aice --provider anthropic-subscription --model claude-sonnet-5
+aice --provider anthropic-subscription --model claude-sonnet-5-5
 aice auth logout --provider anthropic-subscription
 ```
 
@@ -542,7 +542,7 @@ acceptance and subscription billing have not been verified.
 ### AiHubMix
 
 Use `/login` → API key → AiHubMix, or `AIHUBMIX_API_KEY` with
-`--provider aihubmix`. The default is `gpt-6-sol`, with API root
+`--provider aihubmix`. The default is `gpt-6.2-sol`, with API root
 `https://aihubmix.com/v1`. `AICE_AIHUBMIX_BASE_URL` includes `/v1` but excludes
 `/responses`, `/messages` and `/chat/completions`.
 
@@ -559,9 +559,10 @@ Use `/login` → API key → Kimi Coding Plan, or `KIMI_API_KEY` with
 through Responses, independently of Moonshot API credentials.
 
 The default is `kimi-for-coding`; membership controls access to the compiled
-[catalog](../internal/provider/kimi/kimi.go). Its conservative context default is
-262,144 tokens and AICE output budget is 32,768. If your account enables K3's 1M
-tier, add `{"provider":"kimi-coding","model":"k3","tokens":1048576}` to
+[catalog](../internal/provider/kimi/kimi.go). `kimi-for-coding` has a 1,048,576
+token context; the K3 models default conservatively to 262,144. AICE's output
+budget is 32,768. If your account enables the K3 1M tier, add
+`{"provider":"kimi-coding","model":"k3","tokens":1048576}` to
 `context_windows`. Usage is recorded; zero per-token estimates do not imply
 unlimited quota.
 
@@ -569,7 +570,7 @@ unlimited quota.
 
 Use `/login` → API key → Moonshot API, or `MOONSHOT_API_KEY` with
 `--provider moonshot`. The China API root is `https://api.moonshot.cn/v1` and
-the default model is `kimi-k3`. `KIMI_API_KEY` never supplies its credential.
+the default model is `kimi-k3.1-pro`. `KIMI_API_KEY` never supplies its credential.
 `AICE_MOONSHOT_BASE_URL` is an explicit endpoint override, not region detection.
 
 All compiled [Moonshot models](../internal/provider/moonshot/moonshot.go) use
@@ -594,8 +595,8 @@ billed China API; CNY prices are not converted into AICE's USD estimates.
 Use `/login` → API key → Zhipu Coding Plan, or `ZHIPU_CODING_API_KEY` with
 `--provider zhipu-coding`. Its API root is
 `https://open.bigmodel.cn/api/coding/paas/v4`, overridable with
-`AICE_ZHIPU_CODING_BASE_URL`. The catalog contains `glm-5.3` (default) and
-`glm-5.3-flash`; it is separate from the API Platform catalog.
+`AICE_ZHIPU_CODING_BASE_URL`. The catalog contains `glm-5.4` (default; not yet on the API Platform),
+`glm-5.3` and `glm-5.3-flash`; it is separate from the API Platform catalog.
 
 Neither credential nor endpoint falls back to `zhipu`, including on quota
 exhaustion. Subscription requests retain AICE's identity and zero per-token
@@ -642,12 +643,13 @@ saves the provider and a compatible model globally; `AICE_PROVIDER` and
 `AICE_MODEL` still take precedence at startup. To reuse a saved login, choose
 `Use saved credential` under the Codex login menu or select Codex in `/provider`.
 
-The compiled catalog contains `gpt-6-astra`, `gpt-5.6-sol`,
-`gpt-5.6-terra` (default), and `gpt-5.6-luna`. See
+The compiled catalog contains the GPT-6.2, 6.1, 6 and 5.6 models in
+[codex.go](../internal/provider/codex/codex.go); the default is `gpt-5.6-terra`. See
 [OpenAI's Codex model guide](https://learn.chatgpt.com/docs/models) for the
 subscription models; availability and usage limits depend on the account. AICE records token usage with zero
 per-token API price estimates for this provider. This does not mean unlimited
-or free usage. Default context/output metadata is 272,000/128,000 tokens;
+or free usage. Default context/output metadata is 272,000/128,000 tokens (500,000 context for
+GPT-6.2 Sol and GPT-6.1 Sol/Terra);
 the subscription endpoint chooses the actual output limit and AICE omits
 `max_output_tokens`, including explicit local output caps, because that field
 is unsupported. AICE's local context accounting and compaction still apply.

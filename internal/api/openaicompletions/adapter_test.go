@@ -353,9 +353,9 @@ func TestAdapterReplaysAssistantThinking(t *testing.T) {
 	if !ok {
 		t.Fatal("opencode-go model glm-5.3-flash missing from catalog")
 	}
-	glm, ok := opencodeModelForTest("glm-5.1")
+	glm, ok := opencodeModelForTest("longcat-2.5")
 	if !ok {
-		t.Fatal("opencode-go model glm-5.1 missing from catalog")
+		t.Fatal("opencode-go model longcat-2.5 missing from catalog")
 	}
 
 	readTool := []llm.ToolDefinition{{
@@ -783,7 +783,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:    "opencode deepseek disabled",
-			modelID: "kimi-k2.6",
+			modelID: toggleOnlyModelID,
 			level:   llm.ThinkingLevelOff,
 			wantBody: map[string]any{
 				"thinking": map[string]any{"type": "disabled"},
@@ -791,7 +791,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:    "kimi toggle without effort",
-			modelID: "kimi-k2.6",
+			modelID: toggleOnlyModelID,
 			level:   llm.ThinkingLevelHigh,
 			wantBody: map[string]any{
 				"thinking": map[string]any{"type": "enabled"},
@@ -807,28 +807,28 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:     "standard off omits reasoning effort",
-			modelID:  "glm-5.1",
+			modelID:  "longcat-2.5",
 			level:    llm.ThinkingLevelOff,
 			wantBody: map[string]any{},
 		},
 		{
 			name:    "toggle-only model rejects unsupported level",
-			modelID: "kimi-k2.6",
+			modelID: toggleOnlyModelID,
 			level:   llm.ThinkingLevelMedium,
-			wantErr: `model "kimi-k2.6" does not support thinking level "medium"`,
+			wantErr: `model "toggle-only" does not support thinking level "medium"`,
 		},
 		{
 			name:    "standard model rejects unsupported level",
-			modelID: "glm-5.2",
+			modelID: "glm-5.3",
 			level:   llm.ThinkingLevelMedium,
-			wantErr: `model "glm-5.2" does not support thinking level "medium"`,
+			wantErr: `model "glm-5.3" does not support thinking level "medium"`,
 		},
 		{
 			name:           "unknown thinking format rejected",
-			modelID:        "glm-5.1",
+			modelID:        "longcat-2.5",
 			level:          llm.ThinkingLevelHigh,
 			thinkingFormat: llm.ThinkingFormat("future-format"),
-			wantErr:        `model "glm-5.1" uses unsupported thinking format "future-format"`,
+			wantErr:        `model "longcat-2.5" uses unsupported thinking format "future-format"`,
 		},
 	}
 
@@ -908,7 +908,19 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 	}
 }
 
+// toggleOnlyModelID names a fixture with DeepSeek-style thinking on/off and no
+// effort control, a shape the current catalog no longer has.
+const toggleOnlyModelID = "toggle-only"
+
 func opencodeModelForTest(id string) (llm.Model, bool) {
+	if id == toggleOnlyModelID {
+		return llm.Model{
+			ID: toggleOnlyModelID, API: openaicompletions.API, Provider: opencode.ProviderID, SupportsThinking: true,
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
+			ThinkingFormat:   llm.ThinkingFormatDeepSeek,
+			ContextWindow:    262_144, MaxTokens: 65_536, OmitMaxTokensByDefault: true,
+		}, true
+	}
 	for _, model := range opencode.Models() {
 		if model.ID == id {
 			return model, true
