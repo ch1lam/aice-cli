@@ -127,6 +127,12 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if message.Button == tea.MouseLeft && m.agentAt(message.Mouse()) != nil {
+			// The release on the same row opens the child.
+			m.selection.clear()
+			m.composerActive = false
+			return m, nil
+		}
 		if message.Button == tea.MouseLeft {
 			m.composerActive = m.composerContains(message.Mouse(), m.layoutWidth())
 		}
@@ -152,6 +158,10 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, command
 			}
 			return m, nil
+		}
+		if view := m.agentAt(message.Mouse()); view != nil && m.capture.active && message.Button == tea.MouseLeft &&
+			m.agentAt(m.capture.origin) == view {
+			return m.clickAgent(view), nil
 		}
 		if m.contextPressed && message.Button == tea.MouseLeft {
 			m.contextPressed = false

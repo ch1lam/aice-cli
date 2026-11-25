@@ -477,3 +477,40 @@ func TestRunEventsUpdateSessionTotals(t *testing.T) {
 		t.Fatalf("totals = %+v / %+v, want the event's", m.sessionUsage, m.throughput)
 	}
 }
+
+// Hovering a row marks it without taking the keyboard; a click opens that
+// child's transcript as Enter does, and closing it returns to the panel.
+func TestAgentPanelPointer(t *testing.T) {
+	t.Parallel()
+	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"), agentStart("bg-2", "second task"))
+	area := m.screenLayout().agents
+	row := tea.Mouse{X: area.x + 4, Y: area.y + 2, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseMotionMsg(row))
+	lines := strings.Split(ansiStripped(m), "\n")
+	if line := lines[row.Y]; !strings.Contains(line, "› ⠋ find loader") || m.inputContext().domain != inputMain {
+		t.Fatalf("hover row %q, domain %v", line, m.inputContext().domain)
+	}
+
+	m = updateModel(t, m, tea.MouseClickMsg(row))
+	m = updateModel(t, m, tea.MouseReleaseMsg(row))
+	if m.reading == nil || m.reading.agent != "bg-2" {
+		t.Fatalf("click opened %#v", m.reading)
+	}
+	m = press(t, m, "esc")
+	if m.inputContext().domain != inputAgents || m.agentSelected != "bg-2" {
+		t.Fatalf("after closing: domain %v on %q", m.inputContext().domain, m.agentSelected)
+	}
+
+	// A press that leaves its row opens nothing.
+	m = press(t, m, "esc")
+	area = m.screenLayout().agents
+	first := tea.Mouse{X: area.x + 4, Y: area.y + 1, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseClickMsg(first))
+	moved := first
+	moved.Y++
+	m = updateModel(t, m, tea.MouseMotionMsg(moved))
+	m = updateModel(t, m, tea.MouseReleaseMsg(moved))
+	if m.reading != nil {
+		t.Fatal("a dragged press opened a child")
+	}
+}

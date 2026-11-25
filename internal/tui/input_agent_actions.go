@@ -47,6 +47,15 @@ func (m *model) focusAgents() {
 	m.refreshViewport(false)
 }
 
+// clickAgent is Enter on a clicked row: the panel takes the keyboard on that
+// child, whose transcript opens; closing it returns to the panel.
+func (m model) clickAgent(view *agentView) model {
+	m.agentFocus, m.agentSelected, m.agentStopArmed = true, view.id, ""
+	m.input.Blur()
+	m.resizeLayout()
+	return m.openAgent(view)
+}
+
 // blurAgents returns the keyboard to the composer.
 func (m *model) blurAgents() tea.Cmd {
 	m.agentFocus, m.agentStopArmed = false, ""

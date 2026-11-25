@@ -946,6 +946,10 @@ children too, and the footer shows the panel's keys:
 | `Esc` or `Ctrl+C` | Return to the composer |
 | Other text | Return to the composer, which receives it |
 
+The mouse works without the keyboard: hovering marks a row without moving
+the keyboard, and clicking a row opens that child's transcript as `Enter`
+does, with the panel focused on it when the transcript closes.
+
 In a child's transcript, `Esc` or `Enter` returns to the panel, and the
 history reader's scrolling, folding and `T` question keys apply. A
 synchronous child stops with the response that waits for it (`Esc` in the
