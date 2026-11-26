@@ -32,7 +32,7 @@ func TestAPIKeyProviderModelSelectionAndMenus(t *testing.T) {
 		{provider: "zhipu", service: (*zhipu.Provider)(nil), defaultModel: "glm-5.3", defaultThinking: llm.ThinkingLevelHigh, models: 19, selectModel: "glm-5.3-flash", thinkingChoices: 3, contextModel: "glm-5.3"},
 		{provider: "zhipu-coding", service: (*zhipu.Provider)(nil), defaultModel: "glm-5.4", defaultThinking: llm.ThinkingLevelHigh, models: 3, selectModel: "glm-5.3-flash", thinkingChoices: 3, contextModel: "glm-5.3"},
 		{provider: "kimi-coding", service: (*kimi.Provider)(nil), defaultModel: "kimi-for-coding", defaultThinking: llm.ThinkingLevelHigh, models: 6, selectModel: "k3-256k", thinkingChoices: 3, contextModel: "k3"},
-		{provider: "moonshot", service: (*moonshot.Provider)(nil), defaultModel: "kimi-k3.1-pro", defaultThinking: llm.ThinkingLevelHigh, models: 6, selectModel: "kimi-k3", thinkingChoices: 3, contextModel: "kimi-k3"},
+		{provider: "moonshot", service: (*moonshot.Provider)(nil), defaultModel: "kimi-k3.1-pro", defaultThinking: llm.ThinkingLevelHigh, models: 3, selectModel: "kimi-k3", thinkingChoices: 3, contextModel: "kimi-k3"},
 		{provider: "anthropic", service: (*anthropic.Provider)(nil), defaultModel: "claude-sonnet-5-5", defaultThinking: llm.ThinkingLevelMedium, models: 4, selectModel: "claude-sonnet-5-5", thinkingChoices: 5, contextModel: "claude-sonnet-5-5"},
 		{provider: "aihubmix", service: (*aihubmix.Provider)(nil), defaultModel: "gpt-6.2-sol", defaultThinking: llm.ThinkingLevelMedium, models: 7, selectModel: "gpt-6.2-sol", thinkingChoices: 5, contextModel: "gpt-6.2-sol"},
 	} {

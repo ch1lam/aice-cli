@@ -37,18 +37,11 @@ func TestCatalogResponsesAndThinking(t *testing.T) {
 							t.Errorf("body = %#v", body)
 						}
 						wantEffort := string(level)
-						if level == llm.ThinkingLevelOff {
-							wantEffort = "none"
-						}
 						reasoning, ok := body["reasoning"].(map[string]any)
 						if !ok || reasoning["effort"] != wantEffort {
 							t.Errorf("reasoning = %#v, want effort %q", body["reasoning"], wantEffort)
 						}
-						wantContext, wantOutput := int64(262144), float64(262144)
-						if strings.HasPrefix(model.ID, "kimi-k3") {
-							wantContext, wantOutput = 1048576, 131072
-						}
-						if model.ContextWindow != wantContext || body["max_output_tokens"] != wantOutput {
+						if model.ContextWindow != 1048576 || body["max_output_tokens"] != float64(131072) {
 							t.Error("wrong Responses budgets")
 						}
 						if _, ok := body["thinking"]; ok {
