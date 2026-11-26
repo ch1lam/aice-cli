@@ -144,15 +144,19 @@ func TestShellTasksInThePanel(t *testing.T) {
 	m.pollTasks, m.stopTask, m.readTaskOutput = backgroundTaskList(source), taskStopCommand(source), taskOutputCommand(source)
 	m = updateModel(t, m, backgroundTasksMsg{tasks: source.Tasks()})
 	m = applyAgents(t, m, agentStart("bg-9", "task"))
-	view := ansiStripped(m)
-	tasks, agents := strings.Index(view, "Shell tasks 1"), strings.Index(view, "Subagents 1")
-	if tasks < 0 || agents < tasks || !strings.Contains(view, "npm run dev") || strings.Contains(view, "SUBAGENT TASK") || !strings.Contains(view, "↓ tasks") {
-		t.Fatalf("panel lacks the shell task above the subagent, or lists the subagent task twice:\n%s", view)
+	summary := ansiStripped(m)
+	if !strings.Contains(summary, "1 shell · 1 subagent") || !strings.Contains(summary, "npm run dev") || strings.Contains(summary, "SUBAGENT TASK") || !strings.Contains(summary, "↓ tasks") {
+		t.Fatalf("summary bar lacks the shell task and subagent, or lists the subagent task twice:\n%s", summary)
 	}
 
 	m = press(t, m, "down")
 	if m.inputContext().domain != inputPanel || m.panelSelected != "bg-1" {
 		t.Fatalf("Down selected %q in %v", m.panelSelected, m.inputContext().domain)
+	}
+	view := ansiStripped(m)
+	tasks, agents := strings.Index(view, "Shell tasks · 1"), strings.Index(view, "Subagents · 1 running / 1")
+	if tasks < 0 || agents < tasks || !strings.Contains(view, "npm run dev") || strings.Contains(view, "SUBAGENT TASK") {
+		t.Fatalf("expanded drawer lacks the shell task above the subagent, or lists the subagent task twice:\n%s", view)
 	}
 	m = press(t, m, "down")
 	if m.panelSelected != "bg-9" {

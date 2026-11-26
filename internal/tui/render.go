@@ -258,16 +258,43 @@ func (m model) composerViewWithStyle(width int, style lipgloss.Style) string {
 	}
 	parts := m.composerParts(contentWidth)
 	frame := style.Width(width).Render(strings.Join(parts, "\n"))
-	label := m.modelStatus(max(width-6, 1))
-	if label == "" {
+	left := m.panelBorderTitle()
+	right := m.modelStatus(max(width-6, 1))
+	if left == "" && right == "" {
 		return frame
 	}
-	label = " " + label + " "
 	lines := strings.Split(frame, "\n")
 	last := len(lines) - 1
-	x := width - lipgloss.Width(label) - 2
-	lines[last] = ansi.Cut(lines[last], 0, x) + label + ansi.Cut(lines[last], width-2, width)
+	lines[last] = embedComposerBottomLabels(lines[last], width, left, right)
 	return strings.Join(lines, "\n")
+}
+
+// embedComposerBottomLabels places optional left and right labels onto the
+// composer's rendered bottom border line without altering its width or frame
+// styling.
+func embedComposerBottomLabels(bottomLine string, width int, left, right string) string {
+	avail := width - 2
+	if avail < 5 {
+		return bottomLine
+	}
+	if left == "" {
+		rightBlock := " " + ansi.Truncate(right, avail-4, "…") + " "
+		x := width - ansi.StringWidth(rightBlock) - 2
+		return ansi.Cut(bottomLine, 0, x) + rightBlock + ansi.Cut(bottomLine, width-2, width)
+	}
+	if right != "" {
+		rw := ansi.StringWidth(right)
+		if maxLeft := avail - 7 - rw; maxLeft >= 8 {
+			leftBlock := " " + ansi.Truncate(left, maxLeft, "…") + " "
+			rightBlock := " " + right + " "
+			leftEnd := 2 + ansi.StringWidth(leftBlock)
+			rightStart := width - 2 - ansi.StringWidth(rightBlock)
+			return ansi.Cut(bottomLine, 0, 2) + leftBlock + ansi.Cut(bottomLine, leftEnd, rightStart) + rightBlock + ansi.Cut(bottomLine, width-2, width)
+		}
+	}
+	leftBlock := " " + ansi.Truncate(left, avail-4, "…") + " "
+	leftEnd := 2 + ansi.StringWidth(leftBlock)
+	return ansi.Cut(bottomLine, 0, 2) + leftBlock + ansi.Cut(bottomLine, leftEnd, width)
 }
 
 func (m model) pendingQueueView(width int) string {

@@ -938,13 +938,15 @@ limit file mutations or rewrite Session content.
 
 ### Tasks and subagents panel
 
-The panel below the main composer lists running
-[shell tasks](execution-sessions.md#background-tasks) and
+A recessed tray tucked directly below the main composer's bottom border shows
+running [shell tasks](execution-sessions.md#background-tasks) and
 [subagents](execution-sessions.md#subagents), and the arrow keys move between
-it and the composer. While either exists, `↓` on the composer's last row moves
-the keyboard to the panel's top row once history recall is back at the draft;
-the subagent section then lists the recent finished children too, and the
-footer shows the panel's keys:
+it and the composer. While unfocused, running work folds into a single compact
+bar (showing a single running item directly, or a summary when multiple run).
+While either exists, `↓` on the composer's last row expands and focuses the
+tray's top row once history recall is back at the draft; the subagent section
+then lists the recent finished children too, and the footer shows the panel's
+keys:
 
 | Key | Effect in the panel |
 | --- | --- |
@@ -955,8 +957,9 @@ footer shows the panel's keys:
 | Other text | Return to the composer, which receives it |
 
 The mouse works without the keyboard: hovering marks a row without moving
-the keyboard, and clicking a row opens it as `Enter` does, with the panel
-focused on it when the view closes.
+selection, clicking a single-item bar or any expanded row opens it as `Enter`
+does (with the drawer focused on it when the view closes), and clicking a
+multi-item summary bar expands the drawer.
 
 In a shell task's output or a child's transcript, `Esc` or `Enter` returns
 to the panel, and the

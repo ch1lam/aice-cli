@@ -575,8 +575,10 @@ The runtime boundary preserves these ownership rules:
   child's state reaches its `agent` call card as a comparable entry field, so
   the card's cached view changes with it; the call may be shown after the
   child's first updates, since the two travel apart, and a later update links
-  it. The panel above the composer is its own layout row (`chrome.agents`).
-  Focusing it is the `inputAgents` input domain, below every dialog and menu;
+  it. The recessed tray below the composer is its own layout row
+  (`chrome.panel`), inset symmetrically beneath the composer's closed frame;
+  unfocused running work folds into a single-row bar and expands on focus.
+  Focusing it is the `inputPanel` input domain, below every dialog and menu;
   selection is a child ID, so pruning does not move it. A child's transcript
   opens in the history reader, which takes a copy of the child's transcript
   from the live model after each forwarded message. `StopAgent` asks

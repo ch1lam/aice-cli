@@ -169,48 +169,74 @@ func TestWaitForAgentUpdatesBatches(t *testing.T) {
 	}
 }
 
-// Running children show below the composer with what they do, their model
-// and how long they ran; the transcript yields the rows they take.
+// Running children hang directly below the composer in a symmetrically inset
+// tray: one running child shows its full row, multiple summarize into one row,
+// and the transcript yields only the tray's two rows.
 func TestAgentPanelShowsRunningChildren(t *testing.T) {
 	t.Parallel()
 	base := testModel(t, 100, 30)
 	m := applyAgents(t, base,
 		agentStart("bg-1", "task"),
 		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t1", Name: "read", Detail: "internal/agent/loop.go"}}),
-		agentStart("bg-2", "task"),
-		agentStart("bg-3", "task"),
-		agentEnd("bg-3", nil, time.Second),
 	)
 	m = applyAgents(t, m,
 		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolEnd, Tool: interaction.ToolDisplay{ID: "t1", Name: "read"}}),
 		agentEvent("bg-1", interaction.Event{Kind: interaction.EventToolStart, Tool: interaction.ToolDisplay{ID: "t2", Name: "read", Detail: "internal/agent/loop.go"}}),
 	)
-	view := ansiStripped(m)
-	for _, want := range []string{"Subagents 2", "find loader · Running read internal/agent/loop.go · 1 tool", "child-model 0s", "find loader · Starting"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("view lacks %q:\n%s", want, view)
+	single := ansiStripped(m)
+	for _, want := range []string{"find loader  read internal/agent/loop.go · 1 tool", "child-model  0s"} {
+		if !strings.Contains(single, want) {
+			t.Fatalf("single-child tray view lacks %q:\n%s", want, single)
 		}
 	}
-	if m.chrome.panel != 3 || m.viewport.Height() != base.viewport.Height()-3 {
+	// The hanging tray sits symmetrically inset by one cell on both sides below
+	// the closed composer frame, taking 2 rows (body + closing edge).
+	if m.chrome.panel != 2 || m.viewport.Height() != base.viewport.Height()-2 {
 		t.Fatalf("panel takes %d rows, viewport %d (was %d)", m.chrome.panel, m.viewport.Height(), base.viewport.Height())
+	}
+	panelArea := m.screenLayout().panel
+	singleLines := strings.Split(single, "\n")
+	if got := singleLines[panelArea.y+1]; !strings.Contains(got, " ╰") || !strings.Contains(got, "╯ ") {
+		t.Fatalf("tray bottom edge is not symmetrically inset: %q", got)
+	}
+
+	m = applyAgents(t, m,
+		agentStart("bg-2", "task"),
+		agentStart("bg-3", "task"),
+		agentEnd("bg-3", nil, time.Second),
+	)
+	view := ansiStripped(m)
+	for _, want := range []string{"2 subagents", "find loader (read loop.go)", "find loader (Starting)", "↓ expand"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("summary view lacks %q:\n%s", want, view)
+		}
+	}
+	if m.chrome.panel != 2 || m.viewport.Height() != base.viewport.Height()-2 {
+		t.Fatalf("summary panel takes %d rows, viewport %d (was %d)", m.chrome.panel, m.viewport.Height(), base.viewport.Height())
 	}
 
 	m = applyAgents(t, m, agentEnd("bg-1", nil, time.Second), agentEnd("bg-2", nil, time.Second))
-	if view := ansiStripped(m); strings.Contains(view, "Subagents") || m.chrome.panel != 0 || m.viewport.Height() != base.viewport.Height() {
+	if view := ansiStripped(m); strings.Contains(view, "subagents ·") || m.chrome.panel != 0 || m.viewport.Height() != base.viewport.Height() {
 		t.Fatalf("panel stays without running children (%d rows):\n%s", m.chrome.panel, view)
 	}
 }
 
-// The panel shows at most a few rows and counts the rest.
+// While unfocused, many running children still stay on one summary row with a
+// "+N more" count; focusing expands a bounded window and counts the rest.
 func TestAgentPanelCountsChildrenBeyondItsRows(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 100, 30)
 	for i := range maximumPanelRows + 2 {
 		m = applyAgents(t, m, agentStart(fmt.Sprintf("bg-%d", i), "task"))
 	}
+	summary := ansiStripped(m)
+	if !strings.Contains(summary, "7 subagents") || !strings.Contains(summary, "more") || m.chrome.panel != 2 {
+		t.Fatalf("summary panel of %d rows:\n%s", m.chrome.panel, summary)
+	}
+	m = press(t, m, "down")
 	view := ansiStripped(m)
-	if !strings.Contains(view, "Subagents 7") || !strings.Contains(view, "+3 more") || m.chrome.panel != maximumPanelRows+1 {
-		t.Fatalf("panel of %d rows:\n%s", m.chrome.panel, view)
+	if !strings.Contains(view, "╰─ Subagents · 7 running / 7") || !strings.Contains(view, "+3 more") || m.chrome.panel != maximumPanelRows+1 {
+		t.Fatalf("expanded panel of %d rows:\n%s", m.chrome.panel, view)
 	}
 }
 
@@ -273,13 +299,13 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 		t.Fatalf("focus = %#v on %q, want the top row", c, m.panelSelected)
 	}
 	view := ansiStripped(m)
-	for _, want := range []string{"Subagents 1 running · 3", "› ✓ find loader · completed in 2s", "⠋ find loader · Starting", "✗ find loader · failed: quota exceeded"} {
+	for _, want := range []string{"╰─ Subagents · 1 running / 3", "› ✓ find loader  completed in 2s", "⠋ find loader  Starting", "✗ find loader  failed: quota exceeded"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view lacks %q:\n%s", want, view)
 		}
 	}
-	if composer, panel := strings.Index(view, "╰"), strings.Index(view, "Subagents"); composer < 0 || panel < composer {
-		t.Fatalf("panel is not below the composer:\n%s", view)
+	if composer, panel := strings.Index(view, "╰─ Subagents"), strings.Index(view, "› ✓ find loader"); composer < 0 || panel < composer {
+		t.Fatalf("tray is not below the composer border title:\n%s", view)
 	}
 	m = press(t, m, "down")
 	m = press(t, m, "down")
@@ -293,7 +319,7 @@ func TestAgentPanelFocusSelectsChildren(t *testing.T) {
 		t.Fatalf("selected %q, want the first child", m.panelSelected)
 	}
 	m = press(t, m, "up")
-	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "running · 3") {
+	if m.inputContext().domain != inputMain || strings.Contains(ansiStripped(m), "1 running / 3") {
 		t.Fatalf("focus stays on the panel: %#v", m.inputContext())
 	}
 
@@ -478,21 +504,28 @@ func TestRunEventsUpdateSessionTotals(t *testing.T) {
 	}
 }
 
-// Hovering a row marks it without taking the keyboard; a click opens that
-// child's transcript as Enter does, and closing it returns to the panel.
+// Clicking the compact multi-child summary expands the tray; hovering a row
+// marks it without moving selection, and clicking a row opens that child's
+// transcript as Enter does, returning to the tray on Esc.
 func TestAgentPanelPointer(t *testing.T) {
 	t.Parallel()
 	m := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "task"), agentStart("bg-2", "second task"))
 	area := m.screenLayout().panel
-	row := tea.Mouse{X: area.x + 4, Y: area.y + 2, Button: tea.MouseLeft}
-	m = updateModel(t, m, tea.MouseMotionMsg(row))
-	lines := strings.Split(ansiStripped(m), "\n")
-	if line := lines[row.Y]; !strings.Contains(line, "› ⠋ find loader") || m.inputContext().domain != inputMain {
-		t.Fatalf("hover row %q, domain %v", line, m.inputContext().domain)
+	summaryRow := tea.Mouse{X: area.x + 4, Y: area.y, Button: tea.MouseLeft}
+	m = clickAt(t, m, summaryRow)
+	if m.inputContext().domain != inputPanel || m.panelSelected != "bg-1" {
+		t.Fatalf("clicking summary left domain %v on %q", m.inputContext().domain, m.panelSelected)
 	}
 
-	m = updateModel(t, m, tea.MouseClickMsg(row))
-	m = updateModel(t, m, tea.MouseReleaseMsg(row))
+	area = m.screenLayout().panel
+	row := tea.Mouse{X: area.x + 4, Y: area.y + 1, Button: tea.MouseLeft}
+	m = updateModel(t, m, tea.MouseMotionMsg(row))
+	lines := strings.Split(ansiStripped(m), "\n")
+	if line := lines[row.Y]; !strings.Contains(line, "› ⠋ find loader") || m.panelSelected != "bg-1" {
+		t.Fatalf("hover row %q, selected %q", line, m.panelSelected)
+	}
+
+	m = clickAt(t, m, row)
 	if m.reading == nil || m.reading.agent != "bg-2" {
 		t.Fatalf("click opened %#v", m.reading)
 	}
@@ -502,9 +535,8 @@ func TestAgentPanelPointer(t *testing.T) {
 	}
 
 	// A press that leaves its row opens nothing.
-	m = press(t, m, "esc")
 	area = m.screenLayout().panel
-	first := tea.Mouse{X: area.x + 4, Y: area.y + 1, Button: tea.MouseLeft}
+	first := tea.Mouse{X: area.x + 4, Y: area.y, Button: tea.MouseLeft}
 	m = updateModel(t, m, tea.MouseClickMsg(first))
 	moved := first
 	moved.Y++
@@ -512,6 +544,14 @@ func TestAgentPanelPointer(t *testing.T) {
 	m = updateModel(t, m, tea.MouseReleaseMsg(moved))
 	if m.reading != nil {
 		t.Fatal("a dragged press opened a child")
+	}
+
+	// With a single running child, clicking its compact bar opens it directly.
+	single := applyAgents(t, testModel(t, 100, 30), agentStart("bg-1", "only task"))
+	area = single.screenLayout().panel
+	single = clickAt(t, single, tea.Mouse{X: area.x + 4, Y: area.y, Button: tea.MouseLeft})
+	if single.reading == nil || single.reading.agent != "bg-1" {
+		t.Fatalf("single-row click opened %#v", single.reading)
 	}
 }
 
