@@ -100,7 +100,7 @@ func anthropicBaseURL(baseURL string) string {
 
 // Models returns the OpenCode Go catalog in menu order. It follows the chat
 // models the gateway's /zen/go/v1/models endpoint lists with tools on a wire
-// protocol AICE implements (checked 2026-11-25): Gemini 4 Argon is served only
+// protocol AICE implements (checked 2026-11-26): Gemini 4 Argon is served only
 // over Google's APIs, and decision and embedding models are not chat models.
 // Models the endpoint stopped listing are retired; the gateway rejects them.
 // Each call builds fresh values so callers cannot mutate a shared catalog.
@@ -125,11 +125,11 @@ func Models() []llm.Model {
 			ThinkingLevelMap: noneOff(llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
 			Pricing:          llm.Pricing{Input: 0.2, Output: 1.2, CacheRead: 0.02, CacheWrite: 0.25},
 		},
-		// OpenCode Go exposes Claude Haiku 5.5 adaptive thinking at xhigh and max.
+		// OpenCode Go exposes Claude Haiku 5.5 thinking toggle plus low through max effort.
 		{
 			ID: "claude-haiku-5-5", Name: "Claude Haiku 5.5", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 128_000, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelLow, llm.ThinkingLevelMedium, llm.ThinkingLevelHigh, llm.ThinkingLevelXHigh, llm.ThinkingLevelMax),
 			ThinkingFormat:   llm.ThinkingFormatAdaptive, SupportsReasoningEffort: true,
 			Pricing: llm.Pricing{Input: 0.1, Output: 0.5, CacheRead: 0.01, CacheWrite: 0.125},
 		},
@@ -162,13 +162,14 @@ func Models() []llm.Model {
 		{
 			ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", API: openaicompletions.API,
 			ContextWindow: 262_144, MaxTokens: 262_144, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: fixedThinking(),
 			Pricing:          llm.Pricing{Input: 0.95, Output: 4, CacheRead: 0.19},
 		},
 		{
 			ID: "longcat-2.5", Name: "LongCat-2.5", API: openaicompletions.API,
 			ContextWindow: 1_000_000, MaxTokens: 262_144, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
+			ThinkingFormat:   llm.ThinkingFormatDeepSeek,
 			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.006},
 		},
 		{
@@ -185,12 +186,12 @@ func Models() []llm.Model {
 		{
 			ID: "iceman-contributor-free", Name: "Iceman Contributor Free", API: openaicompletions.API,
 			ContextWindow: 262_144, MaxTokens: 131_072, InputModalities: textInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: fixedThinking(),
 		},
 		{
 			ID: "hungerg-free", Name: "HungerG Free", API: openaicompletions.API,
 			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: fixedThinking(),
 		},
 		{
 			ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", API: openaicompletions.API,
@@ -212,19 +213,19 @@ func Models() []llm.Model {
 		{
 			ID: "mimo-v2.6-pro", Name: "MiMo V2.6 Pro", API: openaicompletions.API,
 			ContextWindow: 1_048_576, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: fixedThinking(),
 			Pricing:          llm.Pricing{Input: 0.435, Output: 0.87, CacheRead: 0.003625},
 		},
 		{
 			ID: "mimo-v2.6-flash", Name: "MiMo V2.6 Flash", API: openaicompletions.API,
 			ContextWindow: 1_048_576, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: fixedThinking(),
 			Pricing:          llm.Pricing{Input: 0.14, Output: 0.28, CacheRead: 0.0028},
 		},
 		{
 			ID: "minimax-m3", Name: "MiniMax M3", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 0.3, Output: 1.2, CacheRead: 0.06},
 		},
 		{
@@ -249,25 +250,25 @@ func Models() []llm.Model {
 		{
 			ID: "qwen4-max", Name: "Qwen4 Max", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 262_144, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 1.5, Output: 4.5, CacheRead: 0.075, CacheWrite: 1.875},
 		},
 		{
 			ID: "qwen3.8-max", Name: "Qwen3.8 Max", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 2, Output: 6, CacheRead: 0.25, CacheWrite: 2.5},
 		},
 		{
 			ID: "qwen3.8-flash", Name: "Qwen3.8 Flash", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 131_072, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 0.15, Output: 0.47, CacheRead: 0.016, CacheWrite: 0.2},
 		},
 		{
 			ID: "qwen3.7-plus", Name: "Qwen3.7 Plus", API: anthropic.API,
 			ContextWindow: 1_000_000, MaxTokens: 65_536, InputModalities: imageInput(),
-			ThinkingLevelMap: llm.StandardThinkingLevelMap(),
+			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			Pricing:          llm.Pricing{Input: 0.4, Output: 1.6, CacheRead: 0.04, CacheWrite: 0.5},
 		},
 		{
@@ -326,6 +327,15 @@ func noneOff(levels ...llm.ThinkingLevel) llm.ThinkingLevelMap {
 	result := llm.ThinkingLevelsMap(levels...)
 	result[llm.ThinkingLevelOff] = llm.ThinkingValue("none")
 	return result
+}
+
+// fixedThinking marks always-thinking Chat Completions models that expose
+// neither a toggle nor an effort control: the UI shows high, and the wire
+// adapter omits reasoning_effort because the mapped token is empty.
+func fixedThinking() llm.ThinkingLevelMap {
+	levels := llm.ThinkingLevelsMap(llm.ThinkingLevelHigh)
+	levels[llm.ThinkingLevelHigh] = llm.ThinkingValue("")
+	return levels
 }
 
 // Label returns the OpenCode Go display name.

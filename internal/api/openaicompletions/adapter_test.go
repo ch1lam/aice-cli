@@ -807,7 +807,7 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 		},
 		{
 			name:     "standard off omits reasoning effort",
-			modelID:  "longcat-2.5",
+			modelID:  standardOffModelID,
 			level:    llm.ThinkingLevelOff,
 			wantBody: map[string]any{},
 		},
@@ -908,17 +908,29 @@ func TestAdapterThinkingWireControls(t *testing.T) {
 	}
 }
 
-// toggleOnlyModelID names a fixture with DeepSeek-style thinking on/off and no
-// effort control, a shape the current catalog no longer has.
-const toggleOnlyModelID = "toggle-only"
+// toggleOnlyModelID and standardOffModelID name fixtures for thinking shapes
+// that no longer appear in the live opencode-go catalog.
+const (
+	toggleOnlyModelID  = "toggle-only"
+	standardOffModelID = "standard-off"
+)
 
 func opencodeModelForTest(id string) (llm.Model, bool) {
-	if id == toggleOnlyModelID {
+	switch id {
+	case toggleOnlyModelID:
 		return llm.Model{
 			ID: toggleOnlyModelID, API: openaicompletions.API, Provider: opencode.ProviderID, SupportsThinking: true,
 			ThinkingLevelMap: llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelHigh),
 			ThinkingFormat:   llm.ThinkingFormatDeepSeek,
 			ContextWindow:    262_144, MaxTokens: 65_536, OmitMaxTokensByDefault: true,
+		}, true
+	case standardOffModelID:
+		return llm.Model{
+			ID: standardOffModelID, API: openaicompletions.API, Provider: opencode.ProviderID, SupportsThinking: true,
+			ThinkingLevelMap:       llm.StandardThinkingLevelMap(),
+			ContextWindow:          262_144,
+			MaxTokens:              65_536,
+			OmitMaxTokensByDefault: true,
 		}, true
 	}
 	for _, model := range opencode.Models() {
