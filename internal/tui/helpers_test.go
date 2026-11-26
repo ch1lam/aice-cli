@@ -83,7 +83,7 @@ func panelCommands() []interaction.Command {
 		{Name: "context", Panel: &interaction.Panel{View: interaction.PanelUsage}},
 		{Name: "usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
 		{Name: "session", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 2}},
-		{Name: "history", Panel: &interaction.Panel{View: interaction.PanelHistory}},
+		{Name: "resume", Panel: &interaction.Panel{View: interaction.PanelResume}},
 	}
 }
 

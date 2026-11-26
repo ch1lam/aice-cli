@@ -485,5 +485,5 @@ func (m model) resumeSelectedSession() (tea.Model, tea.Cmd) {
 	p.input.Blur()
 	m.run = runState{kind: runRestore}
 	m.status = "Restoring session…"
-	return m, startSlashCommand(m.requests, m.controllerDone, interaction.CommandRequest{Name: "history", Arguments: item.Key})
+	return m, startSlashCommand(m.requests, m.controllerDone, interaction.CommandRequest{Name: "resume", Arguments: item.Key})
 }

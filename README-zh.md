@@ -59,7 +59,7 @@ aice
 
 - 输入 `@src/main.go` 引用文件；使用视觉模型时，通过 `Ctrl+V` 或 `Alt+V` 粘贴图片。
 - 执行中按 Enter 补充要求，Tab 排队后续任务，Esc 中断运行。
-- 用 `/history` 恢复历史会话、`/settings` 修改设置，`/help` 或 `?` 查看命令和快捷键。
+- 用 `/resume` 恢复历史会话、`/settings` 修改设置，`/help` 或 `?` 查看命令和快捷键。
 
 交互式偏好更改会保存到用户设置。重启后，命令行参数、环境变量或已信任的项目设置
 仍可覆盖这些偏好；详见[配置优先级与生命周期](./docs/configuration.md#configuration-lifetimes)。

@@ -70,9 +70,9 @@ func TestSessionPickerCommandCannotBecomeSteering(t *testing.T) {
 	m := pickerModel(t, 100, 28)
 	m.closeSessionPicker()
 	m.run.kind = runPrompt
-	m.input.SetValue("/history")
+	m.input.SetValue("/resume")
 	m, command, _ := m.submitDelivery(interaction.DeliveryKindSteer)
-	if command != nil || m.input.Value() != "/history" || !strings.Contains(m.inputNotice, "Stop") || len(m.pendingDeliveries) != 0 {
+	if command != nil || m.input.Value() != "/resume" || !strings.Contains(m.inputNotice, "Stop") || len(m.pendingDeliveries) != 0 {
 		t.Fatal("resume was accepted as steering")
 	}
 }
@@ -101,7 +101,7 @@ func pickerKey(t *testing.T, m model, letter rune) model {
 
 func pickerModel(t *testing.T, width, height int) model {
 	t.Helper()
-	m := testModel(t, width, height, interaction.Command{Name: "history"})
+	m := testModel(t, width, height, interaction.Command{Name: "resume"})
 	var closeQueries func()
 	m.searchSessions, m.previewSession, m.readSession, m.renameSession, closeQueries = sessionBrowserCommands(t.Context(), pickerBrowser{})
 	t.Cleanup(closeQueries)
@@ -355,7 +355,7 @@ func TestSessionPickerCloseButton(t *testing.T) {
 				t.Fatal("close button is not on the top border")
 			}
 			top, _, _ := strings.Cut(ansi.Strip(m.sessionPickerView()), "\n")
-			if !strings.Contains(top, "HIST") || !strings.Contains(top, " [ ✘ ] ") ||
+			if !strings.Contains(top, "RESU") || !strings.Contains(top, " [ ✘ ] ") ||
 				ansi.StringWidth(top) != m.sessionPickerLayout().width {
 				t.Fatalf("title or border width is wrong: %q", top)
 			}

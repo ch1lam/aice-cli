@@ -30,7 +30,7 @@ type steerBody struct {
 func (m model) submitDelivery(mode interaction.DeliveryKind) (model, tea.Cmd, bool) {
 	text := strings.TrimSpace(m.expandComposerText())
 	if len(m.pastes) == 0 && len(m.input.files) == 0 && m.searchSessions != nil {
-		if request, ok := parseSlashCommand(text); ok && request.Name == "history" {
+		if request, ok := parseSlashCommand(text); ok && request.Name == "resume" {
 			m.inputNotice = "Stop the current response before resuming a session"
 			return m.settleCommand(false, nil)
 		}

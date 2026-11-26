@@ -1107,11 +1107,11 @@ recovered by resuming the main Session.
 
 ## Resume and navigate
 
-Use `/history` or Ctrl+R while idle to browse regular `.jsonl` files under
+Use `/resume` or Ctrl+R while idle to browse regular `.jsonl` files under
 `<workspace>/.aice/sessions/`. The picker validates workspace identity, hides empty
 Sessions, groups by local calendar date and sorts by recorded activity. Invalid
 files remain visible as unavailable. Explicit `--session` can open files outside
-this directory; `/history <id>` restores an existing local filename stem and
+this directory; `/resume <id>` restores an existing local filename stem and
 never creates a missing Session.
 
 | Control | Action |

@@ -435,7 +435,7 @@ type PanelView string
 const (
 	PanelSettings PanelView = "settings"
 	PanelUsage    PanelView = "usage"
-	PanelHistory  PanelView = "history"
+	PanelResume   PanelView = "resume"
 )
 
 // Panel targets one view. Tab selects a multi-tab view's first tab; Focus

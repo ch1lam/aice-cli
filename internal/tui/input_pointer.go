@@ -133,8 +133,8 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.composerActive = false
 			return m, nil
 		}
-		if message.Button == tea.MouseLeft && m.panelItemAt(message.Mouse()) != nil {
-			// The release on the same row opens it.
+		if message.Button == tea.MouseLeft && m.panelHitAt(message.Mouse()).any() {
+			// The release on the same row opens it or expands the docked drawer.
 			m.selection.clear()
 			m.composerActive = false
 			return m, nil
@@ -173,9 +173,14 @@ func (m model) routePointer(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if item := m.panelItemAt(message.Mouse()); item != nil && m.capture.active && message.Button == tea.MouseLeft {
-			if pressed := m.panelItemAt(m.capture.origin); pressed != nil && pressed.id() == item.id() {
-				return m.clickPanelRow(*item)
+		if hit := m.panelHitAt(message.Mouse()); hit.any() && m.capture.active && message.Button == tea.MouseLeft {
+			pressed := m.panelHitAt(m.capture.origin)
+			if hit.item != nil && pressed.item != nil && pressed.item.id() == hit.item.id() {
+				return m.clickPanelRow(*hit.item)
+			}
+			if hit.expand && pressed.expand {
+				m.focusPanel()
+				return m, nil
 			}
 		}
 		if m.contextPressed && message.Button == tea.MouseLeft {

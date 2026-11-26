@@ -133,7 +133,7 @@ func (m model) opensPanel(request interaction.CommandRequest) bool {
 		return m.readSettings != nil
 	case interaction.PanelUsage:
 		return m.readUsage != nil
-	case interaction.PanelHistory:
+	case interaction.PanelResume:
 		return m.searchSessions != nil
 	}
 	return false
@@ -144,7 +144,7 @@ func (m model) openPanel(panel interaction.Panel) (model, tea.Cmd, bool) {
 	switch panel.View {
 	case interaction.PanelUsage:
 		return m.openUsage(panel.Tab)
-	case interaction.PanelHistory:
+	case interaction.PanelResume:
 		return m.openSessionPicker()
 	}
 	next, cmd, handled := m.openSettings()

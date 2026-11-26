@@ -116,12 +116,12 @@ func (m model) sessionPickerView() string {
 			break
 		}
 	}
-	title := fmt.Sprintf("HISTORY · CURRENT PROJECT  %d/%d", position, count)
+	title := fmt.Sprintf("RESUME · CURRENT PROJECT  %d/%d", position, count)
 	if _, ok := p.list.SelectedItem().(sessionGroupItem); ok {
-		title = fmt.Sprintf("HISTORY · CURRENT PROJECT  %d sessions", count)
+		title = fmt.Sprintf("RESUME · CURRENT PROJECT  %d sessions", count)
 	}
 	if p.previewFocused {
-		title = "HISTORY · PREVIEW"
+		title = "RESUME · PREVIEW"
 	}
 	help, segments := inputBindingsHints(m.inputBindings(), l.inner, false)
 	hint := -1
