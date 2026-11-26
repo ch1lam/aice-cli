@@ -91,11 +91,15 @@ func (p *Provider) Stream(ctx context.Context, request llm.Request) (llm.Stream,
 }
 
 // Capabilities follow https://www.kimi.com/code/docs/en/kimi-code/models.html
-// (checked 2026-11-25). Every model always thinks; only the highspeed
-// kimi-for-coding variant lacks adjustable effort.
+// (checked 2026-11-26). Only kimi-for-coding supports disabling thinking on the
+// same model (k3.1-pro rejects off with HTTP 400; k3 downgrades to K2.8
+// Preview); kimi-for-coding-highspeed lacks adjustable effort.
 func model(id, name string) llm.Model {
 	levels := llm.ThinkingLevelsMap(llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax)
-	if id == ModelForCodingHighSpeed {
+	switch id {
+	case ModelForCoding:
+		levels = llm.ThinkingLevelsMap(llm.ThinkingLevelOff, llm.ThinkingLevelLow, llm.ThinkingLevelHigh, llm.ThinkingLevelMax)
+	case ModelForCodingHighSpeed:
 		levels = llm.ThinkingLevelsMap(llm.ThinkingLevelHigh)
 	}
 	// The 1M tier of K3 and K3.1 Pro depends on membership. Use the common
@@ -104,6 +108,12 @@ func model(id, name string) llm.Model {
 	contextWindow := int64(262_144)
 	if id == ModelForCoding {
 		contextWindow = 1_048_576
+	}
+	// K3/K3.1 Pro use Moonshot's canonical 131,072-token Responses output
+	// budget; kimi-for-coding* keep their 32,768-token limit.
+	maxTokens := int64(131_072)
+	if id == ModelForCoding || id == ModelForCodingHighSpeed {
+		maxTokens = 32_768
 	}
 	return llm.Model{
 		ID:               id,
@@ -114,8 +124,7 @@ func model(id, name string) llm.Model {
 		ThinkingLevelMap: levels,
 		InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 		ContextWindow:    contextWindow,
-		// Conservative AICE output budget, not an advertised server maximum.
-		MaxTokens: 32_768,
+		MaxTokens:        maxTokens,
 		// Subscription quota has no per-token API price.
 	}
 }

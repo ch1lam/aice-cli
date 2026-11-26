@@ -563,7 +563,8 @@ through Responses, independently of Moonshot API credentials.
 The default is `kimi-for-coding`; membership controls access to the compiled
 [catalog](../internal/provider/kimi/kimi.go). `kimi-for-coding` has a 1,048,576
 token context; the K3 models default conservatively to 262,144. AICE's output
-budget is 32,768. If your account enables the K3 1M tier, add
+budget is 32,768 for `kimi-for-coding` models and 131,072 for K3/K3.1 Pro
+models. If your account enables the K3 1M tier, add
 `{"provider":"kimi-coding","model":"k3","tokens":1048576}` to
 `context_windows`. Usage is recorded; zero per-token estimates do not imply
 unlimited quota.
