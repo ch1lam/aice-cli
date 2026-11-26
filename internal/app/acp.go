@@ -75,7 +75,7 @@ func (s *interactiveSession) StartSession(ctx context.Context) (string, error) {
 }
 
 // LoadSession makes the project Session with id current, recovering
-// interrupted tools as /history does, and returns its active branch.
+// interrupted tools as /resume does, and returns its active branch.
 func (s *interactiveSession) LoadSession(ctx context.Context, id string) (*interaction.Transcript, error) {
 	if snapshot, ok, err := s.currentSnapshot(); err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (s *interactiveSession) LoadSession(ctx context.Context, id string) (*inter
 		if summary.ID != id {
 			continue
 		}
-		if _, err := s.RunSlashCommand(ctx, interaction.CommandRequest{Name: "history", Arguments: summary.Key}); err != nil {
+		if _, err := s.RunSlashCommand(ctx, interaction.CommandRequest{Name: "resume", Arguments: summary.Key}); err != nil {
 			return nil, err
 		}
 		return s.RuntimeState().Transcript, nil

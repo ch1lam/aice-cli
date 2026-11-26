@@ -29,7 +29,7 @@ func newKeyMap() keyMap {
 		close:    key.NewBinding(key.WithKeys("alt+esc"), key.WithHelp("Alt+Esc", "hide")),
 		mode:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("Shift+Tab", "auto mode")),
 		turns:    key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("Ctrl+t", "questions")),
-		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "history")),
+		sessions: key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("Ctrl+r", "resume")),
 		paste:    key.NewBinding(key.WithKeys("ctrl+v", "alt+v")),
 		send: key.NewBinding(
 			key.WithKeys("enter"),

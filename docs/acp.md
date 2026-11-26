@@ -22,7 +22,7 @@ One process serves one current AICE Session. `session/new` makes a fresh
 durable Session current and returns its Session ID; a `--session` file without
 messages is used as that Session, otherwise the previous one is detached as
 `/new` does. `session/load` and `session/resume` open a Session of the served
-project by ID, recovering interrupted tools like `/history`; `load` replays its
+project by ID, recovering interrupted tools like `/resume`; `load` replays its
 active branch as user, thought, message and tool-call updates. Switching is
 refused while a prompt runs. `cwd` must name the served workspace. When the
 client disconnects, AICE cancels the running prompt and waits for it to stop

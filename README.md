@@ -60,7 +60,7 @@ Explain how this project is organized and where I should start reading.
 
 - Add `@src/main.go` to reference a file; use `Ctrl+V` or `Alt+V` to paste an image with a vision model.
 - While AICE works, press Enter to send a correction, Tab to queue a follow-up, or Esc to cancel.
-- Use `/history` to resume a session, `/settings` to change preferences, and `/help` or `?` for commands and shortcuts.
+- Use `/resume` to resume a session, `/settings` to change preferences, and `/help` or `?` for commands and shortcuts.
 
 Interactive preference changes save to your user settings. On restart, flags,
 environment variables or trusted project settings can override them; see

@@ -83,7 +83,7 @@ func TestSessionBrowserTUI(t *testing.T) {
 	}
 	send("")
 	waitFor("AICE")
-	send("/history\r")
+	send("/resume\r")
 	waitFor("target question")
 	send("/i中文 needle")
 	waitFor("NEEDLE found in history")

@@ -25,7 +25,7 @@ func (s *interactiveSession) SlashCommands() []interaction.Command {
 	commands := []interaction.Command{
 		{Name: "usage", Description: "Open recorded Session usage", Panel: &interaction.Panel{View: interaction.PanelUsage, Tab: 1}},
 		{Name: "context", Description: "Open current context information", Panel: &interaction.Panel{View: interaction.PanelUsage}},
-		{Name: "history", Description: "Browse conversation history in this project", ArgumentHint: "[id]", Panel: &interaction.Panel{View: interaction.PanelHistory}},
+		{Name: "resume", Description: "Resume a conversation in this project", ArgumentHint: "[id]", Panel: &interaction.Panel{View: interaction.PanelResume}},
 		{Name: "browser", Description: "Set up browser automation as the user:browser MCP service", Menu: s.browserMenu(), Interactive: true},
 		{Name: "web", Description: "Configure web search services, priority and web fetch", Menu: s.webMenu(), Interactive: true},
 		{Name: "mcp", Description: "Manage MCP services, connection approval and credentials", ArgumentHint: "[action] [service]", Interactive: true,
@@ -371,7 +371,7 @@ type slashCommandHandler func(
 ) (string, error)
 
 var slashCommandHandlers = map[string]slashCommandHandler{
-	"history":  (*interactiveSession).slashResume,
+	"resume":   (*interactiveSession).slashResume,
 	"usage":    (*interactiveSession).slashPanel,
 	"context":  (*interactiveSession).slashPanel,
 	"session":  (*interactiveSession).slashPanel,
