@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/web"
+	deepseekweb "github.com/ch1lam/aice-cli/internal/web/deepseek"
 	"github.com/ch1lam/aice-cli/internal/web/exa"
 	"github.com/ch1lam/aice-cli/internal/web/httpfetch"
 )
@@ -27,18 +29,58 @@ type webSearchService struct {
 // reported through the returned service, not as a construction failure.
 type webSearchFactory func(service config.WebService, settings config.WebConfig) (webSearchService, error)
 
+// webProvider describes one search service the application can construct
+// and the /web flows can add. The list is fixed; there is no registry.
+type webProvider struct {
+	id, label, api, baseURL string
+	// keyEnv is the environment variable /web offers as a credential source.
+	keyEnv string
+	// searchTypes are the choices of the provider's "type" option; nil means
+	// the provider has none.
+	searchTypes []interaction.SettingChoice
+	// parseOptions validates instance options without network access.
+	parseOptions func(json.RawMessage) error
+	factory      webSearchFactory
+}
+
+var webProviders = []webProvider{
+	{
+		id: exa.ProviderID, label: exa.Label, api: exa.APIID, baseURL: exa.DefaultBaseURL, keyEnv: "EXA_API_KEY",
+		searchTypes:  []interaction.SettingChoice{{Value: exa.SearchTypeAuto, Label: "Auto"}, {Value: exa.SearchTypeFast, Label: "Fast"}},
+		parseOptions: func(raw json.RawMessage) error { _, err := exa.ParseOptions(raw); return err },
+		factory:      newExaService,
+	},
+	{
+		id: deepseekweb.ProviderID, label: deepseekweb.Label, api: deepseekweb.APIID, baseURL: deepseekweb.DefaultBaseURL, keyEnv: "DEEPSEEK_API_KEY",
+		parseOptions: deepseekweb.ParseOptions,
+		factory:      newDeepSeekService,
+	},
+}
+
+func webProviderByID(id string) (webProvider, bool) {
+	for _, provider := range webProviders {
+		if provider.id == id {
+			return provider, true
+		}
+	}
+	return webProvider{}, false
+}
+
 // webBackends is the fixed, read-only factory list assembled by the
-// application. Adding a provider means adding an adapter and one entry here.
+// application. Adding a provider means adding an adapter and one entry in
+// webProviders.
 type webBackends struct {
 	search     map[string]webSearchFactory
 	newFetcher func(config.WebConfig) (web.FetchBackend, error)
 }
 
 func defaultWebBackends() webBackends {
+	search := make(map[string]webSearchFactory, len(webProviders))
+	for _, provider := range webProviders {
+		search[provider.id] = provider.factory
+	}
 	return webBackends{
-		search: map[string]webSearchFactory{
-			exa.ProviderID: newExaService,
-		},
+		search: search,
 		newFetcher: func(settings config.WebConfig) (web.FetchBackend, error) {
 			return httpfetch.New(httpfetch.Config{Timeout: settings.FetchTimeout})
 		},
@@ -60,6 +102,23 @@ func newExaService(service config.WebService, settings config.WebConfig) (webSea
 		return webSearchService{}, err
 	}
 	return webSearchService{backend: client, origin: client.Origin(), label: exa.Label + " / " + service.ID, close: client.Close}, nil
+}
+
+func newDeepSeekService(service config.WebService, settings config.WebConfig) (webSearchService, error) {
+	if service.API != "" && service.API != deepseekweb.APIID {
+		return webSearchService{}, fmt.Errorf("api %q is not supported by provider %q (use %q)", service.API, deepseekweb.ProviderID, deepseekweb.APIID)
+	}
+	client, err := deepseekweb.New(deepseekweb.Config{
+		InstanceID: service.ID,
+		BaseURL:    service.BaseURL,
+		APIKey:     service.Secret,
+		Options:    service.Options,
+		Timeout:    settings.SearchTimeout,
+	})
+	if err != nil {
+		return webSearchService{}, err
+	}
+	return webSearchService{backend: client, origin: client.Origin(), label: deepseekweb.Label + " / " + service.ID, close: client.Close}, nil
 }
 
 // webState is the frozen web wiring of one run environment: the tools that
@@ -109,8 +168,8 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 				break
 			}
 			candidate.EndpointOrigin = constructed.origin
-			if candidate.APIID == "" {
-				candidate.APIID = exa.APIID
+			if provider, ok := webProviderByID(service.Provider); ok && candidate.APIID == "" {
+				candidate.APIID = provider.api
 			}
 			services[id] = constructed
 			if service.SecretPresent {

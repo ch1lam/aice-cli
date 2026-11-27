@@ -107,7 +107,7 @@ func TestWebCommandAddsInstanceSavesCredentialAndRebinds(t *testing.T) {
 		t.Fatalf("status = %q %v", status, err)
 	}
 
-	ui, auth := newScriptedUI("key", " secret-exa-key ")
+	ui, auth := newScriptedUI("exa", "key", " secret-exa-key ")
 	output, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "add", Auth: auth})
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestWebCommandAddsInstanceSavesCredentialAndRebinds(t *testing.T) {
 	if !strings.Contains(output, "Added Exa instance exa-main") || !strings.Contains(output, "Search source: service:exa-main") || strings.Contains(output, "secret-exa-key") {
 		t.Fatalf("output = %q", output)
 	}
-	if len(ui.prompts) != 2 || ui.prompts[0].Menu == nil || !ui.prompts[1].AllowInput || !strings.Contains(ui.prompts[1].InputLabel, "hidden") {
+	if len(ui.prompts) != 3 || ui.prompts[0].Menu == nil || len(ui.prompts[0].Menu.Options) != len(webProviders) || ui.prompts[1].Menu == nil || !ui.prompts[2].AllowInput || !strings.Contains(ui.prompts[2].InputLabel, "hidden") {
 		t.Fatalf("prompts = %+v", ui.prompts)
 	}
 	paths := s.configuration.Paths
@@ -197,7 +197,7 @@ func TestWebCommandFailedSaveKeepsSnapshotAndReportsCredential(t *testing.T) {
 	if err := os.WriteFile(s.configuration.Paths.GlobalSettings, []byte(`{"web":{"search":{"bogus":true}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, auth := newScriptedUI("key", "new-secret")
+	_, auth := newScriptedUI("exa", "key", "new-secret")
 	_, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "add", Auth: auth})
 	if err == nil || !strings.Contains(err.Error(), "credential saved to") || !strings.Contains(err.Error(), "current Session is unchanged") {
 		t.Fatalf("err = %v", err)
@@ -229,4 +229,37 @@ func slicesContains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestWebCommandAddsDeepSeekInstanceFromEnvironment(t *testing.T) {
+	search := &fakeWireBackend{}
+	backends := testWebBackends(search, &fakeFetch{})
+	backends.search["deepseek"] = fakeSearchFactory(search, "deepseek-search")
+	s := webCommandSession(t, backends, nil)
+	ui, auth := newScriptedUI("deepseek", "env")
+	output, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "add", Auth: auth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "Added DeepSeek instance deepseek-main") || len(ui.prompts) != 2 ||
+		!strings.Contains(ui.prompts[1].Menu.Options[1].Label, "DEEPSEEK_API_KEY") {
+		t.Fatalf("output = %q prompts = %+v", output, ui.prompts)
+	}
+	service := s.settingsSnapshot().configuration.Web.Services["deepseek-main"]
+	if service.Provider != "deepseek" || service.API != "deepseek-search" || service.Credential.Env != "DEEPSEEK_API_KEY" {
+		t.Fatalf("service = %+v", service)
+	}
+	// DeepSeek search has no options, so Settings offers no search type row
+	// and rejects one.
+	for _, field := range webSettingFields(s.settingsSnapshot().configuration, "") {
+		if field.ID == "web.service.deepseek-main.type" {
+			t.Fatalf("unexpected type row %+v", field)
+		}
+	}
+	_, err = webRequestPatch(s.settingsSnapshot().configuration, interaction.SettingsRequest{Changes: []interaction.SettingChange{{
+		ID: "web.service.deepseek-main.type", Value: interaction.SettingValue{Kind: interaction.SettingEnum, Text: "auto"},
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "no search type") {
+		t.Fatalf("type patch = %v", err)
+	}
 }

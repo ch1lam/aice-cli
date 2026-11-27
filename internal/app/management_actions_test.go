@@ -35,7 +35,7 @@ func TestWebManagementActions(t *testing.T) {
 				request.Auth.Notify = func(context.Context, interaction.AuthPrompt) error { return context.Canceled }
 			case "credential saved preference failed":
 				request.Arguments = "add"
-				_, request.Auth = newScriptedUI("key", "synthetic-web-key")
+				_, request.Auth = newScriptedUI("exa", "key", "synthetic-web-key")
 				s.application.dependencies.saveWebSettings = func(context.Context, config.Paths, config.WebPatch) (config.WebSettings, error) {
 					return config.WebSettings{}, errors.New("synthetic preference failure")
 				}

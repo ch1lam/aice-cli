@@ -104,7 +104,7 @@ non-interactive CLI.
 
 | Capability | Setup and documentation |
 | --- | --- |
-| Web search and fetch | `/web` — configure Exa search and public-page fetching; [guide](./docs/web.md) |
+| Web search and fetch | `/web` — configure Exa or DeepSeek search and public-page fetching; [guide](./docs/web.md) |
 | Browser automation | `/browser` — set up agent-browser as the ordinary MCP service `user:browser` on macOS/Linux; [guide](./docs/browser.md) |
 | Computer Use | `/desktop` — set up Cua Driver as the ordinary MCP service `user:cua`; [Computer Use](./docs/desktop.md) |
 | MCP servers | `/mcp` or `aice mcp` — connect external tools and resources; [guide](./docs/mcp.md) |

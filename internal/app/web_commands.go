@@ -10,7 +10,6 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
 	"github.com/ch1lam/aice-cli/internal/web"
-	"github.com/ch1lam/aice-cli/internal/web/exa"
 )
 
 // webIntro is shown at the top of /web prompts.
@@ -21,7 +20,7 @@ func (s *interactiveSession) webMenu() *interaction.CommandMenu {
 	settings := s.settingsSnapshot().configuration.Web
 	return &interaction.CommandMenu{Title: "Web search and fetch", Options: []interaction.CommandOption{
 		{Label: "Status", Description: "Effective sources, priority and reasons", Arguments: "status"},
-		{Label: "Add Exa instance…", Description: "Configure an Exa Search API account and append it to the priority list", Arguments: "add"},
+		{Label: "Add search instance…", Description: "Configure an Exa or DeepSeek search account and append it to the priority list", Arguments: "add"},
 		{Label: "Set instance credential…", Description: "Replace the API key or environment reference of an instance", Arguments: "credential"},
 		{Label: "Remove instance…", Description: "Delete an instance and its priority entry", Arguments: "remove"},
 		{Label: "Move source up…", Arguments: "up"},
@@ -99,14 +98,14 @@ func (s *interactiveSession) webSourcesField(reason string) interaction.SettingF
 	s.stateMu.RUnlock()
 	status, tone := state.sourceSummary()
 	menu := &interaction.CommandMenu{Title: "Search sources", Options: []interaction.CommandOption{
-		{Label: "Add Exa instance…", Description: "Configure an Exa Search API account and append it to the priority list", Arguments: "add"},
+		{Label: "Add search instance…", Description: "Configure an Exa or DeepSeek search account and append it to the priority list", Arguments: "add"},
 	}}
 	if len(state.settings.Services) > 0 {
 		menu.Options = append(menu.Options,
 			interaction.CommandOption{Label: "Set instance credential…", Description: "Replace the API key or environment reference", Arguments: "credential"},
 			interaction.CommandOption{Label: "Remove instance…", Description: "Delete an instance and its priority entry", Arguments: "remove"})
 	}
-	return interaction.SettingField{ID: "web.sources", Category: "tools", Label: "Search sources", Keywords: []string{"exa", "search", "service"},
+	return interaction.SettingField{ID: "web.sources", Category: "tools", Label: "Search sources", Keywords: []string{"exa", "deepseek", "search", "service"},
 		Description: "Search instances and the source that answers web_search; reorder sources in Search priority.",
 		Kind:        interaction.SettingAction, Value: interaction.SettingValue{Text: status}, Tone: tone, Details: s.webDetails(state),
 		Action: &interaction.Command{Name: "web", Interactive: true, Menu: menu}, Applies: interaction.SettingDomainAction, DisabledReason: reason}
@@ -137,14 +136,14 @@ func webMenuPrompt(ctx context.Context, ui *interaction.AuthInteraction, title, 
 	return webPrompt(ctx, ui, interaction.AuthPrompt{Title: title, Instructions: instructions, Menu: &interaction.CommandMenu{Title: title, Options: options}})
 }
 
-// nextExaInstanceID picks a free identifier so the user never types one into a
+// nextInstanceID picks a free identifier so the user never types one into a
 // hidden prompt; the ID can be renamed in the settings file.
-func nextExaInstanceID(existing map[string]config.WebService) string {
-	if _, taken := existing["exa-main"]; !taken {
-		return "exa-main"
+func nextInstanceID(provider string, existing map[string]config.WebService) string {
+	if _, taken := existing[provider+"-main"]; !taken {
+		return provider + "-main"
 	}
 	for index := 2; ; index++ {
-		id := fmt.Sprintf("exa-%d", index)
+		id := fmt.Sprintf("%s-%d", provider, index)
 		if _, taken := existing[id]; !taken {
 			return id
 		}
@@ -167,32 +166,44 @@ func (s *interactiveSession) saveWebCredential(ctx context.Context, paths config
 }
 
 func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction.AuthInteraction) (actionResult, error) {
+	options := make([]interaction.CommandOption, len(webProviders))
+	for index, provider := range webProviders {
+		options[index] = interaction.CommandOption{Label: provider.label, Description: provider.baseURL, Arguments: provider.id}
+	}
+	choice, err := webMenuPrompt(ctx, ui, "Add search instance", "Choose the search service.", options)
+	if err != nil {
+		return actionResult{}, err
+	}
+	provider, ok := webProviderByID(choice)
+	if !ok {
+		return actionResult{}, fmt.Errorf("app: unknown search provider %q", choice)
+	}
 	credentialCommitted := false
 	current := s.settingsSnapshot().configuration
-	id := nextExaInstanceID(current.Web.Services)
-	choice, err := webMenuPrompt(ctx, ui, "Add Exa instance "+id,
-		"Endpoint: "+exa.DefaultBaseURL+" (edit base_url in settings.json for a gateway). Choose where the API key comes from.",
+	id := nextInstanceID(provider.id, current.Web.Services)
+	choice, err = webMenuPrompt(ctx, ui, "Add "+provider.label+" instance "+id,
+		"Endpoint: "+provider.baseURL+" (edit base_url in settings.json for a gateway). Choose where the API key comes from.",
 		[]interaction.CommandOption{
 			{Label: "Enter an API key now (saved to the auth store)", Arguments: "key"},
-			{Label: "Read the key from environment variable EXA_API_KEY", Arguments: "env"},
+			{Label: "Read the key from environment variable " + provider.keyEnv, Arguments: "env"},
 		})
 	if err != nil {
 		return actionResult{}, err
 	}
-	service := config.WebServiceSettings{Provider: exa.ProviderID, API: exa.APIID}
+	service := config.WebServiceSettings{Provider: provider.id, API: provider.api}
 	credentialNote := ""
 	secret := ""
 	switch choice {
 	case "env":
-		service.Credential = config.WebCredentialRef{Env: "EXA_API_KEY"}
+		service.Credential = config.WebCredentialRef{Env: provider.keyEnv}
 	case "key":
-		secret, err = webPrompt(ctx, ui, interaction.AuthPrompt{Title: "Exa API key for " + id, AllowInput: true, InputLabel: "Exa API key (input hidden)"})
+		secret, err = webPrompt(ctx, ui, interaction.AuthPrompt{Title: provider.label + " API key for " + id, AllowInput: true, InputLabel: provider.label + " API key (input hidden)"})
 		if err != nil {
 			return actionResult{}, err
 		}
 		secret = strings.TrimSpace(secret)
 		if secret == "" || strings.ContainsAny(secret, "\r\n") {
-			return actionResult{}, fmt.Errorf("app: Exa API key must be one non-empty line")
+			return actionResult{}, fmt.Errorf("app: %s API key must be one non-empty line", provider.label)
 		}
 		service.Credential = config.WebCredentialRef{AuthRef: config.WebAuthRefPrefix + id}
 	default:
@@ -200,14 +211,14 @@ func (s *interactiveSession) webAddInstance(ctx context.Context, ui *interaction
 	}
 	if secret != "" {
 		if err := s.saveWebCredential(ctx, current.Paths, id, secret); err != nil {
-			return actionResult{}, fmt.Errorf("app: save Exa credential: %w", err)
+			return actionResult{}, fmt.Errorf("app: save %s credential: %w", provider.label, err)
 		}
 		credentialCommitted = true
 		credentialNote = "credential saved to " + current.Paths.GlobalAuth
 	}
 	priority := append(slices.Clone(current.Web.Priority), web.ServiceEntry(id))
 	result, err := s.saveWeb(ctx, config.WebPatch{Services: map[string]*config.WebServiceSettings{id: &service}, Priority: &priority},
-		fmt.Sprintf("Added Exa instance %s and appended %s to the priority list.", id, web.ServiceEntry(id)))
+		fmt.Sprintf("Added %s instance %s and appended %s to the priority list.", provider.label, id, web.ServiceEntry(id)))
 	result.committed = result.committed || credentialCommitted
 	if err != nil {
 		if credentialNote != "" {
@@ -242,9 +253,14 @@ func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interacti
 	if !ok {
 		return actionResult{}, fmt.Errorf("app: instance %q is not configured", id)
 	}
+	provider, ok := webProviderByID(service.Provider)
+	if !ok {
+		return actionResult{}, fmt.Errorf("app: instance %q uses unsupported provider %q", id, service.Provider)
+	}
+	keyEnv := provider.keyEnv
 	choice, err := webMenuPrompt(ctx, ui, "Credential for "+id, "", []interaction.CommandOption{
 		{Label: "Enter a new API key (saved to the auth store)", Arguments: "key"},
-		{Label: "Read the key from environment variable EXA_API_KEY", Arguments: "env"},
+		{Label: "Read the key from environment variable " + keyEnv, Arguments: "env"},
 	})
 	if err != nil {
 		return actionResult{}, err
@@ -257,7 +273,7 @@ func (s *interactiveSession) webSetCredential(ctx context.Context, ui *interacti
 	note := ""
 	switch choice {
 	case "env":
-		updated.Credential = config.WebCredentialRef{Env: "EXA_API_KEY"}
+		updated.Credential = config.WebCredentialRef{Env: keyEnv}
 	case "key":
 		secret, err := webPrompt(ctx, ui, interaction.AuthPrompt{Title: "API key for " + id, AllowInput: true, InputLabel: "API key (input hidden)"})
 		if err != nil {

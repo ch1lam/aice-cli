@@ -34,7 +34,7 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 			backends.search["exa"] = fakeSearchFactory(search, "exa-rest")
 			s := webCommandSession(t, backends, nil)
 			if tc.action != "add" {
-				_, ui := newScriptedUI("key", "old-synthetic-key")
+				_, ui := newScriptedUI("exa", "key", "old-synthetic-key")
 				if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "add", Auth: ui}); err != nil {
 					t.Fatal(err)
 				}
@@ -58,9 +58,9 @@ func TestWebCredentialCommitBoundary(t *testing.T) {
 				}
 				return config.SaveWebPatch(ctx, paths, patch)
 			}
-			answers := []string{"key", "new-synthetic-key"}
+			answers := []string{"exa", "key", "new-synthetic-key"}
 			if tc.action == "credential" {
-				answers = append([]string{"exa-main"}, answers...)
+				answers = []string{"exa-main", "key", "new-synthetic-key"}
 			}
 			if tc.action == "remove" {
 				answers = []string{"exa-main"}

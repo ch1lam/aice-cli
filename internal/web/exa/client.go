@@ -4,10 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -33,7 +29,7 @@ type Client struct {
 // New validates the instance configuration and constructs a client. A missing
 // key is a configuration state, not a construction failure; Search reports it.
 func New(cfg Config) (*Client, error) {
-	base, err := ResolveBaseURL(cfg.BaseURL)
+	base, err := web.ResolveServiceBaseURL(cfg.BaseURL, DefaultBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -45,18 +41,6 @@ func New(cfg Config) (*Client, error) {
 	if timeout <= 0 {
 		timeout = 25 * time.Second
 	}
-	transport := cfg.Transport
-	if transport == nil {
-		transport = &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: timeout,
-			MaxIdleConns:          4,
-			IdleConnTimeout:       60 * time.Second,
-			ForceAttemptHTTP2:     true,
-		}
-	}
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
@@ -67,18 +51,13 @@ func New(cfg Config) (*Client, error) {
 		apiKey:     strings.TrimSpace(cfg.APIKey),
 		options:    options,
 		timeout:    timeout,
-		http: &http.Client{
-			Transport: transport,
-			// API requests never follow redirects: a moved endpoint must not
-			// receive the x-api-key header on another origin.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		now: now,
+		http:       web.NewServiceHTTPClient(timeout, cfg.Transport),
+		now:        now,
 	}, nil
 }
 
 // Origin returns the endpoint origin for permission fingerprints and display.
-func (c *Client) Origin() string { return Origin(c.base) }
+func (c *Client) Origin() string { return web.ServiceOrigin(c.base) }
 
 // Capabilities reports the constraints Exa enforces server-side.
 func (c *Client) Capabilities() web.SearchCapabilities {
@@ -86,11 +65,7 @@ func (c *Client) Capabilities() web.SearchCapabilities {
 }
 
 // Close releases idle connections.
-func (c *Client) Close() {
-	if transport, ok := c.http.Transport.(*http.Transport); ok {
-		transport.CloseIdleConnections()
-	}
-}
+func (c *Client) Close() { web.CloseIdle(c.http) }
 
 // Search performs exactly one POST /search. It never retries a paid request.
 func (c *Client) Search(ctx context.Context, request web.SearchRequest) (web.SearchResponse, error) {
@@ -145,7 +120,7 @@ func (c *Client) Search(ctx context.Context, request web.SearchRequest) (web.Sea
 	if response.StatusCode != http.StatusOK {
 		return web.SearchResponse{}, c.classifyError(response)
 	}
-	payload, err := readBounded(response.Body, maxSuccessBodyBytes)
+	payload, err := web.ReadBounded(response.Body, maxSuccessBodyBytes)
 	if err != nil {
 		return web.SearchResponse{}, err
 	}
@@ -179,9 +154,8 @@ func (c *Client) Search(ctx context.Context, request web.SearchRequest) (web.Sea
 }
 
 func (c *Client) classifyError(response *http.Response) error {
-	payload, readErr := readBounded(response.Body, maxErrorBodyBytes)
 	message := ""
-	if readErr == nil {
+	if payload, err := web.ReadBounded(response.Body, maxErrorBodyBytes); err == nil {
 		var envelope errorResponse
 		if json.Unmarshal(payload, &envelope) == nil {
 			message = errorMessage(envelope.Error)
@@ -190,30 +164,7 @@ func (c *Client) classifyError(response *http.Response) error {
 			}
 		}
 	}
-	if message == "" {
-		message = http.StatusText(response.StatusCode)
-	}
-	message = web.Sanitize(message)
-	code := web.CodeUnavailable
-	switch {
-	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-		code = web.CodeAuthentication
-	case response.StatusCode == http.StatusPaymentRequired:
-		code = web.CodeQuotaExceeded
-	case response.StatusCode == http.StatusTooManyRequests:
-		code = web.CodeRateLimited
-	case response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusUnprocessableEntity:
-		code = web.CodeInvalidArgument
-	case response.StatusCode >= 500:
-		code = web.CodeUnavailable
-	default:
-		code = web.CodeInvalidResponse
-	}
-	classified := &web.Error{Code: code, Message: fmt.Sprintf("search service returned HTTP %d: %s", response.StatusCode, message)}
-	if retry := response.Header.Get("Retry-After"); retry != "" {
-		classified.RetryAfter = retry
-	}
-	return classified
+	return web.StatusError(response, message)
 }
 
 func errorMessage(raw json.RawMessage) string {
@@ -231,20 +182,4 @@ func errorMessage(raw json.RawMessage) string {
 		return object.Message
 	}
 	return ""
-}
-
-// readBounded reads at most limit bytes and fails when more are available,
-// independently of Content-Length and chunked encoding.
-func readBounded(body io.Reader, limit int) ([]byte, error) {
-	payload, err := io.ReadAll(io.LimitReader(body, int64(limit)+1))
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, web.WrapContextError(err, web.CodeUnavailable, "read search response")
-		}
-		return nil, web.WrapContextError(err, web.CodeUnavailable, "read search response failed")
-	}
-	if len(payload) > limit {
-		return nil, web.NewError(web.CodeResponseTooLarge, "search response exceeds %d bytes", limit)
-	}
-	return payload, nil
 }

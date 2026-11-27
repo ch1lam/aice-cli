@@ -69,9 +69,11 @@ are validated strictly; unknown fields are errors.
 }
 ```
 
-- `api` and `base_url` may be omitted; the Exa descriptor supplies
-  `exa-rest` and `https://api.exa.ai`. `base_url` accepts an HTTPS URL with an
-  optional path prefix; requests append `/search`. Userinfo, query and fragment
+- `provider` is `exa` or `deepseek`. `api` and `base_url` may be omitted; the
+  descriptor supplies `exa-rest` and `https://api.exa.ai` for Exa, or
+  `deepseek-search` and `https://api.deepseek.com` for DeepSeek. `base_url`
+  accepts an HTTPS URL with an optional path prefix; requests append `/search`
+  (Exa) or `/v1/tools/search` (DeepSeek). Userinfo, query and fragment
   are rejected. HTTP is accepted only for loopback development gateways:
   `localhost` or a loopback IP literal such as `127.0.0.1` or `[::1]`.
 - `credential` is exactly one of `{"env": "NAME"}` or
@@ -83,8 +85,9 @@ are validated strictly; unknown fields are errors.
 - Instance IDs match `[a-z0-9][a-z0-9_-]{0,63}`. The same provider can appear
   several times with different IDs and endpoints. Each instance has its own
   credential reference; environment references may name the same variable.
-- `options.type` accepts `auto` (default) and `fast`. Deep or synthesized
-  modes are rejected explicitly rather than mapped to `auto`.
+- Exa `options.type` accepts `auto` (default) and `fast`. Deep or synthesized
+  modes are rejected explicitly rather than mapped to `auto`. DeepSeek accepts
+  no options; any key is an error.
 - `default_max_results` is 1–20 (default 8); the model may request 1–20 per
   call. `timeout` values are AICE product defaults, not upstream guarantees.
 - `allowed_domains` / `excluded_domains` are bare hostnames and act as the
@@ -95,8 +98,10 @@ are validated strictly; unknown fields are errors.
   upstream.
 - `enabled: false` under `search` or `fetch` disables that tool. A missing
   `priority` uses the default; an explicit `[]` allows no source.
-- Setting `EXA_API_KEY` in the environment does nothing by itself. An instance
-  must be added by the user before any request can be sent.
+- Setting `EXA_API_KEY` or `DEEPSEEK_API_KEY` in the environment does nothing
+  by itself. An instance must be added by the user before any request can be
+  sent; a DeepSeek search instance has its own credential reference even when
+  the same key also serves the DeepSeek model provider.
 
 Only user-global settings and interactive changes define services, endpoints,
 credentials and priority. A trusted project's `.aice/settings.json` may
@@ -113,13 +118,15 @@ can leave an unused key in the auth store.
 
 ## The `/web` command
 
-`/web` opens a menu that can show status, add an Exa instance (key entered
-hidden and saved to the auth store, or a reference to `EXA_API_KEY`), replace
+`/web` opens a menu that can show status, add an Exa or DeepSeek instance (key
+entered hidden and saved to the auth store, or a reference to `EXA_API_KEY` or
+`DEEPSEEK_API_KEY`), replace
 an instance credential, remove an instance and its stored credential, move a
 priority entry up or down, remove or append entries (including `native`), and
 toggle search or fetch. New instances are appended to the end of the priority
 list so an existing order is never overtaken. Instance IDs are assigned
-automatically (`exa-main`, `exa-2`, …) and can be renamed in the file.
+automatically (`exa-main`, `exa-2`, `deepseek-main`, …) and can be renamed in
+the file.
 
 Changes require idle main and BTW responses and apply to the next response.
 Status remains available through `/web` during a run. Menus and edits never test
@@ -196,12 +203,12 @@ excerpts/documents, retrieval times and truncation in the same Session tool
 result. URL-derived source IDs are stable. Diagnostics such as upstream request
 IDs, timings and reported costs stay outside model text. Evidence is bounded to
 64 KiB and survives Session replay; the TUI displays recorded sources below the
-tool output. Exa highlights remain excerpts, separate from any returned summaries.
+tool output. Exa highlights remain excerpts, separate from any returned
+summaries; DeepSeek's model-oriented `summary` passage is an excerpt.
 
 ## Exa adapter
 
-Exa is the first configured service (`provider: "exa"`, `api: "exa-rest"`). The
-adapter sends exactly one `POST /search` per tool call with `query`, `type`,
+The Exa adapter (`provider: "exa"`, `api: "exa-rest"`) sends exactly one `POST /search` per tool call with `query`, `type`,
 `numResults`, optional `includeDomains`/`excludeDomains`, and
 `contents: {"text": false, "highlights": true}`; it requests no full text,
 summaries or deep-search synthesis. The key travels in `x-api-key`; redirects
@@ -224,10 +231,31 @@ Implementation: [binding](../internal/app/web.go),
 [Exa](../internal/web/exa/client.go), and
 [fetch](../internal/web/httpfetch/fetch.go).
 
+## DeepSeek adapter
+
+DeepSeek search (`provider: "deepseek"`, `api: "deepseek-search"`) sends
+exactly one `POST /v1/tools/search` per tool call with `query` and `count`;
+the key travels as a Bearer token and redirects are never followed. Domain
+constraints become query operators: allowed domains join as
+`site:a OR site:b` and exclusions add `-site:x`. The API limits the query to
+128 characters including these operators, so a longer query fails as
+`invalid_argument` before anything is sent. Each result's `summary` (the
+passage DeepSeek extracts for a model) is the excerpt, falling back to the
+display `snippet`; titles, URLs and `date` become sources. Status mapping
+follows the Exa adapter, with 408 also `unavailable`. DeepSeek bills $0.75 per
+1,000 successful requests (empty results and failures are free); the response
+reports no cost, so the recorded cost stays unknown.
+
+Default tests use local fixtures. The opt-in integration test is
+`AICE_DEEPSEEK_SEARCH_INTEGRATION=1 DEEPSEEK_API_KEY=... go test -tags=integration ./internal/web/deepseek -run TestRealDeepSeekSearch`;
+it passed against the live API on 2026-11-27.
+Implementation: [DeepSeek](../internal/web/deepseek/client.go) and the shared
+[service helpers](../internal/web/service.go).
+
 ## Not included in this version
 
-The built-in Web path has no model-native search, second search provider,
-Exa Answer/Research, automatic failover, connection tests, JavaScript rendering,
+The built-in Web path has no model-native search, Exa Answer/Research,
+DeepSeek Fetch API, automatic failover, connection tests, JavaScript rendering,
 authenticated pages, PDFs or images. Fetch uses only standard proxy environment
 settings. Independently configured [MCP services](mcp.md) may expose their own
 search tools; they do not participate in this priority list.
