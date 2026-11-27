@@ -45,6 +45,8 @@ func Models() []llm.Model {
 	for i := range models {
 		models[i].Provider = ProviderID
 		models[i].Pricing = llm.Pricing{}
+		// Hosted search through the subscription endpoint is unverified.
+		models[i].WebSearch = nil
 	}
 	return models
 }

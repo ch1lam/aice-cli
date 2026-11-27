@@ -8,7 +8,7 @@ import (
 
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/interaction"
-	"github.com/ch1lam/aice-cli/internal/web/exa"
+	"github.com/ch1lam/aice-cli/internal/web"
 )
 
 func webValue(w config.WebConfig, id config.WebSetting) interaction.SettingValue {
@@ -84,12 +84,14 @@ func webSettingFields(c config.Config, disabled string) []interaction.SettingFie
 	}
 	for _, id := range c.Web.ServiceIDs() {
 		service := c.Web.Services[id]
-		options, err := exa.ParseOptions(service.Options)
+		provider, known := webProviderByID(service.Provider)
 		description := service.Provider + " / " + service.API + " · " + service.CredentialDescription()
-		if err != nil {
+		if !known {
+			description += " · provider is not supported"
+		} else if err := provider.parseOptions(service.Options); err != nil {
 			description += " · " + err.Error()
 		}
-		for _, d := range []struct {
+		rows := []struct {
 			key, label string
 			value      interaction.SettingValue
 		}{
@@ -97,11 +99,17 @@ func webSettingFields(c config.Config, disabled string) []interaction.SettingFie
 			{"base_url", "Endpoint", interaction.SettingValue{Kind: interaction.SettingString, Text: service.BaseURL}},
 			{"credential_env", "Credential environment variable", interaction.SettingValue{Kind: interaction.SettingString, Text: service.Credential.Env}},
 			{"credential_auth_ref", "Stored credential reference", interaction.SettingValue{Kind: interaction.SettingString, Text: service.Credential.AuthRef}},
-			{"type", "Search type", interaction.SettingValue{Kind: interaction.SettingEnum, Text: options.Type}},
-		} {
+		}
+		if provider.searchTypes != nil {
+			rows = append(rows, struct {
+				key, label string
+				value      interaction.SettingValue
+			}{"type", "Search type", interaction.SettingValue{Kind: interaction.SettingEnum, Text: serviceSearchType(service.Options, provider)}})
+		}
+		for _, d := range rows {
 			field := interaction.SettingField{ID: "web.service." + id + "." + d.key, Category: "tools", Label: d.label, Description: description, Kind: d.value.Kind, Value: d.value, DisabledReason: disabled, Applies: interaction.SettingNextRun, Source: interaction.SettingSource{Kind: "user-settings", Location: c.Paths.GlobalSettings}}
 			if d.key == "type" {
-				field.Choices = []interaction.SettingChoice{{Value: exa.SearchTypeAuto, Label: "Auto"}, {Value: exa.SearchTypeFast, Label: "Fast"}}
+				field.Choices = provider.searchTypes
 			}
 			fields = append(fields, field)
 		}
@@ -182,10 +190,17 @@ func webRequestPatch(c config.Config, request interaction.SettingsRequest) (conf
 			default:
 				return patch, fmt.Errorf("unsupported service field %s", field)
 			}
-			if _, err := exa.ResolveBaseURL(service.BaseURL); err != nil {
+			provider, known := webProviderByID(service.Provider)
+			if !known {
+				return patch, fmt.Errorf("service %s uses unsupported provider %q", instance, service.Provider)
+			}
+			if field == "type" && provider.searchTypes == nil {
+				return patch, fmt.Errorf("provider %s has no search type option", provider.id)
+			}
+			if _, err := web.ResolveServiceBaseURL(service.BaseURL, provider.baseURL); err != nil {
 				return patch, err
 			}
-			if _, err := exa.ParseOptions(service.Options); err != nil {
+			if err := provider.parseOptions(service.Options); err != nil {
 				return patch, err
 			}
 			patch.Services[instance] = &service
@@ -258,4 +273,16 @@ func (s *interactiveSession) applyWebRequest(ctx context.Context, request intera
 	s.publishWebSettings(prepared)
 	result.Committed, result.Applied = true, true
 	return result, nil
+}
+
+// serviceSearchType is the effective "type" option of an instance, or the
+// provider's first choice when unset or invalid.
+func serviceSearchType(options json.RawMessage, provider webProvider) string {
+	var decoded struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(options, &decoded) == nil && decoded.Type != "" {
+		return decoded.Type
+	}
+	return provider.searchTypes[0].Value
 }

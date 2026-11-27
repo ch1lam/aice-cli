@@ -136,7 +136,7 @@ func TestBindWebRoutingTable(t *testing.T) {
 		{"zero config keeps coding tools only", config.WebConfig{}, nil, false, "disabled"},
 		{"native first then ready service", readyWebConfig("native", "service:fake-main"), []string{"web_search", "web_fetch"}, false, ""},
 		{"service first", readyWebConfig("service:fake-main", "native"), []string{"web_search", "web_fetch"}, false, ""},
-		{"native only", readyWebConfig("native"), []string{"web_fetch"}, false, "no search source"},
+		{"native only", readyWebConfig("native"), []string{"web_fetch"}, false, "no fallback service"},
 		{"empty priority", readyWebConfig(), []string{"web_fetch"}, false, "empty"},
 		{"search disabled", searchOff, []string{"web_fetch"}, false, "disabled"},
 		{"missing credential", missing, []string{"web_fetch"}, false, "FAKE_KEY"},
@@ -167,11 +167,28 @@ func TestBindWebRoutingTable(t *testing.T) {
 			}
 		})
 	}
-	// Native stays visible as not implemented even when a service is chosen.
-	state := bindWeb(*backends, readyWebConfig("native", "service:fake-main"))
+	// Native first: hosted search under the global domain policy, and the
+	// next ready service serves models without it.
+	settings := readyWebConfig("native", "service:fake-main")
+	settings.AllowedDomains = []string{"Go.dev"}
+	state := bindWeb(*backends, settings)
 	status := interaction.DetailsText(state.statusDetails())
-	if !strings.Contains(status, "skipped native: not_implemented") || !strings.Contains(status, "Search source: service:fake-main (fake, https://fake.example)") {
+	if !strings.Contains(status, "Search source: native for models that support it; otherwise service:fake-main (fake, https://fake.example)") {
 		t.Fatalf("status = %s", status)
+	}
+	hosted := state.webSearch()
+	if hosted == nil || hosted.Replaces != "web_search" || !reflect.DeepEqual(hosted.AllowedDomains, []string{"go.dev"}) {
+		t.Fatalf("hosted = %+v", hosted)
+	}
+	hosted.AllowedDomains[0] = "changed"
+	if state.webSearch().AllowedDomains[0] != "go.dev" {
+		t.Fatal("webSearch aliases the frozen policy")
+	}
+	// A service first, or search off, never enables hosted search.
+	for _, settings := range []config.WebConfig{readyWebConfig("service:fake-main", "native"), searchOff} {
+		if bindWeb(*backends, settings).webSearch() != nil {
+			t.Fatalf("hosted search enabled for %+v", settings.Priority)
+		}
 	}
 }
 
@@ -213,6 +230,30 @@ func lastToolResult(t *testing.T, model *toolLoopModel) llm.ToolResultMessage {
 	return result
 }
 
+func TestNativeSearchReplacesLocalToolForCapableModel(t *testing.T) {
+	t.Parallel()
+	search := &fakeWireBackend{}
+	call := llm.ToolCall{ID: "call-1", Name: "ls", Arguments: json.RawMessage(`{}`)}
+	// The default DeepSeek Flash hosts search while thinking, which is on
+	// by default; the fallback service stays bound for other models.
+	model, err := runWebPrint(t, readyWebConfig("native", "service:fake-main"), testWebBackends(search, &fakeFetch{}), call, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := model.requests[0]
+	if request.WebSearch == nil || request.WebSearch.Replaces != "web_search" {
+		t.Fatalf("web search = %+v (model %s, thinking %s)", request.WebSearch, request.Model.ID, request.Options.Thinking)
+	}
+	for _, definition := range request.Tools {
+		if definition.Name == "web_search" {
+			t.Fatal("local web_search sent beside hosted search")
+		}
+	}
+	if search.calls.Load() != 0 {
+		t.Fatalf("backend calls = %d", search.calls.Load())
+	}
+}
+
 func TestWebSearchThroughPrintWithFakeBackend(t *testing.T) {
 	t.Parallel()
 	search := &fakeWireBackend{rows: []fakeWireRow{
@@ -223,7 +264,8 @@ func TestWebSearchThroughPrintWithFakeBackend(t *testing.T) {
 	sessionPath := filepath.Join(t.TempDir(), "web.jsonl")
 	call := llm.ToolCall{ID: "call-1", Name: "web_search", Arguments: json.RawMessage(`{"query":"go context cancellation","max_results":3}`)}
 	// --print uses the same web policy as interactive mode: no --yolo needed.
-	model, err := runWebPrint(t, readyWebConfig("native", "service:fake-main"), testWebBackends(search, fetch), call, false, sessionPath)
+	// A service first keeps the local tool even for a model with hosted search.
+	model, err := runWebPrint(t, readyWebConfig("service:fake-main", "native"), testWebBackends(search, fetch), call, false, sessionPath)
 	if err != nil {
 		t.Fatal(err)
 	}

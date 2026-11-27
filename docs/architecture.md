@@ -98,8 +98,9 @@ Optional capabilities retain their own owners:
 | `internal/provider/*` | Model catalogs, credentials, defaults and provider compatibility; `provider.Route` gates each request (identity, catalog model, API, content) and dispatches by API; [configuration](configuration.md) |
 | `internal/tool` | Host tools, background tasks, the subagent tool, web tools, questions, Skills and MCP discovery/result adapters; [execution guide](execution-sessions.md#tool-execution-boundary) |
 | `internal/evidence` | Leaf source/evidence contract retained as tool-result metadata; deterministic source IDs, validation, cloning |
-| `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering |
+| `internal/web` | Provider-neutral search/fetch requests and results, classified errors, domain policy, pure source resolver, deterministic model rendering, shared search-service HTTP and evidence normalization |
 | `internal/web/exa` | Exa Search REST adapter: wire types, bounded HTTP, error classification, normalization into evidence |
+| `internal/web/deepseek` | DeepSeek Search API adapter: wire types, domain constraints as query operators, normalization into evidence |
 | `internal/web/httpfetch` | Page fetcher: URL policy, IP-literal checks, standard-transport proxy/DNS/dialing, bounded redirects and bodies, HTML-to-Markdown extraction |
 | `internal/guard` | File/command/network policies, identity-bound MCP permissions, transient grants and allow/ask/deny decisions |
 | `internal/classify` | Auto mode action classifier: reasoning-blind request/verdict contract, nonce-framed two-stage prompt, labeled evaluation cases and scoring; `internal/app` routes auto mode decisions to it |
@@ -224,9 +225,10 @@ the process, and custom agent definitions are not implemented.
 [Background tasks](execution-sessions.md#background-tasks) run shell commands
 and background subagents. A finished one reaches the model as a notification
 the Loop takes at its next boundary; `--print` and ACP turns wait for running
-subagents, and an idle TUI starts a run for it. Model-native web search is
-only a reserved priority entry; Exa is the only production search adapter and
-there is no execution-error failover. See [Web](web.md).
+subagents, and an idle TUI starts a run for it. Provider-hosted web search
+is enabled per request for catalog models that declare it and runs outside the
+Guard; Exa and DeepSeek are the search service adapters, and there is no
+execution-error failover. See [Web](web.md).
 
 A concrete requirement must justify extensions to Loop semantics, message/Session
 types, permissions or state ownership. Use existing boundaries first. Plan mode

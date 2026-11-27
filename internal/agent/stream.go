@@ -163,6 +163,7 @@ func (e *runExecution) consumeAssistant(
 			llm.EventTypeToolCallStart,
 			llm.EventTypeToolCallDelta,
 			llm.EventTypeToolCallEnd,
+			llm.EventTypeWebSearch,
 			llm.EventTypeUsage:
 			if !e.lifecycle.assistantStarted {
 				return assistantOutcome{}, fmt.Errorf(

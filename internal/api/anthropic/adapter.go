@@ -123,7 +123,7 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 		return anthropicsdk.MessageNewParams{}, fmt.Errorf("anthropic: %w", err)
 	}
 
-	messages, err := messageParams(request.Messages, request.Model)
+	messages, err := messageParams(request.Messages, request.Model, request.WebSearch != nil)
 	if err != nil {
 		return anthropicsdk.MessageNewParams{}, err
 	}
@@ -134,6 +134,13 @@ func requestParams(request llm.Request) (anthropicsdk.MessageNewParams, error) {
 	tools, err := toolParams(request.Tools)
 	if err != nil {
 		return anthropicsdk.MessageNewParams{}, err
+	}
+	if request.WebSearch != nil {
+		hosted, err := webSearchToolParam(request.Model, *request.WebSearch)
+		if err != nil {
+			return anthropicsdk.MessageNewParams{}, err
+		}
+		tools = append(tools, hosted)
 	}
 
 	params := anthropicsdk.MessageNewParams{
@@ -194,9 +201,12 @@ func applyThinking(
 	return nil
 }
 
+// messageParams converts the history. webSearch reports that the request
+// declares the server tool, without which recorded search steps are dropped.
 func messageParams(
 	messages []llm.Message,
 	target llm.Model,
+	webSearch bool,
 ) ([]anthropicsdk.MessageParam, error) {
 	result := make([]anthropicsdk.MessageParam, 0, len(messages))
 	for messageIndex, message := range messages {
@@ -204,6 +214,7 @@ func messageParams(
 			role    llm.Role
 			content []llm.ContentPart
 			blocks  []anthropicsdk.ContentBlockParamUnion
+			replay  bool
 		)
 		switch value := message.(type) {
 		case llm.UserMessage:
@@ -218,6 +229,7 @@ func messageParams(
 			}
 			role = value.Role
 			content = assistantContentForModel(value, target)
+			replay = webSearch && streamcore.SameModel(value, target)
 		case llm.ToolResultMessage:
 			if err := value.Validate(); err != nil {
 				return nil, fmt.Errorf("anthropic: message %d: %w", messageIndex, err)
@@ -242,6 +254,14 @@ func messageParams(
 			blocks = make([]anthropicsdk.ContentBlockParamUnion, 0, len(content))
 		}
 		for partIndex, part := range streamcore.DescribeImages(content) {
+			if part.Type == llm.ContentTypeWebSearch && role == llm.RoleAssistant {
+				searched, err := webSearchBlockParams(part, replay)
+				if err != nil {
+					return nil, fmt.Errorf("anthropic: message %d content %d: %w", messageIndex, partIndex, err)
+				}
+				blocks = append(blocks, searched...)
+				continue
+			}
 			block, err := contentBlockParam(role, part)
 			if err != nil {
 				return nil, fmt.Errorf(
@@ -254,6 +274,10 @@ func messageParams(
 			blocks = append(blocks, block)
 		}
 
+		if len(blocks) == 0 && role == llm.RoleAssistant {
+			// Only dropped search steps: the turn has nothing to replay.
+			continue
+		}
 		var converted anthropicsdk.MessageParam
 		switch role {
 		case llm.RoleUser, llm.RoleToolResult:
@@ -376,8 +400,14 @@ func toolParams(tools []llm.ToolDefinition) ([]anthropicsdk.ToolUnionParam, erro
 	return result, nil
 }
 
+// contentTypeServerResult marks a server tool result block, which joins the
+// web_search part of the server_tool_use block it answers.
+const contentTypeServerResult llm.ContentType = "server_tool_result"
+
 type blockState struct {
-	type_            llm.ContentType
+	type_ llm.ContentType
+	// raw is a server tool block's start JSON.
+	raw              string
 	text             strings.Builder
 	signature        strings.Builder
 	redacted         bool
@@ -404,6 +434,16 @@ type stream struct {
 	blocks    map[int]*blockState
 	stop      llm.StopReason
 	toolNames map[string]string
+	// searches holds completed server_tool_use steps by ID until their
+	// result block arrives.
+	searches map[string]*serverSearch
+}
+
+// serverSearch is a hosted search step and the content index of its
+// server_tool_use block.
+type serverSearch struct {
+	index int
+	call  llm.WebSearchCall
 }
 
 func (s *stream) Next() (llm.Event, error) {
@@ -507,6 +547,13 @@ func (s *stream) startBlock(
 		state.redacted = true
 		state.text.WriteString(value.Data)
 		events = append(events, llm.Event{Type: llm.EventTypeThinkingStart, ContentIndex: index})
+	case anthropicsdk.ServerToolUseBlock:
+		// The provider runs the tool; the step is reported with its result.
+		state.type_ = llm.ContentTypeWebSearch
+		state.raw = block.RawJSON()
+	case anthropicsdk.WebSearchToolResultBlock, anthropicsdk.WebFetchToolResultBlock:
+		state.type_ = contentTypeServerResult
+		state.raw = block.RawJSON()
 	case anthropicsdk.ToolUseBlock:
 		state.type_ = llm.ContentTypeToolCall
 		state.toolCall.ID = value.ID
@@ -569,6 +616,10 @@ func (s *stream) deltaBlock(
 		state.signature.WriteString(value.Signature)
 		return nil, nil
 	case anthropicsdk.InputJSONDelta:
+		if state.type_ == llm.ContentTypeWebSearch {
+			state.text.WriteString(value.PartialJSON)
+			return nil, nil
+		}
 		if state.type_ != llm.ContentTypeToolCall {
 			return nil, fmt.Errorf("anthropic: tool input delta for non-tool content block %d", index)
 		}
@@ -580,6 +631,13 @@ func (s *stream) deltaBlock(
 				ArgumentsDelta: value.PartialJSON,
 			},
 		}}, nil
+	case anthropicsdk.CitationsDelta:
+		// Citations point into server tool results; the answer text stands
+		// without them and replays without them.
+		if state.type_ != llm.ContentTypeText {
+			return nil, fmt.Errorf("anthropic: citations delta for non-text content block %d", index)
+		}
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("anthropic: unsupported content delta %q", delta.Type)
 	}
@@ -616,6 +674,36 @@ func (s *stream) stopBlock(index int) ([]llm.Event, error) {
 			ContentIndex: index,
 			ToolCall:     &call,
 		}
+	case llm.ContentTypeWebSearch:
+		call, err := serverToolUse(state.raw, state.text.String())
+		if err != nil {
+			return nil, err
+		}
+		if s.searches == nil {
+			s.searches = make(map[string]*serverSearch)
+		}
+		s.searches[call.ID] = &serverSearch{index: index, call: call}
+		// A paused turn can end before the result; the step replays as is.
+		s.core.Parts.Complete(index, llm.NewWebSearchPart(call))
+		return nil, nil
+	case contentTypeServerResult:
+		var answered struct {
+			ToolUseID string `json:"tool_use_id"`
+		}
+		if err := json.Unmarshal([]byte(state.raw), &answered); err != nil {
+			return nil, fmt.Errorf("anthropic: decode server tool result: %w", err)
+		}
+		search, ok := s.searches[answered.ToolUseID]
+		if !ok {
+			return nil, fmt.Errorf("anthropic: server tool result for unknown call %q", answered.ToolUseID)
+		}
+		delete(s.searches, answered.ToolUseID)
+		if err := addServerToolResult(&search.call, state.raw); err != nil {
+			return nil, err
+		}
+		content := llm.NewWebSearchPart(search.call)
+		s.core.Parts.Complete(search.index, content)
+		return []llm.Event{{Type: llm.EventTypeWebSearch, ContentIndex: search.index, Content: &content}}, nil
 	default:
 		return nil, fmt.Errorf("anthropic: content block %d has unknown type %q", index, state.type_)
 	}

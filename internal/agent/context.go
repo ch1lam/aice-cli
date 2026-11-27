@@ -51,6 +51,7 @@ func (e *runExecution) requestConfig() llm.RequestConfig {
 		Model:            e.input.Model,
 		SystemPrompt:     e.input.SystemPrompt,
 		Tools:            e.definitions,
+		WebSearch:        e.input.WebSearch,
 		Options:          e.input.Options,
 		ResultViewTokens: e.input.ResultViewTokens,
 	}

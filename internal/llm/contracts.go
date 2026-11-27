@@ -43,6 +43,9 @@ const (
 	ContentTypeThinking ContentType = "thinking"
 	ContentTypeImage    ContentType = "image"
 	ContentTypeToolCall ContentType = "tool_call"
+	// ContentTypeWebSearch is one step of provider-hosted web search an
+	// assistant message reports; see WebSearchCall.
+	ContentTypeWebSearch ContentType = "web_search"
 )
 
 // ThinkingLevel is the requested amount of model reasoning.
@@ -296,12 +299,13 @@ type ThinkingContent struct {
 // Text carries both visible text and thinking text. Signature is opaque provider
 // state that may need to be sent back unchanged on a later request.
 type ContentPart struct {
-	Type      ContentType   `json:"type"`
-	Text      string        `json:"text,omitempty"`
-	Signature string        `json:"signature,omitempty"`
-	Redacted  bool          `json:"redacted,omitempty"`
-	Image     *ImageContent `json:"image,omitempty"`
-	ToolCall  *ToolCall     `json:"tool_call,omitempty"`
+	Type      ContentType    `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	Signature string         `json:"signature,omitempty"`
+	Redacted  bool           `json:"redacted,omitempty"`
+	Image     *ImageContent  `json:"image,omitempty"`
+	ToolCall  *ToolCall      `json:"tool_call,omitempty"`
+	WebSearch *WebSearchCall `json:"web_search,omitempty"`
 }
 
 // ImageContent contains inline image data.
@@ -404,11 +408,13 @@ type Model struct {
 	SupportsReasoningEffort bool `json:"supports_reasoning_effort,omitempty"`
 	// OmitMaxTokensByDefault lets the protocol adapter defer the output limit
 	// to the provider when a request has no explicit MaxTokens value.
-	OmitMaxTokensByDefault bool            `json:"omit_max_tokens_by_default,omitempty"`
-	InputModalities        []InputModality `json:"input_modalities,omitempty"`
-	ContextWindow          int64           `json:"context_window,omitempty"`
-	MaxTokens              int64           `json:"max_tokens,omitempty"`
-	Pricing                Pricing         `json:"pricing"`
+	OmitMaxTokensByDefault bool `json:"omit_max_tokens_by_default,omitempty"`
+	// WebSearch declares provider-hosted web search; nil means none.
+	WebSearch       *WebSearchSupport `json:"web_search,omitempty"`
+	InputModalities []InputModality   `json:"input_modalities,omitempty"`
+	ContextWindow   int64             `json:"context_window,omitempty"`
+	MaxTokens       int64             `json:"max_tokens,omitempty"`
+	Pricing         Pricing           `json:"pricing"`
 }
 
 // Cost contains normalized request cost amounts in US dollars.
@@ -745,18 +751,18 @@ func validateMessageContent(role Role, content []ContentPart, allowEmpty bool) e
 func (p ContentPart) Validate() error {
 	switch p.Type {
 	case ContentTypeText:
-		if p.Redacted || p.Image != nil || p.ToolCall != nil {
+		if p.Redacted || p.Image != nil || p.ToolCall != nil || p.WebSearch != nil {
 			return fmt.Errorf("text content has conflicting payload fields")
 		}
 	case ContentTypeThinking:
-		if p.Image != nil || p.ToolCall != nil {
+		if p.Image != nil || p.ToolCall != nil || p.WebSearch != nil {
 			return fmt.Errorf("thinking content has conflicting payload fields")
 		}
 	case ContentTypeImage:
 		if p.Image == nil {
 			return fmt.Errorf("image content payload is required")
 		}
-		if p.Text != "" || p.Signature != "" || p.Redacted || p.ToolCall != nil {
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.ToolCall != nil || p.WebSearch != nil {
 			return fmt.Errorf("image content has conflicting payload fields")
 		}
 		if len(p.Image.Data) == 0 || p.Image.MIMEType == "" {
@@ -766,7 +772,7 @@ func (p ContentPart) Validate() error {
 		if p.ToolCall == nil {
 			return fmt.Errorf("tool call payload is required")
 		}
-		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil {
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.WebSearch != nil {
 			return fmt.Errorf("tool call content has conflicting payload fields")
 		}
 		if p.ToolCall.ID == "" || p.ToolCall.Name == "" {
@@ -775,6 +781,14 @@ func (p ContentPart) Validate() error {
 		if !json.Valid(p.ToolCall.Arguments) {
 			return fmt.Errorf("tool call arguments are not valid json")
 		}
+	case ContentTypeWebSearch:
+		if p.WebSearch == nil {
+			return fmt.Errorf("web search payload is required")
+		}
+		if p.Text != "" || p.Signature != "" || p.Redacted || p.Image != nil || p.ToolCall != nil {
+			return fmt.Errorf("web search content has conflicting payload fields")
+		}
+		return p.WebSearch.validate()
 	default:
 		return fmt.Errorf("unsupported content type %q", p.Type)
 	}
@@ -810,7 +824,8 @@ func contentAllowedForRole(role Role, contentType ContentType) bool {
 	case RoleAssistant:
 		return contentType == ContentTypeText ||
 			contentType == ContentTypeThinking ||
-			contentType == ContentTypeToolCall
+			contentType == ContentTypeToolCall ||
+			contentType == ContentTypeWebSearch
 	default:
 		return false
 	}
@@ -843,7 +858,11 @@ type Request struct {
 	SystemPrompt      string           `json:"system_prompt,omitempty"`
 	Messages          []Message        `json:"messages"`
 	Tools             []ToolDefinition `json:"tools,omitempty"`
-	Options           StreamOptions    `json:"options"`
+	// WebSearch enables the model's provider-hosted web search for this
+	// request. BuildRequest sets it only for a model whose WebSearch support
+	// accepts the run's policy.
+	WebSearch *WebSearch    `json:"web_search,omitempty"`
+	Options   StreamOptions `json:"options"`
 }
 
 func unmarshalAgentMessage(data []byte) (AgentMessage, error) {
@@ -1102,9 +1121,12 @@ const (
 	EventTypeToolCallStart EventType = "tool_call_start"
 	EventTypeToolCallDelta EventType = "tool_call_delta"
 	EventTypeToolCallEnd   EventType = "tool_call_end"
-	EventTypeUsage         EventType = "usage"
-	EventTypeDone          EventType = "done"
-	EventTypeError         EventType = "error"
+	// EventTypeWebSearch reports one completed step of provider-hosted
+	// search; Content holds the web_search part.
+	EventTypeWebSearch EventType = "web_search"
+	EventTypeUsage     EventType = "usage"
+	EventTypeDone      EventType = "done"
+	EventTypeError     EventType = "error"
 )
 
 // ToolCallDelta is one partial update for a streamed tool call.

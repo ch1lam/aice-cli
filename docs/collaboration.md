@@ -169,6 +169,14 @@ It sends one fixed, non-sensitive query with three results and logs whether a
 cost was reported. Agree on the charge before running it and report the result
 separately from the offline suite.
 
+The DeepSeek search adapter has the same shape of opt-in ($0.75 per 1,000
+successful requests):
+
+```sh
+AICE_DEEPSEEK_SEARCH_INTEGRATION=1 DEEPSEEK_API_KEY=... \
+  go test -tags=integration ./internal/web/deepseek -run '^TestRealDeepSeekSearch$' -v
+```
+
 ## Real MCP interoperability
 
 [MCP verification](mcp.md#verification-evidence) owns the verified service scope

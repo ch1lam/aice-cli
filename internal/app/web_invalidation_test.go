@@ -34,7 +34,7 @@ func TestWebActionEffectsKeepOrInvalidateHeldRuns(t *testing.T) {
 				models = append(models, model)
 				return model, nil
 			}
-			_, ui := newScriptedUI("key", "old-synthetic-key")
+			_, ui := newScriptedUI("exa", "key", "old-synthetic-key")
 			if _, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web", Arguments: "add", Auth: ui}); err != nil {
 				t.Fatal(err)
 			}

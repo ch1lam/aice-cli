@@ -166,6 +166,13 @@ func (t *promptTurn) forward(ctx context.Context, event interaction.Event) error
 		update = toolStart(event.Tool)
 	case interaction.EventToolEnd:
 		update = toolEnd(event.Tool)
+	case interaction.EventProviderTool:
+		// Already finished: announce it, then report its result.
+		start := sdk.SessionNotification{SessionId: t.session, Update: toolStart(event.Tool)}
+		if err := t.agent.connection().SessionUpdate(ctx, start); err != nil {
+			return err
+		}
+		update = toolEnd(event.Tool)
 	case interaction.EventAgentEnd:
 		t.limited = event.LimitReached
 		return nil

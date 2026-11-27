@@ -331,6 +331,13 @@ func appendCompactionContent(
 			} else {
 				builder.WriteString("[Image]\n")
 			}
+		case llm.ContentTypeWebSearch:
+			if part.WebSearch != nil {
+				fmt.Fprintf(builder, "[Provider web search: %s]\n", part.WebSearch.Describe())
+				for _, source := range part.WebSearch.Sources {
+					fmt.Fprintf(builder, "- %s %s\n", source.Title, source.URL)
+				}
+			}
 		case llm.ContentTypeToolCall:
 			if part.ToolCall == nil {
 				builder.WriteString("[Invalid tool call]\n")

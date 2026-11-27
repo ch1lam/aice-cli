@@ -207,12 +207,16 @@ type RunInput struct {
 	// before each model request attempt, after preparation and budget checks.
 	// It must return promptly; it observes selection, never grants authority.
 	// The caller owns clearing its display state when Run returns.
-	ObserveTools    func([]ToolReference)
-	Model           llm.Model
-	SystemPrompt    string
-	History         []llm.AgentMessage
-	Prompt          llm.UserMessage
-	Options         llm.StreamOptions
+	ObserveTools func([]ToolReference)
+	Model        llm.Model
+	SystemPrompt string
+	History      []llm.AgentMessage
+	Prompt       llm.UserMessage
+	Options      llm.StreamOptions
+	// WebSearch lets a model with provider-hosted search use it under this
+	// policy; nil disables it. The search runs inside the model response,
+	// outside the Guard, so the caller owns that decision.
+	WebSearch       *llm.WebSearch
 	MessageRecorder MessageRecorder
 	RequestRecorder RequestRecorder
 	// ResultViewTokens limits source-detailed results in model requests only.

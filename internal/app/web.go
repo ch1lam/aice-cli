@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -8,8 +9,10 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/web"
+	deepseekweb "github.com/ch1lam/aice-cli/internal/web/deepseek"
 	"github.com/ch1lam/aice-cli/internal/web/exa"
 	"github.com/ch1lam/aice-cli/internal/web/httpfetch"
 )
@@ -27,18 +30,58 @@ type webSearchService struct {
 // reported through the returned service, not as a construction failure.
 type webSearchFactory func(service config.WebService, settings config.WebConfig) (webSearchService, error)
 
+// webProvider describes one search service the application can construct
+// and the /web flows can add. The list is fixed; there is no registry.
+type webProvider struct {
+	id, label, api, baseURL string
+	// keyEnv is the environment variable /web offers as a credential source.
+	keyEnv string
+	// searchTypes are the choices of the provider's "type" option; nil means
+	// the provider has none.
+	searchTypes []interaction.SettingChoice
+	// parseOptions validates instance options without network access.
+	parseOptions func(json.RawMessage) error
+	factory      webSearchFactory
+}
+
+var webProviders = []webProvider{
+	{
+		id: exa.ProviderID, label: exa.Label, api: exa.APIID, baseURL: exa.DefaultBaseURL, keyEnv: "EXA_API_KEY",
+		searchTypes:  []interaction.SettingChoice{{Value: exa.SearchTypeAuto, Label: "Auto"}, {Value: exa.SearchTypeFast, Label: "Fast"}},
+		parseOptions: func(raw json.RawMessage) error { _, err := exa.ParseOptions(raw); return err },
+		factory:      newExaService,
+	},
+	{
+		id: deepseekweb.ProviderID, label: deepseekweb.Label, api: deepseekweb.APIID, baseURL: deepseekweb.DefaultBaseURL, keyEnv: "DEEPSEEK_API_KEY",
+		parseOptions: deepseekweb.ParseOptions,
+		factory:      newDeepSeekService,
+	},
+}
+
+func webProviderByID(id string) (webProvider, bool) {
+	for _, provider := range webProviders {
+		if provider.id == id {
+			return provider, true
+		}
+	}
+	return webProvider{}, false
+}
+
 // webBackends is the fixed, read-only factory list assembled by the
-// application. Adding a provider means adding an adapter and one entry here.
+// application. Adding a provider means adding an adapter and one entry in
+// webProviders.
 type webBackends struct {
 	search     map[string]webSearchFactory
 	newFetcher func(config.WebConfig) (web.FetchBackend, error)
 }
 
 func defaultWebBackends() webBackends {
+	search := make(map[string]webSearchFactory, len(webProviders))
+	for _, provider := range webProviders {
+		search[provider.id] = provider.factory
+	}
 	return webBackends{
-		search: map[string]webSearchFactory{
-			exa.ProviderID: newExaService,
-		},
+		search: search,
 		newFetcher: func(settings config.WebConfig) (web.FetchBackend, error) {
 			return httpfetch.New(httpfetch.Config{Timeout: settings.FetchTimeout})
 		},
@@ -62,12 +105,33 @@ func newExaService(service config.WebService, settings config.WebConfig) (webSea
 	return webSearchService{backend: client, origin: client.Origin(), label: exa.Label + " / " + service.ID, close: client.Close}, nil
 }
 
+func newDeepSeekService(service config.WebService, settings config.WebConfig) (webSearchService, error) {
+	if service.API != "" && service.API != deepseekweb.APIID {
+		return webSearchService{}, fmt.Errorf("api %q is not supported by provider %q (use %q)", service.API, deepseekweb.ProviderID, deepseekweb.APIID)
+	}
+	client, err := deepseekweb.New(deepseekweb.Config{
+		InstanceID: service.ID,
+		BaseURL:    service.BaseURL,
+		APIKey:     service.Secret,
+		Options:    service.Options,
+		Timeout:    settings.SearchTimeout,
+	})
+	if err != nil {
+		return webSearchService{}, err
+	}
+	return webSearchService{backend: client, origin: client.Origin(), label: deepseekweb.Label + " / " + service.ID, close: client.Close}, nil
+}
+
 // webState is the frozen web wiring of one run environment: the tools that
-// were registered, the resolver outcome for display, and the fingerprint the
-// Guard uses to tell whether web_search is bound.
+// were registered, the provider-hosted search policy, the resolver outcome
+// for display, and the fingerprint the Guard uses to tell whether web_search
+// is bound.
 type webState struct {
-	settings     config.WebConfig
-	binding      web.Binding
+	settings config.WebConfig
+	binding  web.Binding
+	// hosted is the provider-hosted search policy under a native binding;
+	// each request's model decides whether it applies.
+	hosted       *llm.WebSearch
 	candidates   []web.Candidate
 	configErr    error
 	searchTool   agent.Tool
@@ -109,8 +173,8 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 				break
 			}
 			candidate.EndpointOrigin = constructed.origin
-			if candidate.APIID == "" {
-				candidate.APIID = exa.APIID
+			if provider, ok := webProviderByID(service.Provider); ok && candidate.APIID == "" {
+				candidate.APIID = provider.api
 			}
 			services[id] = constructed
 			if service.SecretPresent {
@@ -134,8 +198,18 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 	binding, err := web.Resolve(web.ResolveInput{Enabled: settings.SearchEnabled, Priority: settings.Priority, Candidates: candidates})
 	state.configErr = err
 	state.binding = binding
-	if err == nil && binding.Kind == web.BindingService {
-		selected := services[binding.Selected.InstanceID]
+	bound := binding.Selected
+	if binding.Kind == web.BindingNative {
+		bound = binding.Fallback
+		allowed, excluded, policyErr := web.CombineDomains(web.DomainPolicy{Allowed: settings.AllowedDomains, Excluded: settings.ExcludedDomains}, web.SearchRequest{})
+		if policyErr != nil {
+			state.configErr = policyErr
+		} else {
+			state.hosted = &llm.WebSearch{AllowedDomains: allowed, ExcludedDomains: excluded, Replaces: tool.WebSearchName}
+		}
+	}
+	if state.configErr == nil && bound.InstanceID != "" {
+		selected := services[bound.InstanceID]
 		searchTool, toolErr := tool.NewWebSearch(tool.WebSearchOptions{
 			Backend:           selected.backend,
 			Label:             selected.label,
@@ -145,14 +219,15 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 		if toolErr != nil {
 			state.configErr = toolErr
 			state.binding = web.Binding{Kind: web.BindingNone, Reason: toolErr.Error()}
+			state.hosted = nil
 		} else {
 			state.searchTool = searchTool
-			state.searchTarget = guard.SearchTargetFingerprint(binding.Selected.InstanceID, selected.origin)
+			state.searchTarget = guard.SearchTargetFingerprint(bound.InstanceID, selected.origin)
 			state.close = selected.close
 		}
 	}
 	for id, service := range services {
-		if state.searchTool != nil && id == binding.Selected.InstanceID {
+		if state.searchTool != nil && id == bound.InstanceID {
 			continue
 		}
 		if service.close != nil {
@@ -170,6 +245,16 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 		}
 	}
 	return state
+}
+
+// webSearch returns an independent copy of the hosted search policy, nil
+// when no native binding applies.
+func (s webState) webSearch() *llm.WebSearch {
+	if s.hosted == nil {
+		return nil
+	}
+	search := s.hosted.Clone()
+	return &search
 }
 
 func (s webState) closeBackend() {
@@ -191,6 +276,11 @@ func (s webState) statusDetails() []interaction.Detail {
 		source += " — " + s.configErr.Error()
 	case s.binding.Kind == web.BindingService:
 		source = fmt.Sprintf("%s (%s, %s)", s.binding.Selected.Entry, s.binding.Selected.ProviderID, s.binding.Selected.EndpointOrigin)
+	case s.binding.Kind == web.BindingNative && s.binding.Fallback.Entry != "":
+		fallback := s.binding.Fallback
+		source = fmt.Sprintf("native for models that support it; otherwise %s (%s, %s)", fallback.Entry, fallback.ProviderID, fallback.EndpointOrigin)
+	case s.binding.Kind == web.BindingNative:
+		source = "native for models that support it; other models have no web_search — " + s.binding.Reason
 	default:
 		source += " — " + s.binding.Reason
 	}
@@ -253,6 +343,10 @@ func (s webState) sourceSummary() (string, interaction.DetailTone) {
 		return "search off", interaction.ToneMuted
 	case s.binding.Kind == web.BindingService:
 		return s.binding.Selected.Entry, interaction.ToneGood
+	case s.binding.Kind == web.BindingNative && s.binding.Fallback.Entry != "":
+		return "native, then " + s.binding.Fallback.Entry, interaction.ToneGood
+	case s.binding.Kind == web.BindingNative:
+		return "native", interaction.ToneGood
 	}
 	return "none", interaction.ToneWarning
 }
