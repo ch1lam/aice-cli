@@ -256,6 +256,10 @@ const (
 	EventRetryStart
 	EventRetryEnd
 	EventAgentEnd
+	// EventProviderTool is a step the model provider ran inside its
+	// response, such as hosted web search. It is already finished and
+	// passed no Guard; Tool is its complete display.
+	EventProviderTool
 )
 
 // DeltaKind identifies one streamed assistant content update.

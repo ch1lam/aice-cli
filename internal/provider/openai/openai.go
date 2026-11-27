@@ -114,6 +114,8 @@ func Models() []llm.Model {
 			ContextWindow: 1_050_000,
 			MaxTokens:     128_000,
 			Pricing:       entry.pricing,
+			// The web_search tool filters allowed domains only.
+			WebSearch: &llm.WebSearchSupport{Tool: llm.WebSearchToolStandard, AllowedDomains: true},
 		})
 	}
 	return models

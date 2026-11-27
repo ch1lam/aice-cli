@@ -37,6 +37,7 @@ type mainRunSnapshot struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	systemPrompt  string
+	webSearch     *llm.WebSearch
 	configuration config.Config
 }
 
@@ -222,6 +223,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 		workspace:    r.session.workspace,
 		guard:        r.session.guardAdapter,
 		systemPrompt: snapshot.systemPrompt,
+		webSearch:    snapshot.webSearch,
 		mcp:          scope.mcp,
 		store:        r.session.conversation.store,
 		sessionDir:   r.session.sessionDirectory(),
@@ -236,6 +238,7 @@ func (r *interactiveRun) Run(ctx context.Context) error {
 	// group is not yet replay-safe for the conversation's side snapshots.
 	contextHistory := append([]llm.AgentMessage(nil), snapshot.history...)
 	input := scope.input(snapshot.model, snapshot.systemPrompt, snapshot.options, snapshot.history, r.prompt)
+	input.WebSearch = snapshot.webSearch
 	input.ObserveTools = observeTools
 	input.Steering = mailboxInputSource(r.mailbox.TakeSteering, "steering", snapshot.model)
 	// The run waits for its subagents, so one prompt's turn lasts until their
@@ -354,6 +357,7 @@ func (s *interactiveSession) beginMainRun(
 		model:         settings.model,
 		options:       settings.options,
 		systemPrompt:  settings.systemPrompt,
+		webSearch:     settings.webSearch,
 		configuration: settings.configuration,
 	}, nil
 }

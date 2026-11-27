@@ -416,8 +416,9 @@ func (s *interactiveSession) saveWeb(ctx context.Context, patch config.WebPatch,
 	lines := []string{message, "Applies to the next response."}
 	if state.configErr != nil {
 		lines = append(lines, "Web search unavailable: "+state.configErr.Error())
-	} else if state.binding.Kind == web.BindingService {
-		lines = append(lines, "Search source: "+state.binding.Selected.Entry)
+	} else if state.binding.Kind != web.BindingNone {
+		summary, _ := state.sourceSummary()
+		lines = append(lines, "Search source: "+summary)
 	} else if state.settings.SearchEnabled {
 		lines = append(lines, "Search source: none — "+state.binding.Reason)
 	}

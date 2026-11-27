@@ -103,7 +103,7 @@ func TestWebCommandAddsInstanceSavesCredentialAndRebinds(t *testing.T) {
 		t.Fatalf("initial tools = %v", toolNames(s.tools))
 	}
 	status, err := s.RunSlashCommand(t.Context(), interaction.CommandRequest{Name: "web"})
-	if err != nil || !strings.Contains(status, "Search source: none") || !strings.Contains(status, "native: not_implemented") {
+	if err != nil || !strings.Contains(status, "Search source: native for models that support it; other models have no web_search") || !strings.Contains(status, "native: ready") {
 		t.Fatalf("status = %q %v", status, err)
 	}
 
@@ -112,7 +112,7 @@ func TestWebCommandAddsInstanceSavesCredentialAndRebinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output, "Added Exa instance exa-main") || !strings.Contains(output, "Search source: service:exa-main") || strings.Contains(output, "secret-exa-key") {
+	if !strings.Contains(output, "Added Exa instance exa-main") || !strings.Contains(output, "Search source: native, then service:exa-main") || strings.Contains(output, "secret-exa-key") {
 		t.Fatalf("output = %q", output)
 	}
 	if len(ui.prompts) != 3 || ui.prompts[0].Menu == nil || len(ui.prompts[0].Menu.Options) != len(webProviders) || ui.prompts[1].Menu == nil || !ui.prompts[2].AllowInput || !strings.Contains(ui.prompts[2].InputLabel, "hidden") {

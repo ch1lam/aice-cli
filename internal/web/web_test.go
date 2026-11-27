@@ -83,10 +83,14 @@ func TestResolveTable(t *testing.T) {
 		wantCode  ErrorCode
 		wantSkips int
 		wantIn    string
+		// wantFallback is the fallback instance under a native binding.
+		wantFallback string
 	}{
-		{name: "native first not implemented then exa", input: ResolveInput{Enabled: true, Priority: []string{"native", "service:exa-main"}, Candidates: map[string]Candidate{"service:exa-main": ready}}, wantKind: BindingService, wantID: "exa-main", wantSkips: 1},
-		{name: "exa first wins over ready native stand-in", input: ResolveInput{Enabled: true, Priority: []string{"service:exa-main", "native"}, Candidates: map[string]Candidate{"service:exa-main": ready, "native": nativeReady}}, wantKind: BindingService, wantID: "exa-main"},
-		{name: "only native", input: ResolveInput{Enabled: true, Priority: []string{"native"}}, wantKind: BindingNone, wantSkips: 1, wantIn: "no search source"},
+		{name: "native first falls back to exa", input: ResolveInput{Enabled: true, Priority: []string{"native", "service:exa-main"}, Candidates: map[string]Candidate{"service:exa-main": ready}}, wantKind: BindingNative, wantFallback: "exa-main"},
+		{name: "native fallback skips disabled", input: ResolveInput{Enabled: true, Priority: []string{"native", "service:off", "service:exa-main"}, Candidates: map[string]Candidate{"service:off": disabled, "service:exa-main": ready}}, wantKind: BindingNative, wantFallback: "exa-main", wantSkips: 1},
+		{name: "native fallback missing key", input: ResolveInput{Enabled: true, Priority: []string{"native", "service:exa-main"}, Candidates: map[string]Candidate{"service:exa-main": missing}}, wantKind: BindingNative, wantSkips: 1, wantIn: "no fallback service"},
+		{name: "exa first wins over native", input: ResolveInput{Enabled: true, Priority: []string{"service:exa-main", "native"}, Candidates: map[string]Candidate{"service:exa-main": ready, "native": nativeReady}}, wantKind: BindingService, wantID: "exa-main"},
+		{name: "only native", input: ResolveInput{Enabled: true, Priority: []string{"native"}}, wantKind: BindingNative, wantIn: "no fallback service"},
 		{name: "empty priority", input: ResolveInput{Enabled: true, Priority: []string{}}, wantKind: BindingNone, wantIn: "empty"},
 		{name: "disabled", input: ResolveInput{Enabled: false, Priority: []string{"service:exa-main"}, Candidates: map[string]Candidate{"service:exa-main": ready}}, wantKind: BindingNone, wantIn: "disabled"},
 		{name: "unknown instance", input: ResolveInput{Enabled: true, Priority: []string{"service:ghost"}}, wantCode: CodeInvalidConfig},
@@ -110,6 +114,9 @@ func TestResolveTable(t *testing.T) {
 			}
 			if binding.Kind != tc.wantKind || binding.Selected.InstanceID != tc.wantID {
 				t.Fatalf("binding = %+v", binding)
+			}
+			if binding.Fallback.InstanceID != tc.wantFallback {
+				t.Fatalf("fallback = %+v, want %q", binding.Fallback, tc.wantFallback)
 			}
 			if len(binding.Skipped) != tc.wantSkips {
 				t.Fatalf("skipped = %+v", binding.Skipped)

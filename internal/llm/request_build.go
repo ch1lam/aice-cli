@@ -12,7 +12,9 @@ type RequestConfig struct {
 	Model        Model            `json:"model"`
 	SystemPrompt string           `json:"system_prompt,omitempty"`
 	Tools        []ToolDefinition `json:"tools,omitempty"`
-	Options      StreamOptions    `json:"options"`
+	// WebSearch is the run's provider-hosted search policy; nil disables it.
+	WebSearch *WebSearch    `json:"web_search,omitempty"`
+	Options   StreamOptions `json:"options"`
 	// ResultViewTokens bounds each detailed tool result's model view.
 	ResultViewTokens int64 `json:"result_view_tokens,omitempty"`
 }
@@ -23,6 +25,14 @@ func (c RequestConfig) Clone() RequestConfig {
 	cloned := c
 	cloned.Model.ThinkingLevelMap = c.Model.ThinkingLevelMap.Clone()
 	cloned.Model.InputModalities = slices.Clone(c.Model.InputModalities)
+	if c.Model.WebSearch != nil {
+		support := *c.Model.WebSearch
+		cloned.Model.WebSearch = &support
+	}
+	if c.WebSearch != nil {
+		search := c.WebSearch.Clone()
+		cloned.WebSearch = &search
+	}
 	if c.Options.Temperature != nil {
 		temperature := *c.Options.Temperature
 		cloned.Options.Temperature = &temperature
@@ -48,14 +58,29 @@ func BuildRequest(config RequestConfig, history []AgentMessage) (request Request
 	if !slices.Contains(config.Model.InputModalities, InputModalityImage) {
 		changed = omitToolResultImages(messages) || changed
 	}
-	tools := config.Clone().Tools
-	return Request{
-		Model:        config.Model,
+	cloned := config.Clone()
+	request = Request{
+		Model:        cloned.Model,
 		SystemPrompt: config.SystemPrompt,
 		Messages:     messages,
-		Tools:        tools,
+		Tools:        cloned.Tools,
 		Options:      config.Options,
-	}, changed, nil
+	}
+	if cloned.UsesHostedWebSearch() {
+		// Hosted search takes the local tool's place, so the model sees one
+		// search tool. A model that cannot host search keeps the local tool.
+		request.WebSearch = cloned.WebSearch
+		request.Tools = slices.DeleteFunc(request.Tools, func(definition ToolDefinition) bool {
+			return definition.Name == cloned.WebSearch.Replaces
+		})
+	}
+	return request, changed, nil
+}
+
+// UsesHostedWebSearch reports whether requests built from this configuration
+// enable the model's provider-hosted web search.
+func (c RequestConfig) UsesHostedWebSearch() bool {
+	return c.WebSearch != nil && c.Model.WebSearch.Accepts(*c.WebSearch, c.Options.Thinking)
 }
 
 // FitOutputTokens lowers the output limit to what the context window leaves

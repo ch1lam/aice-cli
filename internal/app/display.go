@@ -177,8 +177,42 @@ func translateAssistantDelta(event *llm.Event) *interaction.Event {
 				ToolEnd:   event.Type == llm.EventTypeToolCallEnd && event.ToolCall != nil,
 			},
 		}
+	case llm.EventTypeWebSearch:
+		if event.Content != nil && event.Content.WebSearch != nil {
+			return &interaction.Event{Kind: interaction.EventProviderTool, Tool: hostedSearchDisplay(*event.Content.WebSearch)}
+		}
 	}
 	return nil
+}
+
+// hostedSearchDisplay shows one provider-hosted search step as a finished
+// web_search entry: its queries or page, and the sources it reported.
+func hostedSearchDisplay(call llm.WebSearchCall) interaction.ToolDisplay {
+	display := interaction.ToolDisplay{
+		ID:          call.ID,
+		Name:        "web_search",
+		Description: "run by the model provider",
+		Failed:      call.Error != "",
+		Kind:        interaction.ToolKindFetch,
+	}
+	switch {
+	case len(call.Queries) > 0:
+		display.Detail = strings.Join(call.Queries, " | ")
+	default:
+		display.Detail = call.URL
+	}
+	var output strings.Builder
+	output.WriteString("Provider web search: " + call.Describe())
+	if len(call.Sources) > 0 {
+		evidence := &interaction.EvidenceDisplay{Sources: make([]interaction.SourceDisplay, 0, len(call.Sources))}
+		for _, source := range call.Sources {
+			evidence.Sources = append(evidence.Sources, interaction.SourceDisplay{Title: source.Title, URL: source.URL})
+			output.WriteString("\n- " + strings.TrimSpace(source.Title+" "+source.URL))
+		}
+		display.Evidence = evidence
+	}
+	display.Output = interaction.ToolOutputDisplay{Text: output.String(), Available: true}
+	return display
 }
 
 func assistantContent(message llm.AssistantMessage) (string, string) {

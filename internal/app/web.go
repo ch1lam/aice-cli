@@ -9,6 +9,7 @@ import (
 	"github.com/ch1lam/aice-cli/internal/config"
 	"github.com/ch1lam/aice-cli/internal/guard"
 	"github.com/ch1lam/aice-cli/internal/interaction"
+	"github.com/ch1lam/aice-cli/internal/llm"
 	"github.com/ch1lam/aice-cli/internal/tool"
 	"github.com/ch1lam/aice-cli/internal/web"
 	deepseekweb "github.com/ch1lam/aice-cli/internal/web/deepseek"
@@ -122,11 +123,15 @@ func newDeepSeekService(service config.WebService, settings config.WebConfig) (w
 }
 
 // webState is the frozen web wiring of one run environment: the tools that
-// were registered, the resolver outcome for display, and the fingerprint the
-// Guard uses to tell whether web_search is bound.
+// were registered, the provider-hosted search policy, the resolver outcome
+// for display, and the fingerprint the Guard uses to tell whether web_search
+// is bound.
 type webState struct {
-	settings     config.WebConfig
-	binding      web.Binding
+	settings config.WebConfig
+	binding  web.Binding
+	// hosted is the provider-hosted search policy under a native binding;
+	// each request's model decides whether it applies.
+	hosted       *llm.WebSearch
 	candidates   []web.Candidate
 	configErr    error
 	searchTool   agent.Tool
@@ -193,8 +198,18 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 	binding, err := web.Resolve(web.ResolveInput{Enabled: settings.SearchEnabled, Priority: settings.Priority, Candidates: candidates})
 	state.configErr = err
 	state.binding = binding
-	if err == nil && binding.Kind == web.BindingService {
-		selected := services[binding.Selected.InstanceID]
+	bound := binding.Selected
+	if binding.Kind == web.BindingNative {
+		bound = binding.Fallback
+		allowed, excluded, policyErr := web.CombineDomains(web.DomainPolicy{Allowed: settings.AllowedDomains, Excluded: settings.ExcludedDomains}, web.SearchRequest{})
+		if policyErr != nil {
+			state.configErr = policyErr
+		} else {
+			state.hosted = &llm.WebSearch{AllowedDomains: allowed, ExcludedDomains: excluded, Replaces: tool.WebSearchName}
+		}
+	}
+	if state.configErr == nil && bound.InstanceID != "" {
+		selected := services[bound.InstanceID]
 		searchTool, toolErr := tool.NewWebSearch(tool.WebSearchOptions{
 			Backend:           selected.backend,
 			Label:             selected.label,
@@ -204,14 +219,15 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 		if toolErr != nil {
 			state.configErr = toolErr
 			state.binding = web.Binding{Kind: web.BindingNone, Reason: toolErr.Error()}
+			state.hosted = nil
 		} else {
 			state.searchTool = searchTool
-			state.searchTarget = guard.SearchTargetFingerprint(binding.Selected.InstanceID, selected.origin)
+			state.searchTarget = guard.SearchTargetFingerprint(bound.InstanceID, selected.origin)
 			state.close = selected.close
 		}
 	}
 	for id, service := range services {
-		if state.searchTool != nil && id == binding.Selected.InstanceID {
+		if state.searchTool != nil && id == bound.InstanceID {
 			continue
 		}
 		if service.close != nil {
@@ -229,6 +245,16 @@ func bindWeb(backends webBackends, settings config.WebConfig) webState {
 		}
 	}
 	return state
+}
+
+// webSearch returns an independent copy of the hosted search policy, nil
+// when no native binding applies.
+func (s webState) webSearch() *llm.WebSearch {
+	if s.hosted == nil {
+		return nil
+	}
+	search := s.hosted.Clone()
+	return &search
 }
 
 func (s webState) closeBackend() {
@@ -250,6 +276,11 @@ func (s webState) statusDetails() []interaction.Detail {
 		source += " — " + s.configErr.Error()
 	case s.binding.Kind == web.BindingService:
 		source = fmt.Sprintf("%s (%s, %s)", s.binding.Selected.Entry, s.binding.Selected.ProviderID, s.binding.Selected.EndpointOrigin)
+	case s.binding.Kind == web.BindingNative && s.binding.Fallback.Entry != "":
+		fallback := s.binding.Fallback
+		source = fmt.Sprintf("native for models that support it; otherwise %s (%s, %s)", fallback.Entry, fallback.ProviderID, fallback.EndpointOrigin)
+	case s.binding.Kind == web.BindingNative:
+		source = "native for models that support it; other models have no web_search — " + s.binding.Reason
 	default:
 		source += " — " + s.binding.Reason
 	}
@@ -312,6 +343,10 @@ func (s webState) sourceSummary() (string, interaction.DetailTone) {
 		return "search off", interaction.ToneMuted
 	case s.binding.Kind == web.BindingService:
 		return s.binding.Selected.Entry, interaction.ToneGood
+	case s.binding.Kind == web.BindingNative && s.binding.Fallback.Entry != "":
+		return "native, then " + s.binding.Fallback.Entry, interaction.ToneGood
+	case s.binding.Kind == web.BindingNative:
+		return "native", interaction.ToneGood
 	}
 	return "none", interaction.ToneWarning
 }

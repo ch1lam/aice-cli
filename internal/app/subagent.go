@@ -78,7 +78,10 @@ type delegation struct {
 	workspace    *tool.Workspace
 	guard        *guardAdapter
 	systemPrompt string
-	mcp          mcpRunBinding
+	// webSearch is the run's provider-hosted search policy; children inherit
+	// it like web_search, which read-only children also keep.
+	webSearch *llm.WebSearch
+	mcp       mcpRunBinding
 	// store is the parent's Session, if any; sessionDir holds child
 	// Sessions, and empty keeps them in memory, as for a parent without one.
 	store      *session.Store
@@ -372,6 +375,10 @@ func (d *delegation) run(ctx context.Context, request tool.DelegateRequest, chil
 		return res
 	}
 	input := runScope{mcp: mcp, store: store}.input(model.model, systemPrompt, model.options, history, prompt)
+	if d.webSearch != nil {
+		search := d.webSearch.Clone()
+		input.WebSearch = &search
+	}
 	if child.agent != nil {
 		// Messages from the parent wait for the child's next step, or keep it
 		// going when it would stop.

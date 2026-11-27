@@ -91,6 +91,9 @@ func Models() []llm.Model {
 			InputModalities:  []llm.InputModality{llm.InputModalityText, llm.InputModalityImage},
 			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(),
 			Pricing: llm.Pricing{Input: 0.15, Output: 0.6, CacheRead: 0.003},
+			// deepseek_web_search works beside function tools only while
+			// thinking (verified 2026-11-27) and takes no domain lists.
+			WebSearch: &llm.WebSearchSupport{Tool: llm.WebSearchToolDeepSeek, RequiresThinking: true},
 		},
 		{
 			ID: ModelV4Pro, Name: "DeepSeek V4 Pro", API: anthropic.API, Provider: ProviderID,
@@ -98,6 +101,10 @@ func Models() []llm.Model {
 			InputModalities:  []llm.InputModality{llm.InputModalityText},
 			SupportsThinking: true, ThinkingLevelMap: thinkingLevels(), SupportsReasoningEffort: true,
 			Pricing: llm.Pricing{Input: 0.66, Output: 1.98, CacheRead: 0.022},
+			// The Anthropic endpoint's web_search works beside function tools
+			// with or without thinking (verified 2026-11-27); its domain
+			// lists are unverified, so a domain policy uses the fallback.
+			WebSearch: &llm.WebSearchSupport{Tool: llm.WebSearchToolStandard},
 		},
 	}
 }

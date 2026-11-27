@@ -380,6 +380,14 @@ func (e *runExecution) settleToolsAndSteering(
 	if next, err := e.takeSteeringAndNotification(ctx); next != stepSettled {
 		return next, err
 	}
+	if len(turn.ToolResults) == 0 && completedTurn.Assistant.StopReason == llm.StopReasonPause {
+		// The provider paused a long server-side tool loop (Anthropic
+		// pause_turn); sending the paused response back resumes it.
+		if err := e.beginTurn(ctx); err != nil {
+			return stepAbort, err
+		}
+		return stepContinue, nil
+	}
 	if len(turn.ToolResults) == 0 {
 		e.repetition = repetitionTracker{}
 		return stepSettled, nil

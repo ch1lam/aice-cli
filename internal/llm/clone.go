@@ -94,6 +94,11 @@ func cloneContentParts(parts []ContentPart) []ContentPart {
 				call.Arguments = slices.Clone(part.ToolCall.Arguments)
 				cloned[index].ToolCall = &call
 			}
+		case ContentTypeWebSearch:
+			if part.WebSearch != nil {
+				search := part.WebSearch.Clone()
+				cloned[index].WebSearch = &search
+			}
 		}
 	}
 	return cloned

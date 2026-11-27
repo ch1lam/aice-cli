@@ -55,6 +55,10 @@ func NewWebSearch(options WebSearchOptions) (*WebSearch, error) {
 	return &WebSearch{backend: options.Backend, label: options.Label, policy: options.Policy, maxResults: maxResults}, nil
 }
 
+// WebSearchName is the local search tool's name, which provider-hosted
+// search replaces for models that support it.
+const WebSearchName = "web_search"
+
 // Definition returns the model-facing web_search contract.
 func (s *WebSearch) Definition() llm.ToolDefinition {
 	description := "Search the public web through the configured search service"
@@ -65,7 +69,7 @@ func (s *WebSearch) Definition() llm.ToolDefinition {
 		"Excerpts are not the full page; use web_fetch to read a result. " +
 		"Each call performs exactly one paid search request."
 	return llm.ToolDefinition{
-		Name:          "web_search",
+		Name:          WebSearchName,
 		Description:   description,
 		InputSchema:   jsonSchema(webSearchSchema),
 		PromptSnippet: "Search the public web for current information and sources",

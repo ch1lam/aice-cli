@@ -187,6 +187,14 @@ func estimateContentTokens(content []ContentPart) int64 {
 				tokens += EstimateTextTokens(part.ToolCall.Name)
 				tokens += EstimateTextTokens(string(part.ToolCall.Arguments))
 			}
+		case ContentTypeWebSearch:
+			// Replayed items carry the search results the provider counts as
+			// input, often encrypted; their size is the best local estimate.
+			if part.WebSearch != nil {
+				for _, item := range part.WebSearch.Replay {
+					tokens += EstimateTextTokens(string(item))
+				}
+			}
 		}
 	}
 	return tokens

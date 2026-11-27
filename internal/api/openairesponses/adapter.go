@@ -89,12 +89,12 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 		return nil, fmt.Errorf("openai responses: %w", err)
 	}
 
-	params, err := requestParams(request)
+	params, names, err := requestParams(request)
 	if err != nil {
 		return nil, err
 	}
 	if a.encryptedReasoning {
-		params.Include = []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent}
+		params.Include = append(params.Include, responses.ResponseIncludableReasoningEncryptedContent)
 	}
 	if a.codex {
 		// The subscription endpoint rejects max_output_tokens and requires
@@ -118,30 +118,48 @@ func (a *Adapter) Stream(ctx context.Context, request llm.Request) (llm.Stream, 
 	}
 
 	return &stream{
-		core:   streamcore.NewStream(request.Model),
-		source: source,
-		blocks: make(map[int64]*streamcore.PartState),
-		codex:  a.codex,
+		core:      streamcore.NewStream(request.Model),
+		source:    source,
+		blocks:    make(map[int64]*streamcore.PartState),
+		codex:     a.codex,
+		toolNames: names.original,
 	}, nil
 }
 
-func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
+func requestParams(request llm.Request) (responses.ResponseNewParams, toolNames, error) {
 	maxTokens, err := streamcore.ResolveMaxTokens(request)
 	if err != nil {
-		return responses.ResponseNewParams{}, fmt.Errorf("openai responses: %w", err)
+		return responses.ResponseNewParams{}, toolNames{}, fmt.Errorf("openai responses: %w", err)
 	}
 
-	input, err := inputParams(request.Messages, request.Model, request.Options.FilterReasoningHistory)
+	names := wireToolNames(request)
+	input, err := inputParams(request.Messages, request.Model, history{
+		filterReasoning: request.Options.FilterReasoningHistory,
+		webSearch:       request.WebSearch != nil,
+		names:           names,
+	})
 	if err != nil {
-		return responses.ResponseNewParams{}, err
+		return responses.ResponseNewParams{}, toolNames{}, err
 	}
-	tools, err := toolParams(request.Tools)
+	tools, err := toolParams(request.Tools, names)
 	if err != nil {
-		return responses.ResponseNewParams{}, err
+		return responses.ResponseNewParams{}, toolNames{}, err
+	}
+	var include []responses.ResponseIncludable
+	if request.WebSearch != nil {
+		hosted, err := webSearchToolParam(request.Model, *request.WebSearch)
+		if err != nil {
+			return responses.ResponseNewParams{}, toolNames{}, err
+		}
+		tools = append(tools, hosted)
+		if request.Model.WebSearch.Tool == llm.WebSearchToolStandard {
+			// OpenAI reports the pages a search consulted only on request.
+			include = append(include, responses.ResponseIncludableWebSearchCallActionSources)
+		}
 	}
 	reasoning, err := reasoningParam(request.Model, request.Options.Thinking)
 	if err != nil {
-		return responses.ResponseNewParams{}, err
+		return responses.ResponseNewParams{}, toolNames{}, err
 	}
 
 	params := responses.ResponseNewParams{
@@ -152,6 +170,7 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 		Reasoning: reasoning,
 		Store:     param.NewOpt(false),
 		Tools:     tools,
+		Include:   include,
 	}
 	if !request.Model.OmitMaxTokensByDefault || request.Options.MaxTokens > 0 {
 		params.MaxOutputTokens = param.NewOpt(maxTokens)
@@ -162,7 +181,7 @@ func requestParams(request llm.Request) (responses.ResponseNewParams, error) {
 	if request.Options.Temperature != nil {
 		params.Temperature = param.NewOpt(*request.Options.Temperature)
 	}
-	return params, nil
+	return params, names, nil
 }
 
 func reasoningParam(model llm.Model, level llm.ThinkingLevel) (shared.ReasoningParam, error) {
@@ -184,10 +203,19 @@ func reasoningParam(model llm.Model, level llm.ThinkingLevel) (shared.ReasoningP
 	return shared.ReasoningParam{Effort: shared.ReasoningEffort(effort)}, nil
 }
 
+// history is how one request sends earlier messages. webSearch reports that
+// it declares hosted search, without which recorded search steps are dropped;
+// names renames function calls whose tools the request renames.
+type history struct {
+	filterReasoning bool
+	webSearch       bool
+	names           toolNames
+}
+
 func inputParams(
 	messages []llm.Message,
 	target llm.Model,
-	filterReasoning bool,
+	options history,
 ) (responses.ResponseInputParam, error) {
 	result := make(responses.ResponseInputParam, 0, len(messages))
 	for messageIndex, message := range messages {
@@ -203,7 +231,7 @@ func inputParams(
 			}
 			result = append(result, items...)
 		case llm.AssistantMessage:
-			items, err := assistantInputParams(value, target, filterReasoning)
+			items, err := assistantInputParams(value, target, options)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"openai responses: message %d: %w",
@@ -275,11 +303,11 @@ func userInputParams(content []llm.ContentPart) ([]responses.ResponseInputItemUn
 func assistantInputParams(
 	message llm.AssistantMessage,
 	target llm.Model,
-	filterReasoning bool,
+	options history,
 ) ([]responses.ResponseInputItemUnionParam, error) {
 	sameModel := streamcore.SameModel(message, target)
 	content := message.Content
-	if !sameModel || filterReasoning {
+	if !sameModel || options.filterReasoning {
 		// The Agent Loop arms this request option reactively after a gateway
 		// rejects a replayed reasoning item (the OpenCode Muse Spark lane
 		// proxies to an upstream that binds encrypted_content to its own
@@ -315,12 +343,14 @@ func assistantInputParams(
 			item := responses.ResponseInputItemParamOfFunctionCall(
 				string(call.Arguments),
 				call.ID,
-				call.Name,
+				options.names.wire(call.Name),
 			)
 			if sameModel && call.Signature != "" {
 				item.OfFunctionCall.ID = param.NewOpt(call.Signature)
 			}
 			result = append(result, item)
+		case llm.ContentTypeWebSearch:
+			result = append(result, webSearchInputParams(part, sameModel && options.webSearch)...)
 		default:
 			return nil, fmt.Errorf(
 				"content %d: unsupported assistant content type %q",
@@ -431,14 +461,14 @@ func toolResultInputParam(
 	return item, nil
 }
 
-func toolParams(tools []llm.ToolDefinition) ([]responses.ToolUnionParam, error) {
+func toolParams(tools []llm.ToolDefinition, names toolNames) ([]responses.ToolUnionParam, error) {
 	schemas, err := streamcore.DecodeToolSchemas(tools)
 	if err != nil {
 		return nil, fmt.Errorf("openai responses: %w", err)
 	}
 	result := make([]responses.ToolUnionParam, 0, len(tools))
 	for index, tool := range tools {
-		converted := responses.ToolParamOfFunction(tool.Name, schemas[index], false)
+		converted := responses.ToolParamOfFunction(names.wire(tool.Name), schemas[index], false)
 		if tool.Description != "" {
 			converted.OfFunction.Description = param.NewOpt(tool.Description)
 		}
@@ -455,6 +485,8 @@ type stream struct {
 	sawRefusal  bool
 	sawToolCall bool
 	codex       bool
+	// toolNames maps renamed wire tool names back to the request's.
+	toolNames map[string]string
 }
 
 func (s *stream) Next() (llm.Event, error) {
@@ -622,7 +654,7 @@ func (s *stream) startItem(
 		state.Arguments.WriteString(value.Arguments)
 		state.ToolCall = llm.ToolCall{
 			ID:        value.CallID,
-			Name:      value.Name,
+			Name:      s.toolName(value.Name),
 			Signature: value.ID,
 		}
 		s.blocks[outputIndex] = state
@@ -632,9 +664,14 @@ func (s *stream) startItem(
 			ContentIndex: state.Index,
 			ToolCallDelta: &llm.ToolCallDelta{
 				ID:   value.CallID,
-				Name: value.Name,
+				Name: state.ToolCall.Name,
 			},
 		}}, nil
+	case responses.ResponseFunctionWebSearch:
+		// The provider runs the search; the step is reported when it ends.
+		state.Type = llm.ContentTypeWebSearch
+		s.blocks[outputIndex] = state
+		return nil, nil
 	default:
 		return nil, fmt.Errorf(
 			"openai responses: unsupported output item %q",
@@ -805,7 +842,7 @@ func (s *stream) finishItem(
 			arguments = state.Arguments.String()
 		}
 		state.ToolCall.ID = value.CallID
-		state.ToolCall.Name = value.Name
+		state.ToolCall.Name = s.toolName(value.Name)
 		state.ToolCall.Signature = value.ID
 		call, err := streamcore.FinishToolCall(state.ToolCall, arguments, nil)
 		if err != nil {
@@ -821,6 +858,24 @@ func (s *stream) finishItem(
 			ContentIndex: state.Index,
 			Content:      &content,
 			ToolCall:     &call,
+		})
+	case responses.ResponseFunctionWebSearch:
+		if state.Type != llm.ContentTypeWebSearch {
+			return nil, fmt.Errorf(
+				"openai responses: web search completed incompatible output item %d",
+				outputIndex,
+			)
+		}
+		call, err := webSearchCall(item.RawJSON())
+		if err != nil {
+			return nil, err
+		}
+		content := llm.NewWebSearchPart(call)
+		s.core.Parts.Complete(state.Index, content)
+		events = append(events, llm.Event{
+			Type:         llm.EventTypeWebSearch,
+			ContentIndex: state.Index,
+			Content:      &content,
 		})
 	default:
 		return nil, fmt.Errorf(

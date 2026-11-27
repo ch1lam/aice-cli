@@ -40,6 +40,12 @@ func sessionTranscript(snapshot session.Snapshot) (*interaction.Transcript, erro
 				Assistant: interaction.AssistantDisplay{Text: text, Thinking: thinking, Concludes: assistantConcludes(message)},
 			})
 			for _, part := range message.Content {
+				if part.Type == llm.ContentTypeWebSearch && part.WebSearch != nil {
+					view.Entries = append(view.Entries, interaction.TranscriptEntry{
+						ID: entry.ID, Kind: interaction.TranscriptTool, Tool: hostedSearchDisplay(*part.WebSearch),
+					})
+					continue
+				}
 				if part.Type != llm.ContentTypeToolCall || part.ToolCall == nil {
 					continue
 				}

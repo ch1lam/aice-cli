@@ -307,6 +307,10 @@ func (m *model) applyAgentEventContent(event interaction.Event) (bool, tea.Cmd) 
 		m.completeTool(event.Tool)
 		m.status = "Thinking..."
 		return true, nil
+	case interaction.EventProviderTool:
+		m.startDisplayedTool(event.Tool)
+		m.completeTool(event.Tool)
+		return true, nil
 	case interaction.EventSteer:
 		return m.applySteer(event.Input), nil
 	case interaction.EventNotification:

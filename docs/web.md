@@ -1,29 +1,32 @@
 # Web search and fetch
 
-AICE ships two built-in web tools. `web_search` sends a query to a configured
-independent search service; `web_fetch` retrieves one page through HTTP.
-Both are ordinary tools: they pass through the execution gate, produce a paired
-tool result, and record their sources in Session history. Neither depends on
-the model provider supporting search natively.
+AICE searches the web in two ways. Provider-hosted (native) search lets a
+model that supports it search on the provider's servers during its response;
+see [native search](#native-search). The built-in `web_search` tool sends a
+query to a configured independent search service, and `web_fetch` retrieves one
+page through HTTP. The two built-in tools are ordinary tools: they pass through
+the execution gate, produce a paired tool result, and record their sources in
+Session history.
 
 ## Search sources and priority
 
 `web.search.priority` is an ordered list of sources. Two entry kinds exist:
 
-- `native` — model-native search. It is reserved and can be ordered anywhere,
-  but this version has no native implementation, so it is always skipped with
-  the reason `not_implemented`.
+- `native` — provider-hosted search for models that support it. It is always
+  usable; whether a request's model supports it is decided per request.
 - `service:<id>` — an instance configured under `web.services`.
 
-At the start of each run AICE resolves the first usable entry. The resolver is
-static: it checks configuration, enabled state and credential presence, never
-network reachability. Rules:
+At the start of each run AICE resolves the first usable entry. When that is
+`native`, the first usable service after it is the fallback: models without
+hosted search get `web_search` through it. The resolver is static: it checks
+configuration, enabled state and credential presence, never network
+reachability. Rules:
 
 | Configuration | Outcome |
 | --- | --- |
-| Default (no `web` object) | `priority` is `["native"]`; no search tool is registered, coding tools work unchanged |
-| `["native", "service:exa-main"]`, Exa ready | Exa is used; `/web` shows that `native` was skipped as not implemented |
-| `["service:exa-main", "native"]` | Exa is used even if native search becomes available later |
+| Default (no `web` object) | `priority` is `["native"]`; models with hosted search use it, other models get no search tool |
+| `["native", "service:exa-main"]`, Exa ready | Hosted search where the model supports it, Exa's `web_search` otherwise |
+| `["service:exa-main", "native"]` | Exa is used for every model; hosted search is never enabled |
 | `[]` | No search source is allowed; `web_search` is not registered |
 | Invalid file schema or priority referencing an unknown instance | Configuration loading fails with the offending key |
 | Resolver reaches an unknown provider/API or invalid provider options | Search is unavailable; no later service is chosen |
@@ -33,7 +36,8 @@ network reachability. Rules:
 | A search returns no results | A successful empty result |
 
 When no source is usable the `web_search` schema is not sent to the model at
-all; `/web` and `/settings` show the reason. `web_fetch` is independent of any
+all; `/web` and `/settings` show the reason. A model never sees both kinds at
+once: a request that enables hosted search omits the local `web_search`. `web_fetch` is independent of any
 search credential and is registered whenever `web.fetch.enabled` is true.
 
 ## Configuration
@@ -252,9 +256,54 @@ it passed against the live API on 2026-11-27.
 Implementation: [DeepSeek](../internal/web/deepseek/client.go) and the shared
 [service helpers](../internal/web/service.go).
 
+## Native search
+
+With `native` first, each request whose model declares hosted search and
+accepts the run's policy enables it; otherwise the request keeps the fallback
+service's `web_search`, if any. The decision is made for every request
+([`BuildRequest`](../internal/llm/request_build.go)), so switching model or
+thinking level mid-Session switches between the two. Subagents inherit the
+policy and decide by their own model.
+
+| Model | Tool | Conditions |
+| --- | --- | --- |
+| OpenAI (Responses) | `web_search` | Allowed domains become `filters.allowed_domains`; excluded domains fall back to the service |
+| Claude API | `web_search_20250305` | Allowed or excluded domains, not both. An organization administrator can disable web search in the Claude Console; requests then fail until `priority` puts a service first |
+| DeepSeek Flash (Responses) | `deepseek_web_search` | Thinking on (the API rejects it beside function tools without thinking); no domain lists |
+| DeepSeek V4 Pro (Anthropic endpoint) | `web_search_20250305` | Thinking on or off; domain lists are unverified, so any domain policy falls back |
+
+Other providers, the Codex and Claude subscriptions, and custom OpenAI-compatible
+endpoints declare no hosted search. The global `allowed_domains` and
+`excluded_domains` apply; a list the provider tool cannot enforce makes that
+request fall back rather than search unrestricted. Per-call domain arguments
+and `max_results` do not exist for hosted search.
+
+Hosted search runs on the provider, outside AICE's [execution
+gate](execution-sessions.md#tool-execution-boundary): there is no Guard check,
+no auto-mode review and no permission rule for it, and `--yolo` is irrelevant.
+That is the trade-off of `native`; put a service first to keep every search
+under the Guard. Providers bill searches separately from tokens (for example
+OpenAI and Anthropic $10 per 1,000); AICE's cost estimates do not include
+them.
+
+Each search step is recorded in the assistant message as a `web_search` part:
+the action, queries or page, reported sources, any error code, and the
+provider's items unchanged. They are sent back only to the same provider, API
+and model in a request that enables hosted search, which is what the provider
+accepts; any other request drops them and keeps the answer text. DeepSeek
+Flash receives its steps back but may not recognize them as its own searches.
+The TUI, transcripts and ACP show each step as a finished `web_search` entry
+labeled as run by the model provider, with its sources; compaction summaries
+include them. An Anthropic `pause_turn` during a long search is resumed by the
+Loop. `deepseek_web_search` reserves the function names `find`, `search` and
+`open`, so the Responses adapter sends AICE's `find` as `aice_find` and maps
+calls back. Implementation: [llm/web_search.go](../internal/llm/web_search.go)
+and the [Responses](../internal/api/openairesponses/web_search.go) and
+[Anthropic](../internal/api/anthropic/web_search.go) adapters.
+
 ## Not included in this version
 
-The built-in Web path has no model-native search, Exa Answer/Research,
+The built-in Web path has no Exa Answer/Research,
 DeepSeek Fetch API, automatic failover, connection tests, JavaScript rendering,
 authenticated pages, PDFs or images. Fetch uses only standard proxy environment
 settings. Independently configured [MCP services](mcp.md) may expose their own

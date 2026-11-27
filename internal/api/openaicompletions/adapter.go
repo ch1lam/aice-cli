@@ -372,6 +372,9 @@ func assistantMessageParam(
 		switch part.Type {
 		case llm.ContentTypeText, llm.ContentTypeThinking:
 			// Encoded as content and/or reasoning_content above.
+		case llm.ContentTypeWebSearch:
+			// Hosted search ran inside another protocol's response; the
+			// answer text it informed is replayed, its items are not.
 		case llm.ContentTypeToolCall:
 			if part.ToolCall == nil {
 				return openaisdk.ChatCompletionMessageParamUnion{}, fmt.Errorf(

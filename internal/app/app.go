@@ -379,6 +379,7 @@ func (a *application) Print(
 		workspace:    environment.workspace,
 		guard:        environment.guardAdapter,
 		systemPrompt: environment.systemPrompt,
+		webSearch:    environment.web.webSearch(),
 		mcp:          scope.mcp,
 		store:        store,
 		sessionDir:   sessionDir,
@@ -386,6 +387,7 @@ func (a *application) Print(
 	})
 
 	runInput := scope.input(environment.model, environment.systemPrompt, environment.options, history, prompt)
+	runInput.WebSearch = environment.web.webSearch()
 	runInput.Compactor = a.historyCompactor(store, &configured, sink.AddUsage)
 	runInput.MessageRecorder = recorder
 	runInput.Notifications = taskNotifications(environment.tasks)
@@ -997,6 +999,7 @@ type interactiveSettings struct {
 	model         llm.Model
 	options       llm.StreamOptions
 	systemPrompt  string
+	webSearch     *llm.WebSearch
 }
 
 func (s *interactiveSession) settingsSnapshot() interactiveSettings {
@@ -1014,6 +1017,7 @@ func (s *interactiveSession) settingsSnapshot() interactiveSettings {
 		model:         cloneModel(s.model),
 		options:       cloneStreamOptions(s.options),
 		systemPrompt:  s.systemPrompt,
+		webSearch:     s.web.webSearch(),
 	}
 }
 

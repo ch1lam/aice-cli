@@ -125,6 +125,12 @@ when the URL passes the shared URL-shape check (malformed URLs, userinfo,
 zone-scoped IPv6 and non-default ports deny). Address validation, redirects
 and body limits run inside the tool, outside the Guard lock. See [Web search
 and fetch](web.md#permissions).
+Provider-hosted web search is the one network access that bypasses this gate:
+it is not a tool call but part of the model response, so no Guard check,
+permission rule or auto-mode review sees it, and the classifier never sees its
+queries or results. It is enabled only when `native` comes first in
+`web.search.priority` (the default) and the model supports it; see [native
+search](web.md#native-search).
 [Computer Use](desktop.md) is the ordinary MCP service `user:cua`; its tools
 use the same identity-bound MCP Guard and ask like any other service's.
 Workspace file policies do not constrain GUI actions in other applications.

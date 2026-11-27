@@ -225,9 +225,10 @@ the process, and custom agent definitions are not implemented.
 [Background tasks](execution-sessions.md#background-tasks) run shell commands
 and background subagents. A finished one reaches the model as a notification
 the Loop takes at its next boundary; `--print` and ACP turns wait for running
-subagents, and an idle TUI starts a run for it. Model-native web search is
-only a reserved priority entry; Exa is the only production search adapter and
-there is no execution-error failover. See [Web](web.md).
+subagents, and an idle TUI starts a run for it. Provider-hosted web search
+is enabled per request for catalog models that declare it and runs outside the
+Guard; Exa and DeepSeek are the search service adapters, and there is no
+execution-error failover. See [Web](web.md).
 
 A concrete requirement must justify extensions to Loop semantics, message/Session
 types, permissions or state ownership. Use existing boundaries first. Plan mode

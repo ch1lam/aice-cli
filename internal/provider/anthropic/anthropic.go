@@ -103,6 +103,9 @@ func adaptiveModel(id, name string, pricing llm.Pricing, supportsOff bool) llm.M
 		SupportsThinking: true, ThinkingLevelMap: levels,
 		ThinkingFormat: llm.ThinkingFormatAdaptive, SupportsReasoningEffort: true,
 		Pricing: pricing,
+		// web_search_20250305 takes allowed or blocked domains, not both.
+		WebSearch: &llm.WebSearchSupport{Tool: llm.WebSearchToolStandard,
+			AllowedDomains: true, ExcludedDomains: true, SingleDomainList: true},
 	}
 }
 

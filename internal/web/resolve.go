@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// PriorityNative is the priority entry reserved for model-native search.
+// PriorityNative is the priority entry for provider-hosted search: the model
+// provider searches during its response when the request's model supports it.
 const PriorityNative = "native"
 
 // PriorityServicePrefix marks a configured service instance in the priority list.
@@ -25,8 +26,9 @@ const (
 	// BindingService means a configured independent search service handles
 	// local web_search calls.
 	BindingService BindingKind = "service"
-	// BindingNative is reserved for provider-native search; no implementation
-	// exists in this phase and the resolver never returns it.
+	// BindingNative means models with provider-hosted search use it; a
+	// usable service after native in the priority list, if any, serves
+	// web_search for models without it.
 	BindingNative BindingKind = "native"
 )
 
@@ -39,7 +41,6 @@ const (
 	AvailabilityDisabled           Availability = "disabled"
 	AvailabilityMissingCredentials Availability = "missing_credentials"
 	AvailabilityInvalidConfig      Availability = "invalid_config"
-	AvailabilityNotImplemented     Availability = "not_implemented"
 )
 
 // Candidate describes one configured search source for the resolver.
@@ -62,6 +63,9 @@ type Candidate struct {
 type Binding struct {
 	Kind     BindingKind
 	Selected Candidate
+	// Fallback is the service that serves models without hosted search under
+	// a native binding; its Entry is empty when there is none.
+	Fallback Candidate
 	// Skipped explains, in priority order, why earlier candidates were not used.
 	Skipped []Diagnostic
 	// Reason explains a BindingNone outcome.
@@ -84,10 +88,12 @@ type ResolveInput struct {
 	Candidates map[string]Candidate
 }
 
-// Resolve selects the first usable source in priority order. It returns an
-// error only for configuration mistakes the user must fix; unusable but valid
-// candidates are skipped with a diagnostic. It never performs failover after
-// execution: that is a later, separately designed capability.
+// Resolve selects the first usable source in priority order. Native is always
+// usable: whether a model can host search is decided per request, so a native
+// binding also takes the first usable service after it as the fallback for
+// models without it. Resolve returns an error only for configuration mistakes
+// the user must fix; unusable but valid candidates are skipped with a
+// diagnostic. It never performs failover after a request fails.
 func Resolve(input ResolveInput) (Binding, error) {
 	binding := Binding{Kind: BindingNone}
 	if !input.Enabled {
@@ -117,35 +123,47 @@ func Resolve(input ResolveInput) (Binding, error) {
 		}
 		switch candidate.Availability {
 		case AvailabilityReady:
-			binding.Kind = BindingService
-			if entry == PriorityNative {
-				binding.Kind = BindingNative
+			if binding.Kind == BindingNative {
+				binding.Fallback = candidate
+				return binding, nil
 			}
 			binding.Selected = candidate
-			return binding, nil
+			if entry != PriorityNative {
+				binding.Kind = BindingService
+				return binding, nil
+			}
+			binding.Kind = BindingNative
 		case AvailabilityInvalidConfig:
 			return Binding{}, NewError(CodeInvalidConfig, "web.services.%s: %s", candidate.InstanceID, candidate.Detail)
 		case AvailabilityMissingCredentials:
 			// A deliberately configured account without its key is a user
 			// problem, not a reason to silently use another account.
 			binding.Skipped = append(binding.Skipped, Diagnostic{Entry: entry, Availability: candidate.Availability, Detail: candidate.Detail})
-			binding.Reason = fmt.Sprintf("%s: %s", entry, candidate.Detail)
+			if binding.Kind == BindingNative {
+				binding.Reason = fmt.Sprintf("no fallback service: %s: %s", entry, candidate.Detail)
+			} else {
+				binding.Reason = fmt.Sprintf("%s: %s", entry, candidate.Detail)
+			}
 			return binding, nil
 		default:
 			binding.Skipped = append(binding.Skipped, Diagnostic{Entry: entry, Availability: candidate.Availability, Detail: candidate.Detail})
 		}
 	}
+	if binding.Kind == BindingNative {
+		binding.Reason = "no fallback service after native in web.search.priority"
+		return binding, nil
+	}
 	binding.Reason = "no search source in web.search.priority is usable"
 	return binding, nil
 }
 
-// NativeCandidate describes the reserved native entry. It is not implemented
-// in this phase; the entry remains meaningful so users can already order it.
+// NativeCandidate describes the native entry. It is statically ready: the
+// request's model decides whether hosted search applies.
 func NativeCandidate() Candidate {
 	return Candidate{
 		Entry:        PriorityNative,
-		Availability: AvailabilityNotImplemented,
-		Detail:       "model-native search is not implemented in this version",
+		Availability: AvailabilityReady,
+		Detail:       "provider-hosted search for models that support it",
 	}
 }
 

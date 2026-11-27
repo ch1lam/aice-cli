@@ -53,6 +53,16 @@ are rejected explicitly. Protocol adapters retain responsibility for wire encodi
 - Protocol adapters validate common request invariants with `Request.Validate`
   before translation, including message validity and tool definitions. Conversion
   helpers encode validated data; protocol-specific restrictions stay in adapters.
+- An assistant `web_search` content part records one step of provider-hosted
+  search: AICE's reading (action, queries or URL, sources, error) plus the
+  provider's items verbatim in `Replay`. `Model.WebSearch` declares which hosted
+  tool a catalog model accepts and which policies it can enforce;
+  `BuildRequest` sets `Request.WebSearch` and drops the local tool it replaces
+  only when that declaration accepts the run's policy and thinking level.
+  Adapters declare the tool, report each finished step as a `web_search`
+  stream event, and replay `Replay` only to the same provider, API and model in
+  a request that enables hosted search; other requests drop the part. See
+  [native search](web.md#native-search).
 - Provider identity and model catalogs stay separate from protocol adapters;
   compatible providers reuse the protocol layer. Thinking translation switches
   on protocol-format metadata rather than provider or model IDs. Anthropic
@@ -194,6 +204,9 @@ retain the short content summary; Session keeps the additive metadata.
   through `RunInput.AwaitInput` when the application supplies it; either starts
   another interaction inside the same run. The application and frontend must
   not reproduce this stopping decision.
+- A response that stops with `pause` (Anthropic `pause_turn`, a long
+  server-side tool loop) and has no tool calls is sent back unchanged in the
+  next model round, which resumes it; it does not settle the interaction.
 - Runs have no model-round or tool-step ceiling by default. A run ends when the model
   completes naturally and no follow-up or awaited input arrives, or on cancellation/deadline,
   context protection, configured turn/resource limits, repeated-tool detection,
